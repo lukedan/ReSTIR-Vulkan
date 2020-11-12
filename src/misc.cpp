@@ -30,3 +30,10 @@ vk::PipelineShaderStageCreateInfo getShaderStageInfo(
 		.setStage(stage)
 		.setPName(entry);
 }
+
+void vkCheck(vk::Result res) {
+	if (static_cast<int>(res) < 0) {
+		std::cout << "Vulkan error: " << vk::to_string(res) << "\n";
+		std::abort();
+	}
+}

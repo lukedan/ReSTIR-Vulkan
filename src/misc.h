@@ -3,6 +3,7 @@
 #include <unordered_set>
 #include <vector>
 #include <filesystem>
+#include <iostream>
 
 #include <vulkan/vulkan.hpp>
 
@@ -34,3 +35,5 @@ template <auto MPtr, typename T> bool checkSupport(
 [[nodiscard]] std::vector<char> readFile(const std::filesystem::path&);
 
 [[nodiscard]] vk::UniqueShaderModule loadShader(const vk::UniqueDevice&, const std::filesystem::path&);
+
+void vkCheck(vk::Result);

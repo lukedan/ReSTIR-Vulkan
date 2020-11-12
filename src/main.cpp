@@ -122,19 +122,19 @@ int main() {
 			if (props.queueFlags & vk::QueueFlagBits::eGraphics) {
 				graphicsQueueIndex = static_cast<uint32_t>(i);
 			}
-			if (physicalDevice.getSurfaceSupportKHR(i, surface.get())) {
-				presentQueueIndex = i;
+			if (physicalDevice.getSurfaceSupportKHR(static_cast<uint32_t>(i), surface.get())) {
+				presentQueueIndex = static_cast<uint32_t>(i);
 				std::cout << " [Surface support]";
 			}
 			std::cout << "\n";
 		}
 		std::cout << "\n";
-		graphicsQueueIndex = std::find_if(
+		graphicsQueueIndex = static_cast<uint32_t>(std::find_if(
 			queueFamilyProps.begin(), queueFamilyProps.end(),
 			[](const vk::QueueFamilyProperties &props) {
 				return props.queueFlags & vk::QueueFlagBits::eGraphics;
 			}
-		) - queueFamilyProps.begin();
+		) - queueFamilyProps.begin());
 
 		std::vector<vk::DeviceQueueCreateInfo> queueInfos;
 		std::vector<float> queuePriorities{ 1.0f };
@@ -247,7 +247,10 @@ int main() {
 
 	vk::PipelineViewportStateCreateInfo viewportInfo;
 	std::vector<vk::Viewport> viewports{
-		vk::Viewport(0.0f, 0.0f, surfaceExtent.width, surfaceExtent.height, 0.0f, 1.0f)
+		vk::Viewport(
+			0.0f, 0.0f, static_cast<float>(surfaceExtent.width), static_cast<float>(surfaceExtent.height),
+			0.0f, 1.0f
+		)
 	};
 	std::vector<vk::Rect2D> scissors{ vk::Rect2D(vk::Offset2D(0, 0), surfaceExtent) };
 	viewportInfo
@@ -351,7 +354,7 @@ int main() {
 		.setRenderPass(renderPass.get())
 		.setSubpass(0);
 
-	vk::UniquePipeline graphicsPipeline = device->createGraphicsPipelineUnique(nullptr, pipelineInfo);
+	vk::UniquePipeline graphicsPipeline = device->createGraphicsPipelineUnique(nullptr, pipelineInfo).value;
 
 
 	// create framebuffers
@@ -387,7 +390,7 @@ int main() {
 		allocInfo
 			.setCommandPool(commandPool.get())
 			.setLevel(vk::CommandBufferLevel::ePrimary)
-			.setCommandBufferCount(swapchainFramebuffers.size());
+			.setCommandBufferCount(static_cast<uint32_t>(swapchainFramebuffers.size()));
 		commandBuffers = device->allocateCommandBuffersUnique(allocInfo);
 	}
 
