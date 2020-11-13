@@ -22,13 +22,13 @@ GlfwWindow::GlfwWindow(std::initializer_list<std::pair<int, int>> hints) {
 	_glfwCheck(_window);
 }
 
-vk::UniqueSurfaceKHR GlfwWindow::createSurface(const vk::UniqueInstance &instance) {
+vk::UniqueSurfaceKHR GlfwWindow::createSurface(vk::Instance instance) {
 	VkSurfaceKHR surface;
-	if (VkResult res = glfwCreateWindowSurface(instance.get(), _window, nullptr, &surface); res != VK_SUCCESS) {
+	if (VkResult res = glfwCreateWindowSurface(instance, _window, nullptr, &surface); res != VK_SUCCESS) {
 		std::cout << "Failed to create GLFW window surface: " << vk::to_string(static_cast<vk::Result>(res)) << "\n";
 		std::abort();
 	}
-	return vk::UniqueSurfaceKHR(surface, vk::ObjectDestroy<vk::Instance, vk::DispatchLoaderStatic>(instance.get()));
+	return vk::UniqueSurfaceKHR(surface, vk::ObjectDestroy<vk::Instance, vk::DispatchLoaderStatic>(instance));
 }
 
 vk::Extent2D GlfwWindow::getFramebufferSize() const {

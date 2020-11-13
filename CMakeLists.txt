@@ -24,7 +24,9 @@ target_sources(restir
 		"src/glfwWindow.h"
 		"src/main.cpp"
 		"src/misc.cpp"
-		"src/misc.h")
+		"src/misc.h"
+		"src/swapchain.cpp"
+		"src/swapchain.h")
 
 find_package(Vulkan REQUIRED)
 find_package(glfw3 REQUIRED)

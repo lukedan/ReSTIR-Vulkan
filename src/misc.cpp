@@ -11,14 +11,14 @@ std::vector<char> readFile(const std::filesystem::path &path) {
 	return result;
 }
 
-vk::UniqueShaderModule loadShader(const vk::UniqueDevice &dev, const std::filesystem::path &path) {
+vk::UniqueShaderModule loadShader(vk::Device dev, const std::filesystem::path &path) {
 	std::vector<char> binary = readFile(path);
 
 	vk::ShaderModuleCreateInfo shaderInfo;
 	shaderInfo
 		.setCodeSize(binary.size())
 		.setPCode(reinterpret_cast<const uint32_t*>(binary.data()));
-	return dev->createShaderModuleUnique(shaderInfo);
+	return dev.createShaderModuleUnique(shaderInfo);
 }
 
 vk::PipelineShaderStageCreateInfo getShaderStageInfo(

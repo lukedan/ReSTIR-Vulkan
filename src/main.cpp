@@ -5,6 +5,7 @@
 
 #include "glfwWindow.h"
 #include "misc.h"
+#include "swapchain.h"
 
 vk::SurfaceFormatKHR chooseSurfaceFormat(const vk::PhysicalDevice &dev, const vk::SurfaceKHR &surface) {
 	std::vector<vk::SurfaceFormatKHR> available = dev.getSurfaceFormatsKHR(surface);
@@ -33,6 +34,52 @@ vk::Extent2D chooseSwapExtent(
 	result.width = std::clamp(result.width, capabilities.minImageExtent.width, capabilities.maxImageExtent.width);
 	result.height = std::clamp(result.height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height);
 	return result;
+}
+
+
+std::vector<Swapchain::BufferSet> createAndRecordSwapchainBuffers(
+	const Swapchain &swapchain, vk::Device device, vk::RenderPass renderPass, vk::CommandPool commandPool, vk::Pipeline graphicsPipeline
+) {
+	std::vector<Swapchain::BufferSet> swapchainBuffers = swapchain.getBuffers(device, renderPass, commandPool);
+
+	// record command buffers
+	for (const Swapchain::BufferSet &bufferSet : swapchainBuffers) {
+		vk::CommandBufferBeginInfo beginInfo;
+		bufferSet.commandBuffer->begin(beginInfo);
+
+		std::vector<vk::ClearValue> clearValues{
+			vk::ClearValue(std::array<float, 4>{ 0.0f, 0.0f, 0.0f, 1.0f })
+		};
+		vk::RenderPassBeginInfo passBeginInfo;
+		passBeginInfo
+			.setRenderPass(renderPass)
+			.setFramebuffer(bufferSet.framebuffer.get())
+			.setRenderArea(vk::Rect2D(vk::Offset2D(0, 0), swapchain.getImageExtent()))
+			.setClearValues(clearValues);
+		bufferSet.commandBuffer->beginRenderPass(passBeginInfo, vk::SubpassContents::eInline);
+
+		bufferSet.commandBuffer->setViewport(0, { vk::Viewport(
+			0.0f, 0.0f, swapchain.getImageExtent().width, swapchain.getImageExtent().height, 0.0f, 1.0f
+		) });
+		bufferSet.commandBuffer->setScissor(0, { vk::Rect2D(vk::Offset2D(0, 0), swapchain.getImageExtent()) });
+
+		bufferSet.commandBuffer->bindPipeline(vk::PipelineBindPoint::eGraphics, graphicsPipeline);
+		bufferSet.commandBuffer->draw(3, 1, 0, 0);
+
+		bufferSet.commandBuffer->endRenderPass();
+		bufferSet.commandBuffer->end();
+	}
+
+	return swapchainBuffers;
+}
+
+
+uint32_t chooseImageCount(const vk::SurfaceCapabilitiesKHR &capabilities) {
+	uint32_t imageCount = capabilities.minImageCount + 1;
+	if (capabilities.maxImageCount != 0) {
+		imageCount = std::min(imageCount, capabilities.maxImageCount);
+	}
+	return imageCount;
 }
 
 int main() {
@@ -103,12 +150,11 @@ int main() {
 
 	GlfwWindow window(
 		{
-			{ GLFW_CLIENT_API, GLFW_NO_API },
-			{ GLFW_RESIZABLE, GLFW_FALSE }
+			{ GLFW_CLIENT_API, GLFW_NO_API }
 		}
 	);
 
-	vk::UniqueSurfaceKHR surface = window.createSurface(instance);
+	vk::UniqueSurfaceKHR surface = window.createSurface(instance.get());
 
 	vk::UniqueDevice device;
 	uint32_t graphicsQueueIndex = 0;
@@ -160,27 +206,30 @@ int main() {
 	vk::Queue graphicsQueue = device->getQueue(graphicsQueueIndex, 0);
 	vk::Queue presentQueue = device->getQueue(presentQueueIndex, 0);
 
-	vk::SurfaceFormatKHR surfaceFormat = chooseSurfaceFormat(physicalDevice, surface.get());
-	vk::Extent2D surfaceExtent;
+	// create command pool
+	vk::UniqueCommandPool commandPool;
+	{
+		vk::CommandPoolCreateInfo poolInfo;
+		poolInfo
+			.setQueueFamilyIndex(graphicsQueueIndex)
+			.setFlags(vk::CommandPoolCreateFlags());
 
-	vk::UniqueSwapchainKHR swapchain;
+		commandPool = device->createCommandPoolUnique(poolInfo);
+	}
+
+	Swapchain swapchain;
+	vk::SwapchainCreateInfoKHR swapchainInfo;
+	std::vector<uint32_t> swapchainSharedQueues{ graphicsQueueIndex, presentQueueIndex };
 	{
 		vk::SurfaceCapabilitiesKHR capabilities = physicalDevice.getSurfaceCapabilitiesKHR(surface.get());
+		vk::SurfaceFormatKHR surfaceFormat = chooseSurfaceFormat(physicalDevice, surface.get());
 
-		uint32_t imageCount = capabilities.minImageCount + 1;
-		if (capabilities.maxImageCount != 0) {
-			imageCount = std::min(imageCount, capabilities.maxImageCount);
-		}
-
-		surfaceExtent = chooseSwapExtent(capabilities, window);
-
-		vk::SwapchainCreateInfoKHR swapchainInfo;
 		swapchainInfo
 			.setSurface(surface.get())
-			.setMinImageCount(imageCount)
+			.setMinImageCount(chooseImageCount(capabilities))
 			.setImageFormat(surfaceFormat.format)
 			.setImageColorSpace(surfaceFormat.colorSpace)
-			.setImageExtent(surfaceExtent)
+			.setImageExtent(chooseSwapExtent(capabilities, window))
 			.setPresentMode(choosePresentMode(physicalDevice, surface.get()))
 			.setImageArrayLayers(1)
 			.setPreTransform(capabilities.currentTransform)
@@ -188,45 +237,20 @@ int main() {
 			.setClipped(true)
 			.setImageUsage(vk::ImageUsageFlagBits::eColorAttachment);
 
-		std::vector<uint32_t> sharedQueues{ graphicsQueueIndex, presentQueueIndex };
-
 		if (graphicsQueueIndex == presentQueueIndex) {
 			swapchainInfo.setImageSharingMode(vk::SharingMode::eExclusive);
 		} else {
 			swapchainInfo
 				.setImageSharingMode(vk::SharingMode::eConcurrent)
-				.setQueueFamilyIndices(sharedQueues);
+				.setQueueFamilyIndices(swapchainSharedQueues);
 		}
 
-		swapchain = device->createSwapchainKHRUnique(swapchainInfo);
+		swapchain = Swapchain::create(device.get(), swapchainInfo);
 	}
-
-	std::vector<vk::Image> swapchainImages = device->getSwapchainImagesKHR(swapchain.get());
-	std::vector<vk::UniqueImageView> swapchainImageViews;
-	swapchainImageViews.reserve(swapchainImages.size());
-	for (const vk::Image &img : swapchainImages) {
-		vk::ImageSubresourceRange range;
-		range
-			.setAspectMask(vk::ImageAspectFlagBits::eColor)
-			.setBaseMipLevel(0)
-			.setLevelCount(1)
-			.setBaseArrayLayer(0)
-			.setLayerCount(1);
-
-		vk::ImageViewCreateInfo imageViewInfo;
-		imageViewInfo
-			.setImage(img)
-			.setViewType(vk::ImageViewType::e2D)
-			.setFormat(surfaceFormat.format)
-			.setSubresourceRange(range);
-
-		swapchainImageViews.emplace_back(device->createImageViewUnique(imageViewInfo));
-	}
-
 
 	// create pipeline
-	vk::UniqueShaderModule vert = loadShader(device, "shaders/simple.vert.spv");
-	vk::UniqueShaderModule frag = loadShader(device, "shaders/simple.frag.spv");
+	vk::UniqueShaderModule vert = loadShader(device.get(), "shaders/simple.vert.spv");
+	vk::UniqueShaderModule frag = loadShader(device.get(), "shaders/simple.frag.spv");
 	std::vector<vk::PipelineShaderStageCreateInfo> shaderStages;
 	shaderStages.emplace_back()
 		.setModule(vert.get())
@@ -246,16 +270,10 @@ int main() {
 		.setPrimitiveRestartEnable(false);
 
 	vk::PipelineViewportStateCreateInfo viewportInfo;
-	std::vector<vk::Viewport> viewports{
-		vk::Viewport(
-			0.0f, 0.0f, static_cast<float>(surfaceExtent.width), static_cast<float>(surfaceExtent.height),
-			0.0f, 1.0f
-		)
-	};
-	std::vector<vk::Rect2D> scissors{ vk::Rect2D(vk::Offset2D(0, 0), surfaceExtent) };
+	// dynamic viewport & scissor, so no actual sizes here
 	viewportInfo
-		.setViewports(viewports)
-		.setScissors(scissors);
+		.setViewportCount(1)
+		.setScissorCount(1);
 
 	vk::PipelineRasterizationStateCreateInfo rasterizer;
 	rasterizer
@@ -290,7 +308,10 @@ int main() {
 		.setLogicOpEnable(false)
 		.setAttachments(blendFunctions);
 
-	std::vector<vk::DynamicState> dynamicStates{ /*vk::DynamicState::eViewport*/ };
+	std::vector<vk::DynamicState> dynamicStates{
+		vk::DynamicState::eViewport,
+		vk::DynamicState::eScissor
+	};
 	vk::PipelineDynamicStateCreateInfo dynamicStateInfo;
 	dynamicStateInfo
 		.setDynamicStates(dynamicStates);
@@ -298,25 +319,25 @@ int main() {
 	vk::PipelineLayoutCreateInfo layoutCreateInfo;
 	vk::PipelineLayout pipelineLayout = device->createPipelineLayout(layoutCreateInfo);
 
-	std::vector<vk::AttachmentDescription> colorAttachments;
-	colorAttachments.emplace_back()
-		.setFormat(surfaceFormat.format)
-		.setSamples(vk::SampleCountFlagBits::e1)
-		.setLoadOp(vk::AttachmentLoadOp::eClear)
-		.setStoreOp(vk::AttachmentStoreOp::eStore)
-		.setStencilLoadOp(vk::AttachmentLoadOp::eDontCare)
-		.setStencilStoreOp(vk::AttachmentStoreOp::eDontCare)
-		.setInitialLayout(vk::ImageLayout::eUndefined)
-		.setFinalLayout(vk::ImageLayout::ePresentSrcKHR);
-
-	std::vector<vk::AttachmentReference> colorAttachmentReferences;
-	colorAttachmentReferences.emplace_back()
-		.setAttachment(0)
-		.setLayout(vk::ImageLayout::eColorAttachmentOptimal);
-
 
 	vk::UniqueRenderPass renderPass;
 	{
+		std::vector<vk::AttachmentDescription> colorAttachments;
+		colorAttachments.emplace_back()
+			.setFormat(swapchain.getImageFormat())
+			.setSamples(vk::SampleCountFlagBits::e1)
+			.setLoadOp(vk::AttachmentLoadOp::eClear)
+			.setStoreOp(vk::AttachmentStoreOp::eStore)
+			.setStencilLoadOp(vk::AttachmentLoadOp::eDontCare)
+			.setStencilStoreOp(vk::AttachmentStoreOp::eDontCare)
+			.setInitialLayout(vk::ImageLayout::eUndefined)
+			.setFinalLayout(vk::ImageLayout::ePresentSrcKHR);
+
+		std::vector<vk::AttachmentReference> colorAttachmentReferences;
+		colorAttachmentReferences.emplace_back()
+			.setAttachment(0)
+			.setLayout(vk::ImageLayout::eColorAttachmentOptimal);
+
 		std::vector<vk::SubpassDescription> subpasses;
 		subpasses.emplace_back()
 			.setPipelineBindPoint(vk::PipelineBindPoint::eGraphics)
@@ -357,64 +378,9 @@ int main() {
 	vk::UniquePipeline graphicsPipeline = device->createGraphicsPipelineUnique(nullptr, pipelineInfo).value;
 
 
-	// create framebuffers
-	std::vector<vk::UniqueFramebuffer> swapchainFramebuffers;
-	swapchainFramebuffers.reserve(swapchainImageViews.size());
-	for (const vk::UniqueImageView &view : swapchainImageViews) {
-		std::vector<vk::ImageView> attachments{ view.get() };
-		vk::FramebufferCreateInfo framebufferInfo;
-		framebufferInfo
-			.setRenderPass(renderPass.get())
-			.setAttachments(attachments)
-			.setWidth(surfaceExtent.width)
-			.setHeight(surfaceExtent.height)
-			.setLayers(1);
-		swapchainFramebuffers.emplace_back(device->createFramebufferUnique(framebufferInfo));
-	}
-
-
-	// create command pool
-	vk::UniqueCommandPool commandPool;
-	{
-		vk::CommandPoolCreateInfo poolInfo;
-		poolInfo
-			.setQueueFamilyIndex(graphicsQueueIndex)
-			.setFlags(vk::CommandPoolCreateFlags());
-
-		commandPool = device->createCommandPoolUnique(poolInfo);
-	}
-
-	std::vector<vk::UniqueCommandBuffer> commandBuffers;
-	{
-		vk::CommandBufferAllocateInfo allocInfo;
-		allocInfo
-			.setCommandPool(commandPool.get())
-			.setLevel(vk::CommandBufferLevel::ePrimary)
-			.setCommandBufferCount(static_cast<uint32_t>(swapchainFramebuffers.size()));
-		commandBuffers = device->allocateCommandBuffersUnique(allocInfo);
-	}
-
-	for (std::size_t i = 0; i < commandBuffers.size(); ++i) {
-		vk::CommandBufferBeginInfo beginInfo;
-		commandBuffers[i]->begin(beginInfo);
-
-		std::vector<vk::ClearValue> clearValues{
-			vk::ClearValue(std::array<float, 4>{ 0.0f, 0.0f, 0.0f, 1.0f })
-		};
-		vk::RenderPassBeginInfo passBeginInfo;
-		passBeginInfo
-			.setRenderPass(renderPass.get())
-			.setFramebuffer(swapchainFramebuffers[i].get())
-			.setRenderArea(vk::Rect2D(vk::Offset2D(0, 0), surfaceExtent))
-			.setClearValues(clearValues);
-		commandBuffers[i]->beginRenderPass(passBeginInfo, vk::SubpassContents::eInline);
-
-		commandBuffers[i]->bindPipeline(vk::PipelineBindPoint::eGraphics, graphicsPipeline.get());
-		commandBuffers[i]->draw(3, 1, 0, 0);
-
-		commandBuffers[i]->endRenderPass();
-		commandBuffers[i]->end();
-	}
+	std::vector<Swapchain::BufferSet> swapchainBuffers = createAndRecordSwapchainBuffers(
+		swapchain, device.get(), renderPass.get(), commandPool.get(), graphicsPipeline.get()
+	);
 
 
 	// semaphores
@@ -422,7 +388,7 @@ int main() {
 	std::vector<vk::UniqueSemaphore> imageAvailableSemaphore(maxFramesInFlight);
 	std::vector<vk::UniqueSemaphore> renderFinishedSemaphore(maxFramesInFlight);
 	std::vector<vk::UniqueFence> inFlightFences(maxFramesInFlight);
-	std::vector<vk::UniqueFence> inFlightImageFences(swapchainImages.size());
+	std::vector<vk::UniqueFence> inFlightImageFences(swapchainBuffers.size());
 	std::size_t currentFrame = 0;
 	for (std::size_t i = 0; i < maxFramesInFlight; ++i) {
 		vk::SemaphoreCreateInfo semaphoreInfo;
@@ -437,17 +403,39 @@ int main() {
 
 
 	// main loop
+	bool needsResize = false;
+	vk::Extent2D windowSize = window.getFramebufferSize();
 	while (!window.shouldClose()) {
 		glfwPollEvents();
+
+		vk::Extent2D newWindowSize = window.getFramebufferSize();
+		if (needsResize || newWindowSize != windowSize) {
+			device->waitIdle();
+
+			while (newWindowSize.width == 0 && newWindowSize.height == 0) {
+				glfwWaitEvents();
+				newWindowSize = window.getFramebufferSize();
+			}
+			swapchainInfo.setImageExtent(chooseSwapExtent(physicalDevice.getSurfaceCapabilitiesKHR(surface.get()), window));
+
+			swapchainBuffers.clear();
+			swapchain.reset();
+			swapchain = Swapchain::create(device.get(), swapchainInfo);
+			swapchainBuffers = createAndRecordSwapchainBuffers(swapchain, device.get(), renderPass.get(), commandPool.get(), graphicsPipeline.get());
+		}
 
 		device->waitForFences(
 			{ inFlightFences[currentFrame].get() }, true, std::numeric_limits<std::uint64_t>::max()
 		);
 
-		std::uint32_t imageIndex = device->acquireNextImageKHR(
-			swapchain.get(), std::numeric_limits<std::uint64_t>::max(),
+		auto [result, imageIndex] = device->acquireNextImageKHR(
+			swapchain.getSwapchain().get(), std::numeric_limits<std::uint64_t>::max(),
 			imageAvailableSemaphore[currentFrame].get(), nullptr
 		);
+		if (result == vk::Result::eErrorOutOfDateKHR || result == vk::Result::eSuboptimalKHR) {
+			needsResize = true;
+			continue;
+		}
 
 		if (inFlightImageFences[imageIndex]) {
 			device->waitForFences(
@@ -457,7 +445,7 @@ int main() {
 
 		std::vector<vk::Semaphore> waitSemaphores{ imageAvailableSemaphore[currentFrame].get() };
 		std::vector<vk::PipelineStageFlags> waitStages{ vk::PipelineStageFlagBits::eColorAttachmentOutput };
-		std::vector<vk::CommandBuffer> cmdBuffers{ commandBuffers[imageIndex].get() };
+		std::vector<vk::CommandBuffer> cmdBuffers{ swapchainBuffers[imageIndex].commandBuffer.get() };
 		std::vector<vk::Semaphore> signalSemaphores{ renderFinishedSemaphore[currentFrame].get() };
 
 		device->resetFences({ inFlightFences[currentFrame].get() });
@@ -470,7 +458,7 @@ int main() {
 			.setSignalSemaphores(signalSemaphores);
 		graphicsQueue.submit({ submitInfo }, inFlightFences[currentFrame].get());
 
-		std::vector<vk::SwapchainKHR> swapchains{ swapchain.get() };
+		std::vector<vk::SwapchainKHR> swapchains{ swapchain.getSwapchain().get() };
 		std::vector<std::uint32_t> imageIndices{ imageIndex };
 
 		vk::PresentInfoKHR presentInfo;

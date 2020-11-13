@@ -29,7 +29,7 @@ public:
 		reset();
 	}
 
-	[[nodiscard]] vk::UniqueSurfaceKHR createSurface(const vk::UniqueInstance&);
+	[[nodiscard]] vk::UniqueSurfaceKHR createSurface(vk::Instance);
 
 	[[nodiscard]] vk::Extent2D getFramebufferSize() const;
 	[[nodiscard]] bool shouldClose() const {
