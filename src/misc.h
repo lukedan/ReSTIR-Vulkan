@@ -6,6 +6,7 @@
 #include <iostream>
 
 #include <vulkan/vulkan.hpp>
+#include "../gltf/gltfscene.h"
 
 template <auto MPtr, typename T> bool checkSupport(
 	const std::vector<const char*> &required, const std::vector<T> &supported,
@@ -37,3 +38,7 @@ template <auto MPtr, typename T> bool checkSupport(
 [[nodiscard]] vk::UniqueShaderModule loadShader(vk::Device, const std::filesystem::path&);
 
 void vkCheck(vk::Result);
+
+
+// Load a gltf scene
+void loadScene(const std::string& filename, GltfScene& m_gltfScene);

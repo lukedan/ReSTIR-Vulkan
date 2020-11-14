@@ -3,6 +3,12 @@
 
 #include <vulkan/vulkan.hpp>
 
+// Gltf defines
+#define TINYGLTF_IMPLEMENTATION
+#define STB_IMAGE_IMPLEMENTATION
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#define PROJPATH "C:\\JiaruiYan\\MasterDegreeProjects\\CIS565\\Proj6\\project6_project"
+
 #include "glfwWindow.h"
 #include "misc.h"
 #include "swapchain.h"
@@ -82,7 +88,12 @@ uint32_t chooseImageCount(const vk::SurfaceCapabilitiesKHR &capabilities) {
 	return imageCount;
 }
 
+
 int main() {
+	// Load scene
+	GltfScene m_gltfScene;
+	// loadScene("../../../scenes/cornellBox.gltf", m_gltfScene);
+	loadScene("../../../scenes/boxTextured/BoxTextured.gltf", m_gltfScene);
 	std::vector<const char*> requiredExtensions = GlfwWindow::getRequiredInstanceExtensions();
 	std::vector<const char*> requiredDeviceExtensions{
 		"VK_KHR_swapchain"
