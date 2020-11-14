@@ -38,7 +38,7 @@ void vkCheck(vk::Result res) {
 	}
 }
 
-void loadScene(const std::string& filename, GltfScene& m_gltfScene) {
+void loadScene(const std::string& filename, nvh::GltfScene& m_gltfScene) {
 	tinygltf::Model    tmodel;
 	tinygltf::TinyGLTF tcontext;
 	std::string        warn, error;
@@ -46,7 +46,7 @@ void loadScene(const std::string& filename, GltfScene& m_gltfScene) {
 	{
 		assert(!"Error while loading scene");
 	}
-	m_gltfScene.importDrawableNodes(tmodel, GltfAttributes::Normal);
+	m_gltfScene.importDrawableNodes(tmodel, nvh::GltfAttributes::Normal);
 	
 	// Show gltf scene info
 	std::cout << "Show gltf scene info" << std::endl;
@@ -62,9 +62,9 @@ void loadScene(const std::string& filename, GltfScene& m_gltfScene) {
 		<< m_gltfScene.m_dimensions.min.y << ", "
 		<< m_gltfScene.m_dimensions.min.z << "]" << std::endl;
 
-	std::cout << "size:" << m_gltfScene.m_dimensions.radius << std::endl;
+	std::cout << "radius:" << m_gltfScene.m_dimensions.radius << std::endl;
 
-	std::cout << "min:[" << m_gltfScene.m_dimensions.size.x << ", "
+	std::cout << "size:[" << m_gltfScene.m_dimensions.size.x << ", "
 		<< m_gltfScene.m_dimensions.size.y << ", "
 		<< m_gltfScene.m_dimensions.size.z << "]" << std::endl;
 

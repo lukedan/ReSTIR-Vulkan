@@ -91,7 +91,7 @@ uint32_t chooseImageCount(const vk::SurfaceCapabilitiesKHR &capabilities) {
 
 int main() {
 	// Load scene
-	GltfScene m_gltfScene;
+	nvh::GltfScene m_gltfScene;
 	// loadScene("../../../scenes/cornellBox.gltf", m_gltfScene);
 	loadScene("../../../scenes/boxTextured/BoxTextured.gltf", m_gltfScene);
 	std::vector<const char*> requiredExtensions = GlfwWindow::getRequiredInstanceExtensions();

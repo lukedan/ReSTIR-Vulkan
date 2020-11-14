@@ -41,4 +41,4 @@ void vkCheck(vk::Result);
 
 
 // Load a gltf scene
-void loadScene(const std::string& filename, GltfScene& m_gltfScene);
+void loadScene(const std::string& filename, nvh::GltfScene& m_gltfScene);
