@@ -27,17 +27,26 @@ target_sources(restir
 		"src/misc.h"
 		"src/swapchain.cpp"
 		"src/swapchain.h"
-		"gltf/json.hpp"
-		"gltf/stb_image.h"
-		"gltf/stb_image_write.h"
-		"gltf/tiny_gltf.h"
-		 "gltf/gltfscene.h" "gltf/gltfscene.cpp")
+		# "gltf/json.hpp"
+		# "gltf/stb_image.h"
+		# "gltf/stb_image_write.h"
+		# "gltf/tiny_gltf.h"
+		# "gltf/gltfscene.h"
+		"gltf/gltfscene.cpp"
+		"src/vma.cpp"
+		"src/vma.h")
+
 
 find_package(Vulkan REQUIRED)
-find_package(glfw3 REQUIRED)
+find_package(glfw3 CONFIG REQUIRED)
 
-target_include_directories(restir PUBLIC "external_source/nvmath/")
 target_link_libraries(restir PRIVATE Vulkan::Vulkan glfw)
+
+target_include_directories(restir
+	PRIVATE
+		"external_source/nvmath/"
+		"thirdparty/VulkanMemoryAllocator/src"
+		"thirdparty/tinygltf")
 
 add_shader(restir "src/shaders/simple.vert")
 add_shader(restir "src/shaders/simple.frag")

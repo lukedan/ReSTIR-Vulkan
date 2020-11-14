@@ -38,6 +38,9 @@ template <auto MPtr, typename T> bool checkSupport(
 [[nodiscard]] vk::UniqueShaderModule loadShader(vk::Device, const std::filesystem::path&);
 
 void vkCheck(vk::Result);
+inline void vkCheck(VkResult res) {
+	return vkCheck(static_cast<vk::Result>(res));
+}
 
 
 // Load a gltf scene
