@@ -12,6 +12,7 @@
 #include "glfwWindow.h"
 #include "misc.h"
 #include "swapchain.h"
+#include "vma.h"
 
 vk::SurfaceFormatKHR chooseSurfaceFormat(const vk::PhysicalDevice &dev, const vk::SurfaceKHR &surface) {
 	std::vector<vk::SurfaceFormatKHR> available = dev.getSurfaceFormatsKHR(surface);
@@ -90,6 +91,8 @@ uint32_t chooseImageCount(const vk::SurfaceCapabilitiesKHR &capabilities) {
 
 
 int main() {
+	constexpr uint32_t vulkanApiVersion = VK_MAKE_VERSION(1, 0, 0);
+
 	// Load scene
 	GltfScene m_gltfScene;
 	// loadScene("../../../scenes/cornellBox.gltf", m_gltfScene);
@@ -122,7 +125,7 @@ int main() {
 		vk::ApplicationInfo appInfo;
 		appInfo
 			.setPApplicationName("ReSTIR")
-			.setApiVersion(VK_MAKE_VERSION(1, 0, 0));
+			.setApiVersion(vulkanApiVersion);
 		vk::InstanceCreateInfo instanceInfo;
 		instanceInfo
 			.setPApplicationInfo(&appInfo)
@@ -214,6 +217,10 @@ int main() {
 		device = physicalDevice.createDeviceUnique(deviceInfo);
 	}
 
+
+	vma::Allocator allocator = vma::Allocator::create(vulkanApiVersion, instance.get(), physicalDevice, device.get());
+
+
 	vk::Queue graphicsQueue = device->getQueue(graphicsQueueIndex, 0);
 	vk::Queue presentQueue = device->getQueue(presentQueueIndex, 0);
 
@@ -258,6 +265,7 @@ int main() {
 
 		swapchain = Swapchain::create(device.get(), swapchainInfo);
 	}
+
 
 	// create pipeline
 	vk::UniqueShaderModule vert = loadShader(device.get(), "shaders/simple.vert.spv");

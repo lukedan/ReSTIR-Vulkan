@@ -28,7 +28,7 @@ vk::UniqueSurfaceKHR GlfwWindow::createSurface(vk::Instance instance) {
 		std::cout << "Failed to create GLFW window surface: " << vk::to_string(static_cast<vk::Result>(res)) << "\n";
 		std::abort();
 	}
-	return vk::UniqueSurfaceKHR(surface, vk::ObjectDestroy<vk::Instance, vk::DispatchLoaderStatic>(instance));
+	return vk::UniqueSurfaceKHR(surface, vk::ObjectDestroy<vk::Instance, VULKAN_HPP_DEFAULT_DISPATCHER_TYPE>(instance));
 }
 
 vk::Extent2D GlfwWindow::getFramebufferSize() const {
