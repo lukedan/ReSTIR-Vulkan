@@ -13,8 +13,9 @@
 #include "misc.h"
 #include "swapchain.h"
 #include "vma.h"
-#include "shaderStructs/vertex.h"
+#include "sceneBuffers.h"
 #include "passes/demoPass.h"
+#include "passes/gBufferPass.h"
 
 vk::SurfaceFormatKHR chooseSurfaceFormat(const vk::PhysicalDevice &dev, const vk::SurfaceKHR &surface) {
 	std::vector<vk::SurfaceFormatKHR> available = dev.getSurfaceFormatsKHR(surface);
@@ -55,19 +56,7 @@ std::vector<Swapchain::BufferSet> createAndRecordSwapchainBuffers(
 	for (const Swapchain::BufferSet &bufferSet : swapchainBuffers) {
 		vk::CommandBufferBeginInfo beginInfo;
 		bufferSet.commandBuffer->begin(beginInfo);
-
-		std::vector<vk::ClearValue> clearValues{
-			vk::ClearValue(std::array<float, 4>{ 0.0f, 0.0f, 0.0f, 1.0f })
-		};
-		vk::RenderPassBeginInfo passBeginInfo;
-		passBeginInfo
-			.setRenderPass(pass.getPass())
-			.setFramebuffer(bufferSet.framebuffer.get())
-			.setRenderArea(vk::Rect2D(vk::Offset2D(0, 0), swapchain.getImageExtent()))
-			.setClearValues(clearValues);
-		bufferSet.commandBuffer->beginRenderPass(passBeginInfo, vk::SubpassContents::eInline);
-		pass.issueCommands(bufferSet.commandBuffer.get());
-		bufferSet.commandBuffer->endRenderPass();
+		pass.issueCommands(bufferSet.commandBuffer.get(), bufferSet.framebuffer.get());
 		bufferSet.commandBuffer->end();
 	}
 
@@ -91,6 +80,8 @@ int main() {
 	nvh::GltfScene m_gltfScene;
 	// loadScene("../../../scenes/cornellBox.gltf", m_gltfScene);
 	loadScene("../../../scenes/boxTextured/BoxTextured.gltf", m_gltfScene);
+
+
 	std::vector<const char*> requiredExtensions = GlfwWindow::getRequiredInstanceExtensions();
 	std::vector<const char*> requiredDeviceExtensions{
 		"VK_KHR_swapchain"
@@ -213,7 +204,6 @@ int main() {
 
 
 	vma::Allocator allocator = vma::Allocator::create(vulkanApiVersion, instance.get(), physicalDevice, device.get());
-
 
 	vk::Queue graphicsQueue = device->getQueue(graphicsQueueIndex, 0);
 	vk::Queue presentQueue = device->getQueue(presentQueueIndex, 0);
@@ -353,7 +343,11 @@ int main() {
 			.setWaitSemaphores(signalSemaphores)
 			.setSwapchains(swapchains)
 			.setImageIndices(imageIndices);
-		presentQueue.presentKHR(presentInfo);
+		try {
+			presentQueue.presentKHR(presentInfo);
+		} catch (const vk::OutOfDateKHRError&) {
+			needsResize = true;
+		}
 
 		currentFrame = (currentFrame + 1) % maxFramesInFlight;
 	}

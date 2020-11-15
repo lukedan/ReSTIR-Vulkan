@@ -15,7 +15,7 @@ namespace vma {
 		UniqueHandle() = default;
 		UniqueHandle(Derived &&src) :
 			_object(src._object), _allocation(src._allocation), _allocator(src._allocator) {
-		
+
 			assert(&src != this);
 			src._object = T();
 			src._allocation = nullptr;
@@ -39,6 +39,10 @@ namespace vma {
 		UniqueHandle &operator=(const UniqueHandle&) = delete;
 		~UniqueHandle() {
 			reset();
+		}
+
+		T get() const {
+			return _object;
 		}
 
 		void reset() {
@@ -71,6 +75,14 @@ namespace vma {
 		UniqueBuffer &operator=(UniqueBuffer &&src) {
 			Base::operator=(std::move(src));
 			return *this;
+		}
+
+		void *map();
+		template <typename T> T *mapAs() {
+			return static_cast<T*>(map());
+		}
+		void unmap() {
+			vmaUnmapMemory(_getAllocator(), _allocation);
 		}
 	private:
 		void _release() {
@@ -121,6 +133,39 @@ namespace vma {
 
 		[[nodiscard]] UniqueBuffer createBuffer(const vk::BufferCreateInfo&, const VmaAllocationCreateInfo&);
 		[[nodiscard]] UniqueImage createImage(const vk::ImageCreateInfo&, const VmaAllocationCreateInfo&);
+
+		[[nodiscard]] UniqueImage createImage2D(
+			vk::Extent2D size, vk::Format format, vk::ImageUsageFlags usage,
+			VmaMemoryUsage memoryUsage = VMA_MEMORY_USAGE_GPU_ONLY,
+			vk::ImageTiling tiling = vk::ImageTiling::eOptimal,
+			uint32_t mipLevels = 1,
+			vk::SampleCountFlagBits sampleCount = vk::SampleCountFlagBits::e1,
+			const std::vector<uint32_t> *sharedQueues = nullptr,
+			vk::ImageLayout initialLayout = vk::ImageLayout::eUndefined,
+			uint32_t arrayLayers = 1
+		);
+		template <typename T> [[nodiscard]] UniqueBuffer createTypedBuffer(
+			std::size_t numElements, vk::BufferUsageFlags usage,
+			VmaMemoryUsage memoryUsage = VMA_MEMORY_USAGE_CPU_TO_GPU,
+			const std::vector<uint32_t> *sharedQueues = nullptr
+		) {
+			vk::BufferCreateInfo bufferInfo;
+			bufferInfo
+				.setSize(static_cast<uint32_t>(sizeof(T) * numElements))
+				.setUsage(usage);
+			if (sharedQueues) {
+				bufferInfo
+					.setSharingMode(vk::SharingMode::eConcurrent)
+					.setQueueFamilyIndices(*sharedQueues);
+			} else {
+				bufferInfo.setSharingMode(vk::SharingMode::eExclusive);
+			}
+
+			VmaAllocationCreateInfo allocationInfo{};
+			allocationInfo.usage = memoryUsage;
+
+			return createBuffer(bufferInfo, allocationInfo);
+		}
 
 		void reset() {
 			if (_allocator) {

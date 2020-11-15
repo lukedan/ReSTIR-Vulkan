@@ -22,6 +22,7 @@ target_sources(restir
 	PRIVATE
 		"src/shaderStructs/vertex.h"
 		"src/passes/demoPass.h"
+		"src/passes/gBufferPass.cpp"
 		"src/passes/gBufferPass.h"
 		"src/passes/pass.h"
 		"src/glfwWindow.cpp"
@@ -29,12 +30,9 @@ target_sources(restir
 		"src/main.cpp"
 		"src/misc.cpp"
 		"src/misc.h"
+		"src/sceneBuffers.h"
 		"src/swapchain.cpp"
 		"src/swapchain.h"
-		# "gltf/json.hpp"
-		# "gltf/stb_image.h"
-		# "gltf/stb_image_write.h"
-		# "gltf/tiny_gltf.h"
 		# "gltf/gltfscene.h"
 		"gltf/gltfscene.cpp"
 		"src/shader.h"
@@ -55,3 +53,5 @@ target_include_directories(restir
 
 add_shader(restir "src/shaders/simple.vert")
 add_shader(restir "src/shaders/simple.frag")
+add_shader(restir "src/shaders/gBuffer.vert")
+add_shader(restir "src/shaders/gBuffer.frag")

@@ -1,27 +1,16 @@
 #include "swapchain.h"
 
+#include "misc.h"
+
 std::vector<Swapchain::BufferSet> Swapchain::getBuffers(
 	vk::Device device, vk::RenderPass renderPass, vk::CommandPool commandPool
 ) const {
 	std::vector<BufferSet> result(_swapchainImages.size());
 
-	vk::ImageSubresourceRange range; // for all image views
-	range
-		.setAspectMask(vk::ImageAspectFlagBits::eColor)
-		.setBaseMipLevel(0)
-		.setLevelCount(1)
-		.setBaseArrayLayer(0)
-		.setLayerCount(1);
 	for (std::size_t i = 0; i < result.size(); ++i) {
-		// create image view
-		vk::ImageViewCreateInfo imageViewInfo;
-		imageViewInfo
-			.setImage(_swapchainImages[i])
-			.setViewType(vk::ImageViewType::e2D)
-			.setFormat(_imageFormat)
-			.setSubresourceRange(range);
-
-		result[i].imageView = device.createImageViewUnique(imageViewInfo);
+		result[i].imageView = createImageView2D(
+			device, _swapchainImages[i], _imageFormat, vk::ImageAspectFlagBits::eColor
+		);
 
 		// create framebuffer
 		std::vector<vk::ImageView> attachments{ result[i].imageView.get() };

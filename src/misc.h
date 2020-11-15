@@ -8,6 +8,16 @@
 #include <vulkan/vulkan.hpp>
 #include "../gltf/gltfscene.h"
 
+
+[[nodiscard]] std::vector<char> readFile(const std::filesystem::path&);
+
+
+// vulkan helpers
+void vkCheck(vk::Result);
+inline void vkCheck(VkResult res) {
+	return vkCheck(static_cast<vk::Result>(res));
+}
+
 template <auto MPtr, typename T> bool checkSupport(
 	const std::vector<const char*> &required, const std::vector<T> &supported,
 	std::string_view name, std::string_view indent = ""
@@ -33,13 +43,31 @@ template <auto MPtr, typename T> bool checkSupport(
 	return pending.empty();
 }
 
-[[nodiscard]] std::vector<char> readFile(const std::filesystem::path&);
+[[nodiscard]] vk::Format findSupportedFormat(
+	const std::vector<vk::Format> &candidates, vk::PhysicalDevice, vk::ImageTiling, vk::FormatFeatureFlags
+);
 
-[[nodiscard]] vk::UniqueShaderModule loadShader(vk::Device, const std::filesystem::path&);
+[[nodiscard]] inline vk::UniqueImageView createImageView2D(
+	vk::Device device, vk::Image image, vk::Format format, vk::ImageAspectFlags aspect,
+	uint32_t baseMipLevel = 0, uint32_t mipLevelCount = 1,
+	uint32_t baseArrayLayer = 0, uint32_t arrayLayerCount = 1
+) {
+	vk::ImageSubresourceRange range;
+	range
+		.setAspectMask(aspect)
+		.setBaseMipLevel(baseMipLevel)
+		.setLevelCount(mipLevelCount)
+		.setBaseArrayLayer(baseArrayLayer)
+		.setLayerCount(arrayLayerCount);
 
-void vkCheck(vk::Result);
-inline void vkCheck(VkResult res) {
-	return vkCheck(static_cast<vk::Result>(res));
+	vk::ImageViewCreateInfo imageViewInfo;
+	imageViewInfo
+		.setImage(image)
+		.setViewType(vk::ImageViewType::e2D)
+		.setFormat(format)
+		.setSubresourceRange(range);
+
+	return device.createImageViewUnique(imageViewInfo);
 }
 
 

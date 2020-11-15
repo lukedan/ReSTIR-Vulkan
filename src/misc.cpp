@@ -11,24 +11,24 @@ std::vector<char> readFile(const std::filesystem::path &path) {
 	return result;
 }
 
-vk::UniqueShaderModule loadShader(vk::Device dev, const std::filesystem::path &path) {
-	std::vector<char> binary = readFile(path);
-
-	vk::ShaderModuleCreateInfo shaderInfo;
-	shaderInfo
-		.setCodeSize(binary.size())
-		.setPCode(reinterpret_cast<const uint32_t*>(binary.data()));
-	return dev.createShaderModuleUnique(shaderInfo);
-}
-
-vk::PipelineShaderStageCreateInfo getShaderStageInfo(
-	const vk::UniqueShaderModule &mod, vk::ShaderStageFlagBits stage, const char *entry
+[[nodiscard]] vk::Format findSupportedFormat(
+	const std::vector<vk::Format> &candidates, vk::PhysicalDevice physicalDevice,
+	vk::ImageTiling requiredTiling, vk::FormatFeatureFlags requiredFeatures
 ) {
-	vk::PipelineShaderStageCreateInfo info;
-	return info
-		.setModule(mod.get())
-		.setStage(stage)
-		.setPName(entry);
+	for (vk::Format fmt : candidates) {
+		vk::FormatProperties properties = physicalDevice.getFormatProperties(fmt);
+		vk::FormatFeatureFlags features =
+			requiredTiling == vk::ImageTiling::eLinear ?
+			properties.linearTilingFeatures :
+			properties.optimalTilingFeatures;
+		if ((features & requiredFeatures) == requiredFeatures) {
+			return fmt;
+		}
+	}
+	std::cout <<
+		"Failed to find format with tiling " << vk::to_string(requiredTiling) <<
+		" and features " << vk::to_string(requiredFeatures) << "\n";
+	std::abort();
 }
 
 void vkCheck(vk::Result res) {
@@ -42,12 +42,11 @@ void loadScene(const std::string& filename, nvh::GltfScene& m_gltfScene) {
 	tinygltf::Model    tmodel;
 	tinygltf::TinyGLTF tcontext;
 	std::string        warn, error;
-	if (!tcontext.LoadASCIIFromFile(&tmodel, &error, &warn, filename))
-	{
+	if (!tcontext.LoadASCIIFromFile(&tmodel, &error, &warn, filename)) {
 		assert(!"Error while loading scene");
 	}
 	m_gltfScene.importDrawableNodes(tmodel, nvh::GltfAttributes::Normal);
-	
+
 	// Show gltf scene info
 	std::cout << "Show gltf scene info" << std::endl;
 	std::cout << "scene center:[" << m_gltfScene.m_dimensions.center.x << ", "

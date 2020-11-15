@@ -1,22 +1,36 @@
 #pragma once
 
+#include <array>
+
 #include "pass.h"
 #include "../misc.h"
 #include "../shader.h"
 
 class DemoPass : public Pass {
 public:
-	DemoPass(vk::Format format) : Pass(), _swapchainFormat(format) {
+	explicit DemoPass(vk::Format format) : Pass(), _swapchainFormat(format) {
 	}
 
-	void issueCommands(vk::CommandBuffer buf) const override {
-		buf.setViewport(0, { vk::Viewport(
+	void issueCommands(vk::CommandBuffer commandBuffer, vk::Framebuffer framebuffer) const override {
+		std::array<vk::ClearValue, 1> clearValues;
+		clearValues[0].color = std::array<float, 4>{ 0.0f, 0.0f, 0.0f, 1.0f };
+		vk::RenderPassBeginInfo passBeginInfo;
+		passBeginInfo
+			.setRenderPass(getPass())
+			.setFramebuffer(framebuffer)
+			.setRenderArea(vk::Rect2D(vk::Offset2D(0, 0), imageExtent))
+			.setClearValues(clearValues);
+		commandBuffer.beginRenderPass(passBeginInfo, vk::SubpassContents::eInline);
+
+		commandBuffer.setViewport(0, { vk::Viewport(
 			0.0f, 0.0f, imageExtent.width, imageExtent.height, 0.0f, 1.0f
 		) });
-		buf.setScissor(0, { vk::Rect2D(vk::Offset2D(0, 0), imageExtent) });
+		commandBuffer.setScissor(0, { vk::Rect2D(vk::Offset2D(0, 0), imageExtent) });
 
-		buf.bindPipeline(vk::PipelineBindPoint::eGraphics, getPipelines()[0].get());
-		buf.draw(3, 1, 0, 0);
+		commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, getPipelines()[0].get());
+		commandBuffer.draw(3, 1, 0, 0);
+
+		commandBuffer.endRenderPass();
 	}
 
 	vk::Extent2D imageExtent;

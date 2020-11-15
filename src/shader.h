@@ -20,24 +20,26 @@ public:
 		return static_cast<bool>(_module);
 	}
 
-	[[nodiscard]] inline static Shader load(
-		vk::Device dev, const std::filesystem::path &path, const char *entry, vk::ShaderStageFlagBits stage
+	[[nodiscard]] inline static vk::UniqueShaderModule loadModule(
+		vk::Device dev, const std::filesystem::path &path
 	) {
-		Shader result;
-
 		std::vector<char> binary = readFile(path);
 
 		vk::ShaderModuleCreateInfo shaderInfo;
 		shaderInfo
 			.setCodeSize(binary.size())
 			.setPCode(reinterpret_cast<const uint32_t*>(binary.data()));
-		result._module = dev.createShaderModuleUnique(shaderInfo);
-
+		return dev.createShaderModuleUnique(shaderInfo);
+	}
+	[[nodiscard]] inline static Shader load(
+		vk::Device dev, const std::filesystem::path &path, const char *entry, vk::ShaderStageFlagBits stage
+	) {
+		Shader result;
+		result._module = loadModule(dev, path);
 		result._shaderInfo
 			.setModule(result._module.get())
 			.setPName(entry)
 			.setStage(stage);
-
 		return result;
 	}
 private:

@@ -7,6 +7,13 @@
 #include "misc.h"
 
 namespace vma {
+	void *UniqueBuffer::map() {
+		void *mapped = nullptr;
+		vkCheck(vmaMapMemory(_getAllocator(), _allocation, &mapped));
+		return mapped;
+	}
+
+
 	UniqueBuffer Allocator::createBuffer(
 		const vk::BufferCreateInfo &vkBufferInfo, const VmaAllocationCreateInfo &allocationInfo
 	) {
@@ -29,6 +36,38 @@ namespace vma {
 		result._object = image;
 		result._allocator = this;
 		return result;
+	}
+
+	UniqueImage Allocator::createImage2D(
+		vk::Extent2D size, vk::Format format, vk::ImageUsageFlags usage,
+		VmaMemoryUsage memoryUsage, vk::ImageTiling tiling,
+		uint32_t mipLevels, vk::SampleCountFlagBits sampleCount,
+		const std::vector<uint32_t> *sharedQueues,
+		vk::ImageLayout initialLayout, uint32_t arrayLayers
+	) {
+		vk::ImageCreateInfo imageInfo;
+		imageInfo
+			.setImageType(vk::ImageType::e2D)
+			.setExtent(vk::Extent3D(size, 1))
+			.setFormat(format)
+			.setSamples(sampleCount)
+			.setMipLevels(mipLevels)
+			.setArrayLayers(arrayLayers)
+			.setTiling(tiling)
+			.setInitialLayout(initialLayout)
+			.setUsage(usage);
+		if (sharedQueues) {
+			imageInfo
+				.setSharingMode(vk::SharingMode::eConcurrent)
+				.setQueueFamilyIndices(*sharedQueues);
+		} else {
+			imageInfo.setSharingMode(vk::SharingMode::eExclusive);
+		}
+
+		VmaAllocationCreateInfo allocationInfo{};
+		allocationInfo.usage = memoryUsage;
+
+		return createImage(imageInfo, allocationInfo);
 	}
 
 	Allocator Allocator::create(

@@ -24,6 +24,14 @@ public:
 				.setLineWidth(1.0f);
 			return info;
 		}
+		[[nodiscard]] inline static vk::PipelineDepthStencilStateCreateInfo getDefaultDepthTestState() {
+			vk::PipelineDepthStencilStateCreateInfo info;
+			info
+				.setDepthTestEnable(true)
+				.setDepthWriteEnable(true)
+				.setDepthCompareOp(vk::CompareOp::eLess);
+			return info;
+		}
 		[[nodiscard]] inline static vk::PipelineMultisampleStateCreateInfo getNoMultisampleState() {
 			vk::PipelineMultisampleStateCreateInfo info;
 			info.setRasterizationSamples(vk::SampleCountFlagBits::e1);
@@ -58,8 +66,11 @@ public:
 
 		vk::PipelineVertexInputStateCreateInfo vertexInputState;
 		vk::PipelineInputAssemblyStateCreateInfo inputAssemblyState;
+		std::vector<vk::Viewport> viewportStorage;
+		std::vector<vk::Rect2D> scissorStorage;
 		vk::PipelineViewportStateCreateInfo viewportState;
 		vk::PipelineRasterizationStateCreateInfo rasterizationState;
+		vk::PipelineDepthStencilStateCreateInfo depthStencilState;
 		vk::PipelineMultisampleStateCreateInfo multisampleState;
 		std::vector<vk::PipelineColorBlendAttachmentState> attachmentColorBlendStorage;
 		vk::PipelineColorBlendStateCreateInfo colorBlendState;
@@ -70,7 +81,7 @@ public:
 
 	virtual ~Pass() = default;
 
-	virtual void issueCommands(vk::CommandBuffer) const = 0;
+	virtual void issueCommands(vk::CommandBuffer, vk::Framebuffer) const = 0;
 
 	[[nodiscard]] vk::RenderPass getPass() const {
 		return _pass.get();
@@ -98,9 +109,10 @@ protected:
 		for (std::size_t i = 0; i < pipelineInfo.size(); ++i) {
 			const PipelineCreationInfo &info = pipelineInfo[i];
 
-			// attachmentColorBlendStorage acts as a storage for colorBlendState.pAttachments, so you must set it
-			// using setAttachments()
+			// checks that storages are properly bound
 			assert(info.colorBlendState.pAttachments == info.attachmentColorBlendStorage.data());
+			assert(info.viewportState.pViewports == info.viewportStorage.data());
+			assert(info.viewportState.pScissors == info.scissorStorage.data());
 
 			vk::PipelineDynamicStateCreateInfo dynamicStateInfo;
 			dynamicStateInfo.setDynamicStates(info.dynamicStates);
@@ -111,6 +123,7 @@ protected:
 				.setPInputAssemblyState(&info.inputAssemblyState)
 				.setPViewportState(&info.viewportState)
 				.setPRasterizationState(&info.rasterizationState)
+				.setPDepthStencilState(&info.depthStencilState)
 				.setPMultisampleState(&info.multisampleState)
 				.setPColorBlendState(&info.colorBlendState)
 				.setStages(info.shaderStages)
@@ -121,6 +134,10 @@ protected:
 			pipelines[i] = dev.createGraphicsPipelineUnique(nullptr, pipelineInfo);
 		}
 		return pipelines;
+	}
+	void _recreatePipelines(vk::Device dev) {
+		_pipelines.clear();
+		_pipelines = _createPipelines(dev);
 	}
 	virtual void _initialize(vk::Device dev) {
 		_pass = _createPass(dev);
