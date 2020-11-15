@@ -54,10 +54,13 @@ private:
 };
 
 class GBufferPass : public Pass {
+	friend Pass;
 public:
 	struct PushConstants {
 		nvmath::mat4 transform;
 	};
+
+	GBufferPass() = default;
 
 	void issueCommands(vk::CommandBuffer commandBuffer, vk::Framebuffer framebuffer) const override {
 		std::array<vk::ClearValue, 3> clearValues{
@@ -98,6 +101,9 @@ public:
 	const SceneBuffers *sceneBuffers = nullptr;
 	nvmath::mat4 cameraMatrix;
 protected:
+	explicit GBufferPass(vk::Extent2D extent) : _bufferExtent(extent) {
+	}
+
 	vk::Extent2D _bufferExtent;
 	Shader _vert, _frag;
 	vk::UniquePipelineLayout _pipelineLayout;
@@ -125,7 +131,7 @@ protected:
 			.setInitialLayout(vk::ImageLayout::eUndefined)
 			.setFinalLayout(vk::ImageLayout::eShaderReadOnlyOptimal);
 		attachments.emplace_back()
-			.setFormat(formats.albedo)
+			.setFormat(formats.depth)
 			.setSamples(vk::SampleCountFlagBits::e1)
 			.setLoadOp(vk::AttachmentLoadOp::eClear)
 			.setStoreOp(vk::AttachmentStoreOp::eStore)
@@ -174,20 +180,17 @@ protected:
 		std::vector<PipelineCreationInfo> result;
 		PipelineCreationInfo &info = result.emplace_back();
 
-		std::array<vk::VertexInputBindingDescription, 2> bindingDesc{
-			vk::VertexInputBindingDescription(0, sizeof(Vertex), vk::VertexInputRate::eVertex)
-		};
-		std::array<vk::VertexInputAttributeDescription, 4> attributeDesc{
-			vk::VertexInputAttributeDescription(0, 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, position)),
-			vk::VertexInputAttributeDescription(1, 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, normal)),
-			vk::VertexInputAttributeDescription(2, 0, vk::Format::eR32G32B32A32Sfloat, offsetof(Vertex, color)),
-			vk::VertexInputAttributeDescription(3, 0, vk::Format::eR32G32Sfloat, offsetof(Vertex, uv))
-		};
-
+		info.vertexInputBindingStorage.emplace_back(0, sizeof(Vertex), vk::VertexInputRate::eVertex);
+		info.vertexInputAttributeStorage.emplace_back(0, 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, position));
+		info.vertexInputAttributeStorage.emplace_back(1, 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, normal));
+		info.vertexInputAttributeStorage.emplace_back(2, 0, vk::Format::eR32G32B32A32Sfloat, offsetof(Vertex, color));
+		info.vertexInputAttributeStorage.emplace_back(3, 0, vk::Format::eR32G32Sfloat, offsetof(Vertex, uv));
 		info.vertexInputState
-			.setVertexBindingDescriptions(bindingDesc)
-			.setVertexAttributeDescriptions(attributeDesc);
+			.setVertexBindingDescriptions(info.vertexInputBindingStorage)
+			.setVertexAttributeDescriptions(info.vertexInputAttributeStorage);
+
 		info.inputAssemblyState = PipelineCreationInfo::getTriangleListWithoutPrimitiveRestartInputAssembly();
+
 		info.viewportStorage.emplace_back(
 			0.0f, 0.0f, _bufferExtent.width, _bufferExtent.height, 0.0f, 1.0f
 		);
@@ -195,13 +198,20 @@ protected:
 		info.viewportState
 			.setViewports(info.viewportStorage)
 			.setScissors(info.scissorStorage);
+
 		info.rasterizationState = PipelineCreationInfo::getDefaultRasterizationState();
+
 		info.depthStencilState = PipelineCreationInfo::getDefaultDepthTestState();
+
 		info.multisampleState = PipelineCreationInfo::getNoMultisampleState();
+
+		info.attachmentColorBlendStorage.emplace_back(PipelineCreationInfo::getNoBlendAttachment());
 		info.attachmentColorBlendStorage.emplace_back(PipelineCreationInfo::getNoBlendAttachment());
 		info.colorBlendState.setAttachments(info.attachmentColorBlendStorage);
+
 		info.shaderStages.emplace_back(_frag.getStageInfo());
 		info.shaderStages.emplace_back(_vert.getStageInfo());
+
 		info.pipelineLayout = _pipelineLayout.get();
 
 		return result;

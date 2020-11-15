@@ -64,18 +64,29 @@ public:
 			return info;
 		}
 
+		std::vector<vk::VertexInputBindingDescription> vertexInputBindingStorage;
+		std::vector<vk::VertexInputAttributeDescription> vertexInputAttributeStorage;
 		vk::PipelineVertexInputStateCreateInfo vertexInputState;
+
 		vk::PipelineInputAssemblyStateCreateInfo inputAssemblyState;
+
 		std::vector<vk::Viewport> viewportStorage;
 		std::vector<vk::Rect2D> scissorStorage;
 		vk::PipelineViewportStateCreateInfo viewportState;
+
 		vk::PipelineRasterizationStateCreateInfo rasterizationState;
+
 		vk::PipelineDepthStencilStateCreateInfo depthStencilState;
+
 		vk::PipelineMultisampleStateCreateInfo multisampleState;
+
 		std::vector<vk::PipelineColorBlendAttachmentState> attachmentColorBlendStorage;
 		vk::PipelineColorBlendStateCreateInfo colorBlendState;
+
 		std::vector<vk::PipelineShaderStageCreateInfo> shaderStages;
+
 		std::vector<vk::DynamicState> dynamicStates;
+
 		vk::PipelineLayout pipelineLayout;
 	};
 
@@ -110,6 +121,8 @@ protected:
 			const PipelineCreationInfo &info = pipelineInfo[i];
 
 			// checks that storages are properly bound
+			assert(info.vertexInputState.pVertexBindingDescriptions == info.vertexInputBindingStorage.data());
+			assert(info.vertexInputState.pVertexAttributeDescriptions == info.vertexInputAttributeStorage.data());
 			assert(info.colorBlendState.pAttachments == info.attachmentColorBlendStorage.data());
 			assert(info.viewportState.pViewports == info.viewportStorage.data());
 			assert(info.viewportState.pScissors == info.scissorStorage.data());
@@ -117,8 +130,8 @@ protected:
 			vk::PipelineDynamicStateCreateInfo dynamicStateInfo;
 			dynamicStateInfo.setDynamicStates(info.dynamicStates);
 
-			vk::GraphicsPipelineCreateInfo pipelineInfo;
-			pipelineInfo
+			vk::GraphicsPipelineCreateInfo thisPipelineInfo;
+			thisPipelineInfo
 				.setPVertexInputState(&info.vertexInputState)
 				.setPInputAssemblyState(&info.inputAssemblyState)
 				.setPViewportState(&info.viewportState)
@@ -131,7 +144,7 @@ protected:
 				.setPDynamicState(&dynamicStateInfo)
 				.setRenderPass(_pass.get())
 				.setSubpass(static_cast<uint32_t>(i));
-			pipelines[i] = dev.createGraphicsPipelineUnique(nullptr, pipelineInfo);
+			pipelines[i] = dev.createGraphicsPipelineUnique(nullptr, thisPipelineInfo);
 		}
 		return pipelines;
 	}

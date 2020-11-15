@@ -1,15 +1,11 @@
 #pragma once
 
-#include <array>
-
 #include "pass.h"
-#include "../misc.h"
-#include "../shader.h"
 
-class DemoPass : public Pass {
-	friend Pass;
+class LightingPass : public Pass {
 public:
-	DemoPass() = default;
+	explicit LightingPass(vk::Format format) : Pass(), _swapchainFormat(format) {
+	}
 
 	void issueCommands(vk::CommandBuffer commandBuffer, vk::Framebuffer framebuffer) const override {
 		std::array<vk::ClearValue, 1> clearValues;
@@ -35,11 +31,9 @@ public:
 
 	vk::Extent2D imageExtent;
 protected:
-	explicit DemoPass(vk::Format format) : Pass(), _swapchainFormat(format) {
-	}
-
 	Shader _vert, _frag;
 	vk::Format _swapchainFormat;
+	vk::UniqueSampler _sampler;
 	vk::UniquePipelineLayout _pipelineLayout;
 
 	vk::UniqueRenderPass _createPass(vk::Device device) override {

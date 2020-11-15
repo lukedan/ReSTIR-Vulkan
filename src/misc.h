@@ -4,6 +4,7 @@
 #include <vector>
 #include <filesystem>
 #include <iostream>
+#include <optional>
 
 #include <vulkan/vulkan.hpp>
 #include "../gltf/gltfscene.h"
@@ -47,27 +48,42 @@ template <auto MPtr, typename T> bool checkSupport(
 	const std::vector<vk::Format> &candidates, vk::PhysicalDevice, vk::ImageTiling, vk::FormatFeatureFlags
 );
 
-[[nodiscard]] inline vk::UniqueImageView createImageView2D(
+[[nodiscard]] vk::UniqueImageView createImageView2D(
 	vk::Device device, vk::Image image, vk::Format format, vk::ImageAspectFlags aspect,
 	uint32_t baseMipLevel = 0, uint32_t mipLevelCount = 1,
 	uint32_t baseArrayLayer = 0, uint32_t arrayLayerCount = 1
+);
+
+[[nodiscard]] inline vk::UniqueSampler createSampler(
+	vk::Device device, vk::Filter magFilter = vk::Filter::eLinear, vk::Filter minFilter = vk::Filter::eLinear,
+	vk::SamplerMipmapMode mipmapMode = vk::SamplerMipmapMode::eLinear,
+	float minMipLod = 0.0f, float maxMipLod = 0.0f, float mipLodBias = 0.0f,
+	vk::SamplerAddressMode addressMode = vk::SamplerAddressMode::eRepeat,
+	std::optional<float> anisotropy = std::nullopt,
+	std::optional<vk::CompareOp> compare = std::nullopt,
+	bool unnormalizedCoordinates = false
 ) {
-	vk::ImageSubresourceRange range;
-	range
-		.setAspectMask(aspect)
-		.setBaseMipLevel(baseMipLevel)
-		.setLevelCount(mipLevelCount)
-		.setBaseArrayLayer(baseArrayLayer)
-		.setLayerCount(arrayLayerCount);
-
-	vk::ImageViewCreateInfo imageViewInfo;
-	imageViewInfo
-		.setImage(image)
-		.setViewType(vk::ImageViewType::e2D)
-		.setFormat(format)
-		.setSubresourceRange(range);
-
-	return device.createImageViewUnique(imageViewInfo);
+	vk::SamplerCreateInfo samplerInfo;
+	samplerInfo
+		.setMinFilter(minFilter)
+		.setMagFilter(magFilter)
+		.setMipmapMode(mipmapMode)
+		.setMinLod(minMipLod)
+		.setMaxLod(maxMipLod)
+		.setMipLodBias(mipLodBias)
+		.setAddressModeU(addressMode)
+		.setAddressModeV(addressMode)
+		.setAddressModeW(addressMode)
+		.setAnisotropyEnable(anisotropy.has_value())
+		.setCompareEnable(compare.has_value())
+		.setUnnormalizedCoordinates(unnormalizedCoordinates);
+	if (anisotropy) {
+		samplerInfo.setMaxAnisotropy(anisotropy.value());
+	}
+	if (compare) {
+		samplerInfo.setCompareOp(compare.value());
+	}
+	return device.createSamplerUnique(samplerInfo);
 }
 
 

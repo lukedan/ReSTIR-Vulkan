@@ -20,15 +20,15 @@ void GBuffer::resize(vma::Allocator &allocator, vk::Device device, vk::Extent2D 
 
 	_albedoBuffer = allocator.createImage2D(
 		extent, formats.albedo,
-		vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eInputAttachment
+		vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled
 	);
 	_normalBuffer = allocator.createImage2D(
 		extent, formats.normal,
-		vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eInputAttachment
+		vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled
 	);
 	_depthBuffer = allocator.createImage2D(
 		extent, formats.depth,
-		vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eInputAttachment
+		vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eSampled
 	);
 
 	_albedoView = createImageView2D(
@@ -44,7 +44,6 @@ void GBuffer::resize(vma::Allocator &allocator, vk::Device device, vk::Extent2D 
 	std::array<vk::ImageView, 3> attachments{
 		_albedoView.get(), _normalView.get(), _depthView.get()
 	};
-
 	vk::FramebufferCreateInfo framebufferInfo;
 	framebufferInfo
 		.setRenderPass(pass.getPass())
@@ -52,7 +51,6 @@ void GBuffer::resize(vma::Allocator &allocator, vk::Device device, vk::Extent2D 
 		.setWidth(extent.width)
 		.setHeight(extent.height)
 		.setLayers(1);
-
 	_framebuffer = device.createFramebufferUnique(framebufferInfo);
 }
 

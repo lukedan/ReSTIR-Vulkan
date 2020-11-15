@@ -11,6 +11,13 @@ std::vector<char> readFile(const std::filesystem::path &path) {
 	return result;
 }
 
+void vkCheck(vk::Result res) {
+	if (static_cast<int>(res) < 0) {
+		std::cout << "Vulkan error: " << vk::to_string(res) << "\n";
+		std::abort();
+	}
+}
+
 [[nodiscard]] vk::Format findSupportedFormat(
 	const std::vector<vk::Format> &candidates, vk::PhysicalDevice physicalDevice,
 	vk::ImageTiling requiredTiling, vk::FormatFeatureFlags requiredFeatures
@@ -31,12 +38,28 @@ std::vector<char> readFile(const std::filesystem::path &path) {
 	std::abort();
 }
 
-void vkCheck(vk::Result res) {
-	if (static_cast<int>(res) < 0) {
-		std::cout << "Vulkan error: " << vk::to_string(res) << "\n";
-		std::abort();
-	}
+vk::UniqueImageView createImageView2D(
+	vk::Device device, vk::Image image, vk::Format format, vk::ImageAspectFlags aspect,
+	uint32_t baseMipLevel, uint32_t mipLevelCount, uint32_t baseArrayLayer, uint32_t arrayLayerCount
+) {
+	vk::ImageSubresourceRange range;
+	range
+		.setAspectMask(aspect)
+		.setBaseMipLevel(baseMipLevel)
+		.setLevelCount(mipLevelCount)
+		.setBaseArrayLayer(baseArrayLayer)
+		.setLayerCount(arrayLayerCount);
+
+	vk::ImageViewCreateInfo imageViewInfo;
+	imageViewInfo
+		.setImage(image)
+		.setViewType(vk::ImageViewType::e2D)
+		.setFormat(format)
+		.setSubresourceRange(range);
+
+	return device.createImageViewUnique(imageViewInfo);
 }
+
 
 void loadScene(const std::string& filename, nvh::GltfScene& m_gltfScene) {
 	tinygltf::Model    tmodel;

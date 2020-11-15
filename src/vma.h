@@ -145,8 +145,7 @@ namespace vma {
 			uint32_t arrayLayers = 1
 		);
 		template <typename T> [[nodiscard]] UniqueBuffer createTypedBuffer(
-			std::size_t numElements, vk::BufferUsageFlags usage,
-			VmaMemoryUsage memoryUsage = VMA_MEMORY_USAGE_CPU_TO_GPU,
+			std::size_t numElements, vk::BufferUsageFlags usage, VmaMemoryUsage memoryUsage,
 			const std::vector<uint32_t> *sharedQueues = nullptr
 		) {
 			vk::BufferCreateInfo bufferInfo;

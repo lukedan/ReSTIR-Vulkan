@@ -17,10 +17,10 @@ public:
 		SceneBuffers result;
 
 		result._vertices = allocator.createTypedBuffer<Vertex>(
-			scene.m_positions.size(), vk::BufferUsageFlagBits::eVertexBuffer
+			scene.m_positions.size(), vk::BufferUsageFlagBits::eVertexBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU
 			);
 		result._indices = allocator.createTypedBuffer<int32_t>(
-			scene.m_indices.size(), vk::BufferUsageFlagBits::eIndexBuffer
+			scene.m_indices.size(), vk::BufferUsageFlagBits::eIndexBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU
 			);
 
 		Vertex *vertices = result._vertices.mapAs<Vertex>();
