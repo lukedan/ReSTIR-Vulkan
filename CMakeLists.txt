@@ -20,6 +20,10 @@ endif()
 
 target_sources(restir
 	PRIVATE
+		"src/shaderStructs/vertex.h"
+		"src/passes/demoPass.h"
+		"src/passes/gBufferPass.h"
+		"src/passes/pass.h"
 		"src/glfwWindow.cpp"
 		"src/glfwWindow.h"
 		"src/main.cpp"
@@ -33,6 +37,7 @@ target_sources(restir
 		# "gltf/tiny_gltf.h"
 		# "gltf/gltfscene.h"
 		"gltf/gltfscene.cpp"
+		"src/shader.h"
 		"src/vma.cpp"
 		"src/vma.h")
 
@@ -44,9 +49,9 @@ target_link_libraries(restir PRIVATE Vulkan::Vulkan glfw)
 
 target_include_directories(restir
 	PRIVATE
-		"external_source/nvmath/"
-		"thirdparty/VulkanMemoryAllocator/src"
-		"thirdparty/tinygltf")
+		"thirdparty/nvmath/"
+		"thirdparty/VulkanMemoryAllocator/src/"
+		"thirdparty/tinygltf/")
 
 add_shader(restir "src/shaders/simple.vert")
 add_shader(restir "src/shaders/simple.frag")

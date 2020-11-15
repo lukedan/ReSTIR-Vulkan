@@ -13,6 +13,8 @@
 #include "misc.h"
 #include "swapchain.h"
 #include "vma.h"
+#include "shaderStructs/vertex.h"
+#include "passes/demoPass.h"
 
 vk::SurfaceFormatKHR chooseSurfaceFormat(const vk::PhysicalDevice &dev, const vk::SurfaceKHR &surface) {
 	std::vector<vk::SurfaceFormatKHR> available = dev.getSurfaceFormatsKHR(surface);
@@ -45,9 +47,9 @@ vk::Extent2D chooseSwapExtent(
 
 
 std::vector<Swapchain::BufferSet> createAndRecordSwapchainBuffers(
-	const Swapchain &swapchain, vk::Device device, vk::RenderPass renderPass, vk::CommandPool commandPool, vk::Pipeline graphicsPipeline
+	const Swapchain &swapchain, vk::Device device, vk::CommandPool commandPool, Pass &pass
 ) {
-	std::vector<Swapchain::BufferSet> swapchainBuffers = swapchain.getBuffers(device, renderPass, commandPool);
+	std::vector<Swapchain::BufferSet> swapchainBuffers = swapchain.getBuffers(device, pass.getPass(), commandPool);
 
 	// record command buffers
 	for (const Swapchain::BufferSet &bufferSet : swapchainBuffers) {
@@ -59,20 +61,12 @@ std::vector<Swapchain::BufferSet> createAndRecordSwapchainBuffers(
 		};
 		vk::RenderPassBeginInfo passBeginInfo;
 		passBeginInfo
-			.setRenderPass(renderPass)
+			.setRenderPass(pass.getPass())
 			.setFramebuffer(bufferSet.framebuffer.get())
 			.setRenderArea(vk::Rect2D(vk::Offset2D(0, 0), swapchain.getImageExtent()))
 			.setClearValues(clearValues);
 		bufferSet.commandBuffer->beginRenderPass(passBeginInfo, vk::SubpassContents::eInline);
-
-		bufferSet.commandBuffer->setViewport(0, { vk::Viewport(
-			0.0f, 0.0f, swapchain.getImageExtent().width, swapchain.getImageExtent().height, 0.0f, 1.0f
-		) });
-		bufferSet.commandBuffer->setScissor(0, { vk::Rect2D(vk::Offset2D(0, 0), swapchain.getImageExtent()) });
-
-		bufferSet.commandBuffer->bindPipeline(vk::PipelineBindPoint::eGraphics, graphicsPipeline);
-		bufferSet.commandBuffer->draw(3, 1, 0, 0);
-
+		pass.issueCommands(bufferSet.commandBuffer.get());
 		bufferSet.commandBuffer->endRenderPass();
 		bufferSet.commandBuffer->end();
 	}
@@ -267,138 +261,11 @@ int main() {
 	}
 
 
-	// create pipeline
-	vk::UniqueShaderModule vert = loadShader(device.get(), "shaders/simple.vert.spv");
-	vk::UniqueShaderModule frag = loadShader(device.get(), "shaders/simple.frag.spv");
-	std::vector<vk::PipelineShaderStageCreateInfo> shaderStages;
-	shaderStages.emplace_back()
-		.setModule(vert.get())
-		.setPName("main")
-		.setStage(vk::ShaderStageFlagBits::eVertex);
-	shaderStages.emplace_back()
-		.setModule(frag.get())
-		.setPName("main")
-		.setStage(vk::ShaderStageFlagBits::eFragment);
+	DemoPass pass = Pass::create<DemoPass>(device.get(), swapchain.getImageFormat());
 
-	vk::PipelineVertexInputStateCreateInfo vertexInputInfo;
-	// no input
-
-	vk::PipelineInputAssemblyStateCreateInfo inputAssembly;
-	inputAssembly
-		.setTopology(vk::PrimitiveTopology::eTriangleList)
-		.setPrimitiveRestartEnable(false);
-
-	vk::PipelineViewportStateCreateInfo viewportInfo;
-	// dynamic viewport & scissor, so no actual sizes here
-	viewportInfo
-		.setViewportCount(1)
-		.setScissorCount(1);
-
-	vk::PipelineRasterizationStateCreateInfo rasterizer;
-	rasterizer
-		.setDepthClampEnable(false)
-		.setRasterizerDiscardEnable(false)
-		.setPolygonMode(vk::PolygonMode::eFill)
-		.setCullMode(vk::CullModeFlagBits::eBack)
-		.setFrontFace(vk::FrontFace::eClockwise)
-		.setLineWidth(1.0f);
-
-	vk::PipelineMultisampleStateCreateInfo multisampling;
-	multisampling
-		.setSampleShadingEnable(false)
-		.setRasterizationSamples(vk::SampleCountFlagBits::e1);
-
-	std::vector<vk::PipelineColorBlendAttachmentState> blendFunctions;
-	blendFunctions.emplace_back()
-		.setColorWriteMask(
-			vk::ColorComponentFlagBits::eA | vk::ColorComponentFlagBits::eR |
-			vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB
-		)
-		.setBlendEnable(true)
-		.setSrcColorBlendFactor(vk::BlendFactor::eSrcAlpha)
-		.setDstColorBlendFactor(vk::BlendFactor::eOneMinusSrcAlpha)
-		.setColorBlendOp(vk::BlendOp::eAdd)
-		.setSrcAlphaBlendFactor(vk::BlendFactor::eOne)
-		.setDstAlphaBlendFactor(vk::BlendFactor::eZero)
-		.setAlphaBlendOp(vk::BlendOp::eAdd);
-
-	vk::PipelineColorBlendStateCreateInfo colorBlending;
-	colorBlending
-		.setLogicOpEnable(false)
-		.setAttachments(blendFunctions);
-
-	std::vector<vk::DynamicState> dynamicStates{
-		vk::DynamicState::eViewport,
-		vk::DynamicState::eScissor
-	};
-	vk::PipelineDynamicStateCreateInfo dynamicStateInfo;
-	dynamicStateInfo
-		.setDynamicStates(dynamicStates);
-
-	vk::PipelineLayoutCreateInfo layoutCreateInfo;
-	vk::PipelineLayout pipelineLayout = device->createPipelineLayout(layoutCreateInfo);
-
-
-	vk::UniqueRenderPass renderPass;
-	{
-		std::vector<vk::AttachmentDescription> colorAttachments;
-		colorAttachments.emplace_back()
-			.setFormat(swapchain.getImageFormat())
-			.setSamples(vk::SampleCountFlagBits::e1)
-			.setLoadOp(vk::AttachmentLoadOp::eClear)
-			.setStoreOp(vk::AttachmentStoreOp::eStore)
-			.setStencilLoadOp(vk::AttachmentLoadOp::eDontCare)
-			.setStencilStoreOp(vk::AttachmentStoreOp::eDontCare)
-			.setInitialLayout(vk::ImageLayout::eUndefined)
-			.setFinalLayout(vk::ImageLayout::ePresentSrcKHR);
-
-		std::vector<vk::AttachmentReference> colorAttachmentReferences;
-		colorAttachmentReferences.emplace_back()
-			.setAttachment(0)
-			.setLayout(vk::ImageLayout::eColorAttachmentOptimal);
-
-		std::vector<vk::SubpassDescription> subpasses;
-		subpasses.emplace_back()
-			.setPipelineBindPoint(vk::PipelineBindPoint::eGraphics)
-			.setColorAttachments(colorAttachmentReferences);
-
-		std::vector<vk::SubpassDependency> dependencies;
-		dependencies.emplace_back()
-			.setSrcSubpass(VK_SUBPASS_EXTERNAL)
-			.setDstSubpass(0)
-			.setSrcStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput)
-			.setSrcAccessMask(vk::AccessFlags())
-			.setDstStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput)
-			.setDstAccessMask(vk::AccessFlagBits::eColorAttachmentWrite);
-
-		vk::RenderPassCreateInfo renderPassInfo;
-		renderPassInfo
-			.setAttachments(colorAttachments)
-			.setSubpasses(subpasses)
-			.setDependencies(dependencies);
-
-		renderPass = device->createRenderPassUnique(renderPassInfo);
-	}
-
-	vk::GraphicsPipelineCreateInfo pipelineInfo;
-	pipelineInfo
-		.setStages(shaderStages)
-		.setPVertexInputState(&vertexInputInfo)
-		.setPInputAssemblyState(&inputAssembly)
-		.setPViewportState(&viewportInfo)
-		.setPRasterizationState(&rasterizer)
-		.setPMultisampleState(&multisampling)
-		.setPColorBlendState(&colorBlending)
-		.setPDynamicState(&dynamicStateInfo)
-		.setLayout(pipelineLayout)
-		.setRenderPass(renderPass.get())
-		.setSubpass(0);
-
-	vk::UniquePipeline graphicsPipeline = device->createGraphicsPipelineUnique(nullptr, pipelineInfo).value;
-
-
+	pass.imageExtent = swapchain.getImageExtent();
 	std::vector<Swapchain::BufferSet> swapchainBuffers = createAndRecordSwapchainBuffers(
-		swapchain, device.get(), renderPass.get(), commandPool.get(), graphicsPipeline.get()
+		swapchain, device.get(), commandPool.get(), pass
 	);
 
 
@@ -440,7 +307,8 @@ int main() {
 			swapchainBuffers.clear();
 			swapchain.reset();
 			swapchain = Swapchain::create(device.get(), swapchainInfo);
-			swapchainBuffers = createAndRecordSwapchainBuffers(swapchain, device.get(), renderPass.get(), commandPool.get(), graphicsPipeline.get());
+			pass.imageExtent = swapchain.getImageExtent();
+			swapchainBuffers = createAndRecordSwapchainBuffers(swapchain, device.get(), commandPool.get(), pass);
 		}
 
 		device->waitForFences(
