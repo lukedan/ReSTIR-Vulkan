@@ -6,6 +6,8 @@
 
 #include <vk_mem_alloc.h>
 
+#include "misc.h"
+
 namespace vma {
 	class Allocator;
 
@@ -39,6 +41,25 @@ namespace vma {
 		UniqueHandle &operator=(const UniqueHandle&) = delete;
 		~UniqueHandle() {
 			reset();
+		}
+
+		void *map() {
+			void *mapped = nullptr;
+			vkCheck(vmaMapMemory(_getAllocator(), _allocation, &mapped));
+			return mapped;
+		}
+		template <typename T> T *mapAs() {
+			return static_cast<T*>(map());
+		}
+		void unmap() {
+			vmaUnmapMemory(_getAllocator(), _allocation);
+		}
+
+		void flush() {
+			vmaFlushAllocation(_getAllocator(), _allocation, 0, VK_WHOLE_SIZE);
+		}
+		void invalidate() {
+			vmaInvalidateAllocation(_getAllocator(), _allocation, 0, VK_WHOLE_SIZE);
 		}
 
 		T get() const {
@@ -75,14 +96,6 @@ namespace vma {
 		UniqueBuffer &operator=(UniqueBuffer &&src) {
 			Base::operator=(std::move(src));
 			return *this;
-		}
-
-		void *map();
-		template <typename T> T *mapAs() {
-			return static_cast<T*>(map());
-		}
-		void unmap() {
-			vmaUnmapMemory(_getAllocator(), _allocation);
 		}
 	private:
 		void _release() {

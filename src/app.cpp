@@ -3,8 +3,8 @@
 VKAPI_ATTR VkBool32 VKAPI_CALL _debugCallback(
 	VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
 	VkDebugUtilsMessageTypeFlagsEXT messageType,
-	const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
-	void* pUserData
+	const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData,
+	void *pUserData
 ) {
 	if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) {
 		std::cerr << pCallbackData->pMessage << std::endl;
@@ -15,12 +15,12 @@ VKAPI_ATTR VkBool32 VKAPI_CALL _debugCallback(
 	return VK_FALSE;
 }
 
-App::App() :
-	_window({
-		{ GLFW_CLIENT_API, GLFW_NO_API }
-		}) {
-
-	loadScene("../../../scenes/boxTextured/BoxTextured.gltf", _gltfScene);
+App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
+	{
+		vk::Extent2D extent = _window.getFramebufferSize();
+		_camera.aspectRatio = extent.width / static_cast<float>(extent.height);
+		_camera.recomputeAttributes();
+	}
 
 	std::vector<const char*> requiredExtensions = GlfwWindow::getRequiredInstanceExtensions();
 	requiredExtensions.emplace_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
@@ -155,11 +155,10 @@ App::App() :
 
 	_allocator = vma::Allocator::create(vulkanApiVersion, _instance.get(), _physicalDevice, _device.get());
 
-	_graphicsQueue = _device->getQueue(_graphicsQueueIndex, 0);
-	_presentQueue = _device->getQueue(_presentQueueIndex, 0);
+	loadScene("../../../scenes/boxTextured/BoxTextured.gltf", _gltfScene);
+	_sceneBuffers = SceneBuffers::create(_gltfScene, _allocator);
 
-	// create command pool
-	{
+	{ // create command pool
 		vk::CommandPoolCreateInfo poolInfo;
 		poolInfo
 			.setQueueFamilyIndex(_graphicsQueueIndex)
@@ -197,16 +196,56 @@ App::App() :
 		_swapchain = Swapchain::create(_device.get(), _swapchainInfo);
 	}
 
+	{ // create descriptor pool
+		std::array<vk::DescriptorPoolSize, 1> poolSizes{
+			vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, 3)
+		};
+		vk::DescriptorPoolCreateInfo poolInfo;
+		poolInfo.setPoolSizes(poolSizes);
+		poolInfo.setMaxSets(1);
+		_descriptorPool = _device->createDescriptorPoolUnique(poolInfo);
+	}
+
+
+	_graphicsQueue = _device->getQueue(_graphicsQueueIndex, 0);
+	_presentQueue = _device->getQueue(_presentQueueIndex, 0);
+
+
 	GBuffer::Formats::initialize(_physicalDevice);
 	_gBufferPass = Pass::create<GBufferPass>(_device.get(), _swapchain.getImageExtent());
+	_gBufferPass.camera = &_camera;
+	_gBufferPass.scene = &_gltfScene;
+	_gBufferPass.sceneBuffers = &_sceneBuffers;
 	_gBuffer = GBuffer::create(_allocator, _device.get(), _swapchain.getImageExtent(), _gBufferPass);
+	{
+		vk::CommandBufferAllocateInfo bufferInfo;
+		bufferInfo
+			.setCommandPool(_commandPool.get())
+			.setCommandBufferCount(1)
+			.setLevel(vk::CommandBufferLevel::ePrimary);
+		_gBufferCommandBuffer = std::move(_device->allocateCommandBuffersUnique(bufferInfo)[0]);
+	}
 
 	_demoPass = Pass::create<DemoPass>(_device.get(), _swapchain.getImageFormat());
-
 	_demoPass.imageExtent = _swapchain.getImageExtent();
+
+	_lightingPass = Pass::create<LightingPass>(_device.get(), _swapchain.getImageFormat());
+	_lightingPassDescriptor = _lightingPass.createDescriptorSetFor(_gBuffer, _device.get(), _descriptorPool.get());
+
+	_lightingPass.imageExtent = _swapchain.getImageExtent();
+	_lightingPass.descriptorSet = _lightingPassDescriptor.get();
+
 	createAndRecordSwapchainBuffers(
-		_swapchain, _device.get(), _commandPool.get(), _demoPass
+		_swapchain, _device.get(), _commandPool.get(), _lightingPass
 	);
+
+	{
+		vk::CommandBufferBeginInfo beginInfo;
+		beginInfo.setFlags(vk::CommandBufferUsageFlagBits::eSimultaneousUse);
+		_gBufferCommandBuffer->begin(beginInfo);
+		_gBufferPass.issueCommands(_gBufferCommandBuffer.get(), _gBuffer.getFramebuffer());
+		_gBufferCommandBuffer->end();
+	}
 
 
 	// semaphores
@@ -257,7 +296,9 @@ void App::mainLoop() {
 
 			_demoPass.imageExtent = _swapchain.getImageExtent();
 
-			createAndRecordSwapchainBuffers(_swapchain, _device.get(), _commandPool.get(), _demoPass);
+			_lightingPass.imageExtent = _swapchain.getImageExtent();
+
+			createAndRecordSwapchainBuffers(_swapchain, _device.get(), _commandPool.get(), _lightingPass);
 		}
 
 		_device->waitForFences(
@@ -279,20 +320,31 @@ void App::mainLoop() {
 			);
 		}
 
-		std::vector<vk::Semaphore> waitSemaphores{ _imageAvailableSemaphore[currentFrame].get() };
-		std::vector<vk::PipelineStageFlags> waitStages{ vk::PipelineStageFlagBits::eColorAttachmentOutput };
-		std::vector<vk::CommandBuffer> cmdBuffers{ _swapchainBuffers[imageIndex].commandBuffer.get() };
-		std::vector<vk::Semaphore> signalSemaphores{ _renderFinishedSemaphore[currentFrame].get() };
 
 		_device->resetFences({ _inFlightFences[currentFrame].get() });
 
-		vk::SubmitInfo submitInfo;
-		submitInfo
-			.setWaitSemaphores(waitSemaphores)
-			.setWaitDstStageMask(waitStages)
-			.setCommandBuffers(cmdBuffers)
-			.setSignalSemaphores(signalSemaphores);
-		_graphicsQueue.submit({ submitInfo }, _inFlightFences[currentFrame].get());
+		std::array<vk::Semaphore, 1> signalSemaphores{ _renderFinishedSemaphore[currentFrame].get() };
+
+		{
+			std::array<vk::CommandBuffer, 1> gBufferCommandBuffers{ _gBufferCommandBuffer.get() };
+			vk::SubmitInfo submitInfo;
+			submitInfo
+				.setCommandBuffers(gBufferCommandBuffers);
+			_graphicsQueue.submit({ submitInfo }, nullptr);
+		}
+
+		{
+			std::vector<vk::Semaphore> waitSemaphores{ _imageAvailableSemaphore[currentFrame].get() };
+			std::vector<vk::CommandBuffer> cmdBuffers{ _swapchainBuffers[imageIndex].commandBuffer.get() };
+			std::vector<vk::PipelineStageFlags> waitStages{ vk::PipelineStageFlagBits::eColorAttachmentOutput };
+			vk::SubmitInfo submitInfo;
+			submitInfo
+				.setWaitSemaphores(waitSemaphores)
+				.setWaitDstStageMask(waitStages)
+				.setCommandBuffers(cmdBuffers)
+				.setSignalSemaphores(signalSemaphores);
+			_graphicsQueue.submit({ submitInfo }, _inFlightFences[currentFrame].get());
+		}
 
 		std::vector<vk::SwapchainKHR> swapchains{ _swapchain.getSwapchain().get() };
 		std::vector<std::uint32_t> imageIndices{ imageIndex };

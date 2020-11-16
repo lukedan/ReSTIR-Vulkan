@@ -7,19 +7,34 @@
 #include "../misc.h"
 #include "../shader.h"
 #include "../sceneBuffers.h"
+#include "../camera.h"
 
 class GBufferPass;
 
 class GBuffer {
 public:
-	[[nodiscard]] vk::Image getNormalBuffer() const {
-		return _normalBuffer.get();
-	}
 	[[nodiscard]] vk::Image getAlbedoBuffer() const {
 		return _albedoBuffer.get();
 	}
+	[[nodiscard]] vk::Image getNormalBuffer() const {
+		return _normalBuffer.get();
+	}
 	[[nodiscard]] vk::Image getDepthBuffer() const {
 		return _depthBuffer.get();
+	}
+
+	[[nodiscard]] vk::ImageView getAlbedoView() const {
+		return _albedoView.get();
+	}
+	[[nodiscard]] vk::ImageView getNormalView() const {
+		return _normalView.get();
+	}
+	[[nodiscard]] vk::ImageView getDepthView() const {
+		return _depthView.get();
+	}
+
+	[[nodiscard]] vk::Framebuffer getFramebuffer() const {
+		return _framebuffer.get();
 	}
 
 	void resize(vma::Allocator&, vk::Device, vk::Extent2D, Pass&);
@@ -76,11 +91,12 @@ public:
 			.setClearValues(clearValues);
 		commandBuffer.beginRenderPass(passBeginInfo, vk::SubpassContents::eInline);
 
+		commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, getPipelines()[0].get());
 		commandBuffer.bindVertexBuffers(0, { sceneBuffers->getVertices() }, { 0 });
 		commandBuffer.bindIndexBuffer(sceneBuffers->getIndices(), 0, vk::IndexType::eUint32);
 		for (const nvh::GltfNode &node : scene->m_nodes) {
 			PushConstants constants;
-			constants.transform = cameraMatrix * node.worldMatrix;
+			constants.transform = camera->projectionViewMatrix * node.worldMatrix;
 			commandBuffer.pushConstants(
 				_pipelineLayout.get(), vk::ShaderStageFlagBits::eVertex, 0, sizeof(PushConstants), &constants
 			);
@@ -99,7 +115,7 @@ public:
 
 	const nvh::GltfScene *scene = nullptr;
 	const SceneBuffers *sceneBuffers = nullptr;
-	nvmath::mat4 cameraMatrix;
+	const Camera *camera = nullptr;
 protected:
 	explicit GBufferPass(vk::Extent2D extent) : _bufferExtent(extent) {
 	}

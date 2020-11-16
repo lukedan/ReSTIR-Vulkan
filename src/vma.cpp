@@ -7,13 +7,6 @@
 #include "misc.h"
 
 namespace vma {
-	void *UniqueBuffer::map() {
-		void *mapped = nullptr;
-		vkCheck(vmaMapMemory(_getAllocator(), _allocation, &mapped));
-		return mapped;
-	}
-
-
 	UniqueBuffer Allocator::createBuffer(
 		const vk::BufferCreateInfo &vkBufferInfo, const VmaAllocationCreateInfo &allocationInfo
 	) {

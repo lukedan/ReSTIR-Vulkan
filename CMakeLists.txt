@@ -28,6 +28,7 @@ target_sources(restir
 		"src/passes/pass.h"
 		"src/app.cpp"
 		"src/app.h"
+		"src/camera.h"
 		"src/glfwWindow.cpp"
 		"src/glfwWindow.h"
 		"src/main.cpp"
@@ -56,5 +57,9 @@ target_include_directories(restir
 
 add_shader(restir "src/shaders/simple.vert")
 add_shader(restir "src/shaders/simple.frag")
+
 add_shader(restir "src/shaders/gBuffer.vert")
 add_shader(restir "src/shaders/gBuffer.frag")
+
+add_shader(restir "src/shaders/quad.vert")
+add_shader(restir "src/shaders/lighting.frag")

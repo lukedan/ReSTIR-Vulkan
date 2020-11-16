@@ -1,11 +1,12 @@
 #pragma once
 
 #include "pass.h"
+#include "gBufferPass.h"
 
 class LightingPass : public Pass {
+	friend Pass;
 public:
-	explicit LightingPass(vk::Format format) : Pass(), _swapchainFormat(format) {
-	}
+	LightingPass() = default;
 
 	void issueCommands(vk::CommandBuffer commandBuffer, vk::Framebuffer framebuffer) const override {
 		std::array<vk::ClearValue, 1> clearValues;
@@ -18,23 +19,63 @@ public:
 			.setClearValues(clearValues);
 		commandBuffer.beginRenderPass(passBeginInfo, vk::SubpassContents::eInline);
 
+		/*commandBuffer.pipelineBarrier(
+			vk::PipelineStageFlagBits::eColorAttachmentOutput, vk::PipelineStageFlagBits::eFragmentShader,
+			vk::DependencyFlagBits::eByRegion, {}, {}, {}
+		);*/
+
 		commandBuffer.setViewport(0, { vk::Viewport(
 			0.0f, 0.0f, imageExtent.width, imageExtent.height, 0.0f, 1.0f
 		) });
 		commandBuffer.setScissor(0, { vk::Rect2D(vk::Offset2D(0, 0), imageExtent) });
 
+		commandBuffer.bindDescriptorSets(
+			vk::PipelineBindPoint::eGraphics, _pipelineLayout.get(), 0, { descriptorSet }, {}
+		);
 		commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, getPipelines()[0].get());
-		commandBuffer.draw(3, 1, 0, 0);
+		commandBuffer.draw(4, 1, 0, 0);
 
 		commandBuffer.endRenderPass();
 	}
 
+	vk::UniqueDescriptorSet createDescriptorSetFor(GBuffer &buf, vk::Device device, vk::DescriptorPool pool) {
+		std::array<vk::DescriptorSetLayout, 1> setLayouts{ _descriptorSetLayout.get() };
+		vk::DescriptorSetAllocateInfo setInfo;
+		setInfo
+			.setDescriptorPool(pool)
+			.setDescriptorSetCount(1)
+			.setSetLayouts(setLayouts);
+		vk::UniqueDescriptorSet set = std::move(device.allocateDescriptorSetsUnique(setInfo)[0]);
+
+		std::array<vk::DescriptorImageInfo, 3> bufferInfo{
+			vk::DescriptorImageInfo(_sampler.get(), buf.getAlbedoView(), vk::ImageLayout::eShaderReadOnlyOptimal),
+			vk::DescriptorImageInfo(_sampler.get(), buf.getNormalView(), vk::ImageLayout::eShaderReadOnlyOptimal),
+			vk::DescriptorImageInfo(_sampler.get(), buf.getDepthView(), vk::ImageLayout::eShaderReadOnlyOptimal)
+		};
+
+		vk::WriteDescriptorSet descriptorWrite;
+		descriptorWrite
+			.setDstSet(set.get())
+			.setDstBinding(0)
+			.setDstArrayElement(0)
+			.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
+			.setImageInfo(bufferInfo);
+		device.updateDescriptorSets({ descriptorWrite }, {});
+
+		return set;
+	}
+
 	vk::Extent2D imageExtent;
+	vk::DescriptorSet descriptorSet;
 protected:
+	explicit LightingPass(vk::Format format) : Pass(), _swapchainFormat(format) {
+	}
+
 	Shader _vert, _frag;
 	vk::Format _swapchainFormat;
 	vk::UniqueSampler _sampler;
 	vk::UniquePipelineLayout _pipelineLayout;
+	vk::UniqueDescriptorSetLayout _descriptorSetLayout;
 
 	vk::UniqueRenderPass _createPass(vk::Device device) override {
 		std::vector<vk::AttachmentDescription> colorAttachments;
@@ -62,10 +103,10 @@ protected:
 		dependencies.emplace_back()
 			.setSrcSubpass(VK_SUBPASS_EXTERNAL)
 			.setDstSubpass(0)
-			.setSrcStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput)
-			.setSrcAccessMask(vk::AccessFlags())
-			.setDstStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput)
-			.setDstAccessMask(vk::AccessFlagBits::eColorAttachmentWrite);
+			.setSrcStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eLateFragmentTests)
+			.setSrcAccessMask(vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eDepthStencilAttachmentWrite)
+			.setDstStageMask(vk::PipelineStageFlagBits::eFragmentShader)
+			.setDstAccessMask(vk::AccessFlagBits::eShaderRead);
 
 		vk::RenderPassCreateInfo renderPassInfo;
 		renderPassInfo
@@ -78,7 +119,8 @@ protected:
 	std::vector<PipelineCreationInfo> _getPipelineCreationInfo() {
 		std::vector<PipelineCreationInfo> result;
 		PipelineCreationInfo &info = result.emplace_back();
-		info.inputAssemblyState = PipelineCreationInfo::getTriangleListWithoutPrimitiveRestartInputAssembly();
+		info.inputAssemblyState
+			.setTopology(vk::PrimitiveTopology::eTriangleStrip);
 		info.viewportState
 			.setViewportCount(1)
 			.setScissorCount(1);
@@ -95,10 +137,27 @@ protected:
 		return result;
 	}
 	void _initialize(vk::Device dev) override {
-		_vert = Shader::load(dev, "shaders/simple.vert.spv", "main", vk::ShaderStageFlagBits::eVertex);
-		_frag = Shader::load(dev, "shaders/simple.frag.spv", "main", vk::ShaderStageFlagBits::eFragment);
+		_vert = Shader::load(dev, "shaders/quad.vert.spv", "main", vk::ShaderStageFlagBits::eVertex);
+		_frag = Shader::load(dev, "shaders/lighting.frag.spv", "main", vk::ShaderStageFlagBits::eFragment);
 
+		_sampler = createSampler(dev, vk::Filter::eNearest, vk::Filter::eNearest, vk::SamplerMipmapMode::eNearest);
+
+		std::array<vk::DescriptorSetLayoutBinding, 1> descriptorBindings{
+			vk::DescriptorSetLayoutBinding(
+				0, vk::DescriptorType::eCombinedImageSampler, 3, vk::ShaderStageFlagBits::eFragment
+			)
+		};
+		vk::DescriptorSetLayoutCreateInfo descriptorInfo;
+		descriptorInfo
+			.setBindings(descriptorBindings);
+		_descriptorSetLayout = dev.createDescriptorSetLayoutUnique(descriptorInfo);
+
+		std::array<vk::DescriptorSetLayout, 1> descriptorLayouts{
+			_descriptorSetLayout.get()
+		};
 		vk::PipelineLayoutCreateInfo pipelineInfo;
+		pipelineInfo
+			.setSetLayouts(descriptorLayouts);
 		_pipelineLayout = dev.createPipelineLayoutUnique(pipelineInfo);
 
 		Pass::_initialize(dev);

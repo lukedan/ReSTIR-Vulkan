@@ -8,6 +8,7 @@
 #include "passes/demoPass.h"
 #include "passes/gBufferPass.h"
 #include "passes/lightingPass.h"
+#include "camera.h"
 
 class App {
 public:
@@ -63,9 +64,9 @@ public:
 		return imageCount;
 	}
 protected:
-	nvh::GltfScene _gltfScene;
-
 	GlfwWindow _window;
+
+	Camera _camera;
 
 	uint32_t _graphicsQueueIndex = 0;
 	uint32_t _presentQueueIndex = 0;
@@ -82,6 +83,7 @@ protected:
 
 	vma::Allocator _allocator;
 	vk::UniqueCommandPool _commandPool;
+	vk::UniqueDescriptorPool _descriptorPool;
 
 	std::vector<uint32_t> _swapchainSharedQueues;
 	vk::SwapchainCreateInfoKHR _swapchainInfo;
@@ -95,8 +97,15 @@ protected:
 
 	GBuffer _gBuffer;
 	GBufferPass _gBufferPass;
+	vk::UniqueCommandBuffer _gBufferCommandBuffer;
+
+	vk::UniqueDescriptorSet _lightingPassDescriptor;
+	LightingPass _lightingPass;
 
 	DemoPass _demoPass;
+
+	nvh::GltfScene _gltfScene;
+	SceneBuffers _sceneBuffers;
 
 
 	void createAndRecordSwapchainBuffers(

@@ -61,7 +61,13 @@ void GBuffer::Formats::initialize(vk::PhysicalDevice physicalDevice) {
 		vk::FormatFeatureFlagBits::eColorAttachment
 	);
 	_gBufferFormats.normal = findSupportedFormat(
-		{ vk::Format::eR16G16Snorm, vk::Format::eR8G8Snorm }, physicalDevice, vk::ImageTiling::eOptimal,
+		{
+			vk::Format::eR16G16B16Snorm,
+			vk::Format::eR16G16B16Sfloat,
+			vk::Format::eR16G16B16A16Snorm,
+			vk::Format::eR16G16B16A16Sfloat,
+			vk::Format::eR32G32B32Sfloat
+		}, physicalDevice, vk::ImageTiling::eOptimal,
 		vk::FormatFeatureFlagBits::eColorAttachment
 	);
 	_gBufferFormats.depth = findSupportedFormat(
