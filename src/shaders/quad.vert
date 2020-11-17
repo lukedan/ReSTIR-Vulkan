@@ -2,8 +2,8 @@
 
 vec2 positions[4] = vec2[](
     vec2(-1.0f, -1.0f),
-    vec2( 1.0f, -1.0f),
     vec2(-1.0f,  1.0f),
+    vec2( 1.0f, -1.0f),
     vec2( 1.0f,  1.0f)
 );
 
