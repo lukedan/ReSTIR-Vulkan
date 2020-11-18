@@ -45,7 +45,7 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 			std::abort();
 		}
 	}
-
+	
 	{ // create instance
 		vk::ApplicationInfo appInfo;
 		appInfo

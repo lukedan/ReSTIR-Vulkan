@@ -69,6 +69,12 @@ void loadScene(const std::string& filename, nvh::GltfScene& m_gltfScene) {
 		assert(!"Error while loading scene");
 	}
 	m_gltfScene.importDrawableNodes(tmodel, nvh::GltfAttributes::Normal);
+	m_gltfScene.importMaterials(tmodel);
+	m_gltfScene.importTexutureImages(tmodel);
+
+	for (size_t i = 0; i < tmodel.images.size(); i++) {
+
+	}
 
 	// Show gltf scene info
 	std::cout << "Show gltf scene info" << std::endl;

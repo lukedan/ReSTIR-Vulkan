@@ -58,10 +58,12 @@
 #include "tiny_gltf.h"
 #include "nvmath.h"
 #include "nvmath_glsltypes.h"
+// #include "../src/vma.h"
 #include <map>
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <vulkan/vulkan.hpp>
 
 using namespace nvmath;
 #define EXTENSION_LIGHT "KHR_lights_punctual"
@@ -175,6 +177,7 @@ namespace nvh {
     {
         void importMaterials(const tinygltf::Model& tmodel);
         void importDrawableNodes(const tinygltf::Model& tmodel, GltfAttributes attributes);
+        void importTexutureImages(tinygltf::Model& gltfModel);
         void computeSceneDimensions();
         void destroy();
 
@@ -186,6 +189,7 @@ namespace nvh {
         std::vector<GltfPrimMesh> m_primMeshes;  // Primitive promoted to meshes
         std::vector<GltfCamera>   m_cameras;
         std::vector<GltfLight>    m_lights;
+        std::vector<tinygltf::Image>    m_textures;
 
         // Attributes, all same length if valid
         std::vector<nvmath::vec3f> m_positions;

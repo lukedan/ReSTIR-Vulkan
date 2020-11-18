@@ -629,4 +629,15 @@ namespace nvh {
 
         return stats;
     }
+
+    void GltfScene::importTexutureImages(tinygltf::Model& gltfModel)
+    {
+        if (!gltfModel.images.empty()) {
+            m_textures.reserve(gltfModel.images.size());
+            for (size_t i = 0; i < gltfModel.images.size(); i++) {
+                m_textures.emplace_back(gltfModel.images[i]);
+            }
+        }        
+    }
+
 }  // namespace nvh

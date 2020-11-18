@@ -22,7 +22,42 @@ public:
 		result._indices = allocator.createTypedBuffer<int32_t>(
 			scene.m_indices.size(), vk::BufferUsageFlagBits::eIndexBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU
 			);
+		result._materials = allocator.createTypedBuffer<nvh::GltfMaterial>(
+			scene.m_materials.size(), vk::BufferUsageFlagBits::eStorageBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU
+			);
+		// Create vma::imageunique
+		if (scene.m_textures.size() > 0) {
 
+			vk::Format format = vk::Format::eR8G8B8A8Srgb;
+			result._textureImages.resize(scene.m_textures.size());
+
+			for (int i = 0; i < scene.m_textures.size(); ++i) {
+				auto& gltfimage = scene.m_textures[i];
+				std::cout << "Created Texture Name:" << gltfimage.uri << std::endl;
+
+				// Create GPU mamory
+				result._textureImages[i] = allocator.createImage2D(
+					vk::Extent2D(gltfimage.width, gltfimage.height),
+					format,
+					vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst,
+					VMA_MEMORY_USAGE_GPU_ONLY,
+					vk::ImageTiling::eOptimal,
+					1,
+					vk::SampleCountFlagBits::e1,
+					nullptr, // SharedQueues
+					vk::ImageLayout::eUndefined);
+				
+				// Map GPU memory to RAM
+				
+
+				// Put data from RAM to GPU
+
+
+			}
+		}
+		
+		
+		
 		Vertex *vertices = result._vertices.mapAs<Vertex>();
 		for (std::size_t i = 0; i < scene.m_positions.size(); ++i) {
 			Vertex &v = vertices[i];
@@ -40,7 +75,6 @@ public:
 			}
 		}
 		result._vertices.unmap();
-
 		result._vertices.flush();
 
 		uint32_t *indices = result._indices.mapAs<uint32_t>();
@@ -48,12 +82,23 @@ public:
 			indices[i] = scene.m_indices[i];
 		}
 		result._indices.unmap();
-
 		result._indices.flush();
+
+
+		nvh::GltfMaterial* mat_device = result._materials.mapAs<nvh::GltfMaterial>();
+		for (std::size_t i = 0; i < scene.m_materials.size(); ++i) {
+			mat_device[i] = scene.m_materials[i];
+		}
+		result._materials.unmap();
+		result._materials.flush();
+		
 
 		return result;
 	}
 private:
 	vma::UniqueBuffer _vertices;
 	vma::UniqueBuffer _indices;
+	vma::UniqueBuffer _materials;
+	std::vector<vma::UniqueImage> _textureImages;
+	// std::vector<vma::UniqueImage> _textures;
 };
