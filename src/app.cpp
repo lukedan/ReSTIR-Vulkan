@@ -16,13 +16,23 @@ VKAPI_ATTR VkBool32 VKAPI_CALL _debugCallback(
 }
 
 App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
+	_window.setMouseButtonHandler([this](int button, int action, int mods) {
+		_onMouseButtonEvent(button, action, mods);
+		});
+	_window.setCursorPosHandler([this](double x, double y) {
+		_onMouseMoveEvent(x, y);
+		});
+	_window.setScrollHandler([this](double x, double y) {
+		_onScrollEvent(x, y);
+		});
+
 	{
 		vk::Extent2D extent = _window.getFramebufferSize();
 		_camera.aspectRatio = extent.width / static_cast<float>(extent.height);
 		_camera.recomputeAttributes();
 	}
 
-	std::vector<const char*> requiredExtensions = GlfwWindow::getRequiredInstanceExtensions();
+	std::vector<const char*> requiredExtensions = glfw::getRequiredInstanceExtensions();
 	requiredExtensions.emplace_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 	std::vector<const char*> requiredDeviceExtensions{
 		VK_KHR_SWAPCHAIN_EXTENSION_NAME
@@ -155,7 +165,7 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 
 	_allocator = vma::Allocator::create(vulkanApiVersion, _instance.get(), _physicalDevice, _device.get());
 
-	loadScene("../../../scenes/boxTextured/BoxTextured.gltf", _gltfScene);
+	loadScene("../../../scenes/cornellBox.gltf", _gltfScene);
 	_sceneBuffers = SceneBuffers::create(_gltfScene, _allocator);
 
 	{ // create command pool
@@ -163,8 +173,13 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 		poolInfo
 			.setQueueFamilyIndex(_graphicsQueueIndex)
 			.setFlags(vk::CommandPoolCreateFlags());
-
 		_commandPool = _device->createCommandPoolUnique(poolInfo);
+
+		vk::CommandPoolCreateInfo transientPoolInfo;
+		transientPoolInfo
+			.setQueueFamilyIndex(_graphicsQueueIndex)
+			.setFlags(vk::CommandPoolCreateFlagBits::eTransient);
+		_transientCommandPool = _device->createCommandPoolUnique(transientPoolInfo);
 	}
 
 	{
@@ -197,13 +212,17 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 	}
 
 	{ // create descriptor pool
-		std::array<vk::DescriptorPoolSize, 1> poolSizes{
-			vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, 3)
+		std::array<vk::DescriptorPoolSize, 3> poolSizes{
+			vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, 3),
+			vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, 1),
+			vk::DescriptorPoolSize(vk::DescriptorType::eUniformBufferDynamic, 1)
 		};
 		vk::DescriptorPoolCreateInfo poolInfo;
-		poolInfo.setPoolSizes(poolSizes);
-		poolInfo.setMaxSets(1);
-		_descriptorPool = _device->createDescriptorPoolUnique(poolInfo);
+		poolInfo
+			.setFlags(vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet)
+			.setPoolSizes(poolSizes)
+			.setMaxSets(3);
+		_staticDescriptorPool = _device->createDescriptorPoolUnique(poolInfo);
 	}
 
 
@@ -211,11 +230,37 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 	_presentQueue = _device->getQueue(_presentQueueIndex, 0);
 
 
+	// create g buffer pass
 	GBuffer::Formats::initialize(_physicalDevice);
 	_gBufferPass = Pass::create<GBufferPass>(_device.get(), _swapchain.getImageExtent());
-	_gBufferPass.camera = &_camera;
+
+	{
+		_gBufferResources.uniformBuffer = _allocator.createTypedBuffer<GBufferPass::Uniforms>(
+			1, vk::BufferUsageFlagBits::eUniformBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU
+			);
+
+		std::array<vk::DescriptorSetLayout, 1> gBufferUniformLayout{ _gBufferPass.getUniformsDescriptorSetLayout() };
+		vk::DescriptorSetAllocateInfo gBufferUniformAlloc;
+		gBufferUniformAlloc
+			.setDescriptorPool(_staticDescriptorPool.get())
+			.setDescriptorSetCount(1)
+			.setSetLayouts(gBufferUniformLayout);
+		_gBufferResources.uniformDescriptor = std::move(_device->allocateDescriptorSetsUnique(gBufferUniformAlloc)[0]);
+
+		std::array<vk::DescriptorSetLayout, 1> gBufferMatricesLayout{ _gBufferPass.getMatricesDescriptorSetLayout() };
+		vk::DescriptorSetAllocateInfo gBufferMatricesAlloc;
+		gBufferMatricesAlloc
+			.setDescriptorPool(_staticDescriptorPool.get())
+			.setDescriptorSetCount(1)
+			.setSetLayouts(gBufferMatricesLayout);
+		_gBufferResources.matrixDescriptor = std::move(_device->allocateDescriptorSetsUnique(gBufferMatricesAlloc)[0]);
+	}
+
+	_gBufferPass.initializeResourcesFor(_gltfScene, _sceneBuffers, _device.get(), _allocator, _gBufferResources);
+	_gBufferPass.descriptorSets = &_gBufferResources;
 	_gBufferPass.scene = &_gltfScene;
 	_gBufferPass.sceneBuffers = &_sceneBuffers;
+
 	_gBuffer = GBuffer::create(_allocator, _device.get(), _swapchain.getImageExtent(), _gBufferPass);
 	{
 		vk::CommandBufferAllocateInfo bufferInfo;
@@ -226,29 +271,40 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 		_gBufferCommandBuffer = std::move(_device->allocateCommandBuffersUnique(bufferInfo)[0]);
 	}
 
-	_demoPass = Pass::create<DemoPass>(_device.get(), _swapchain.getImageFormat());
-	_demoPass.imageExtent = _swapchain.getImageExtent();
 
+	/*_demoPass = Pass::create<DemoPass>(_device.get(), _swapchain.getImageFormat());
+	_demoPass.imageExtent = _swapchain.getImageExtent();*/
+
+
+	// create lighting pass
 	_lightingPass = Pass::create<LightingPass>(_device.get(), _swapchain.getImageFormat());
-	_lightingPassDescriptor = _lightingPass.createDescriptorSetFor(_gBuffer, _device.get(), _descriptorPool.get());
+
+	std::array<vk::DescriptorSetLayout, 1> lightingPassDescLayout{ _lightingPass.getDescriptorSetLayout() };
+	vk::DescriptorSetAllocateInfo lightingPassDescAlloc;
+	lightingPassDescAlloc
+		.setDescriptorPool(_staticDescriptorPool.get())
+		.setDescriptorSetCount(1)
+		.setSetLayouts(lightingPassDescLayout);
+	_lightingPassDescriptor = std::move(_device->allocateDescriptorSetsUnique(lightingPassDescAlloc)[0]);
+	_lightingPass.initializeDescriptorSetFor(_gBuffer, _device.get(), _lightingPassDescriptor.get());
 
 	_lightingPass.imageExtent = _swapchain.getImageExtent();
 	_lightingPass.descriptorSet = _lightingPassDescriptor.get();
 
-	createAndRecordSwapchainBuffers(
+
+	_createAndRecordSwapchainBuffers(
 		_swapchain, _device.get(), _commandPool.get(), _lightingPass
 	);
 
 	{
 		vk::CommandBufferBeginInfo beginInfo;
-		beginInfo.setFlags(vk::CommandBufferUsageFlagBits::eSimultaneousUse);
 		_gBufferCommandBuffer->begin(beginInfo);
 		_gBufferPass.issueCommands(_gBufferCommandBuffer.get(), _gBuffer.getFramebuffer());
 		_gBufferCommandBuffer->end();
 	}
 
 
-	// semaphores
+	// semaphores & fences
 	_imageAvailableSemaphore.resize(maxFramesInFlight);
 	_renderFinishedSemaphore.resize(maxFramesInFlight);
 	_inFlightFences.resize(maxFramesInFlight);
@@ -263,6 +319,13 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 		fenceInfo
 			.setFlags(vk::FenceCreateFlagBits::eSignaled);
 		_inFlightFences[i] = _device->createFenceUnique(fenceInfo);
+	}
+
+	{
+		vk::FenceCreateInfo fenceInfo;
+		fenceInfo
+			.setFlags(vk::FenceCreateFlagBits::eSignaled);
+		_gBufferFence = _device->createFenceUnique(fenceInfo);
 	}
 }
 
@@ -294,11 +357,11 @@ void App::mainLoop() {
 			_gBuffer.resize(_allocator, _device.get(), _swapchain.getImageExtent(), _gBufferPass);
 			_gBufferPass.onResized(_device.get(), _swapchain.getImageExtent());
 
-			_demoPass.imageExtent = _swapchain.getImageExtent();
+			/*_demoPass.imageExtent = _swapchain.getImageExtent();*/
 
 			_lightingPass.imageExtent = _swapchain.getImageExtent();
 
-			createAndRecordSwapchainBuffers(_swapchain, _device.get(), _commandPool.get(), _lightingPass);
+			_createAndRecordSwapchainBuffers(_swapchain, _device.get(), _commandPool.get(), _lightingPass);
 		}
 
 		_device->waitForFences(
@@ -326,11 +389,22 @@ void App::mainLoop() {
 		std::array<vk::Semaphore, 1> signalSemaphores{ _renderFinishedSemaphore[currentFrame].get() };
 
 		{
+			_device->waitForFences(_gBufferFence.get(), true, std::numeric_limits<uint64_t>::max());
+			_device->resetFences(_gBufferFence.get());
+
+			if (_cameraUpdated) {
+				auto *uniforms = _gBufferResources.uniformBuffer.mapAs<GBufferPass::Uniforms>();
+				uniforms->projectionViewMatrix = _camera.projectionViewMatrix;
+				_gBufferResources.uniformBuffer.unmap();
+				_gBufferResources.uniformBuffer.flush();
+				_cameraUpdated = false;
+			}
+
 			std::array<vk::CommandBuffer, 1> gBufferCommandBuffers{ _gBufferCommandBuffer.get() };
 			vk::SubmitInfo submitInfo;
 			submitInfo
 				.setCommandBuffers(gBufferCommandBuffers);
-			_graphicsQueue.submit({ submitInfo }, nullptr);
+			_graphicsQueue.submit(submitInfo, _gBufferFence.get());
 		}
 
 		{
@@ -343,7 +417,7 @@ void App::mainLoop() {
 				.setWaitDstStageMask(waitStages)
 				.setCommandBuffers(cmdBuffers)
 				.setSignalSemaphores(signalSemaphores);
-			_graphicsQueue.submit({ submitInfo }, _inFlightFences[currentFrame].get());
+			_graphicsQueue.submit(submitInfo, _inFlightFences[currentFrame].get());
 		}
 
 		std::vector<vk::SwapchainKHR> swapchains{ _swapchain.getSwapchain().get() };
@@ -362,4 +436,71 @@ void App::mainLoop() {
 
 		currentFrame = (currentFrame + 1) % maxFramesInFlight;
 	}
+}
+
+void App::_onMouseButtonEvent(int button, int action, int mods) {
+	if (action == GLFW_PRESS) {
+		if (_pressedMouseButton == -1) {
+			_pressedMouseButton = button;
+		}
+	} else {
+		if (button == _pressedMouseButton) {
+			_pressedMouseButton = -1;
+		}
+	}
+}
+
+void App::_onMouseMoveEvent(double x, double y) {
+	nvmath::vec2f newPos(static_cast<float>(x), static_cast<float>(y));
+	nvmath::vec2f offset = newPos - _lastMouse;
+	bool cameraChanged = true;
+	switch (_pressedMouseButton) {
+	case GLFW_MOUSE_BUTTON_LEFT:
+		{
+			nvmath::vec3f camOffset = _camera.position - _camera.lookAt;
+
+			nvmath::vec3f y = nvmath::normalize(_camera.worldUp);
+			nvmath::vec3f x = nvmath::normalize(nvmath::cross(y, camOffset));
+			nvmath::vec3f z = nvmath::cross(x, y);
+
+			nvmath::vec2f angles = offset * -1.0f * 0.005f;
+			nvmath::vec2f vert(std::cos(angles.y), std::sin(angles.y));
+			nvmath::vec2f hori(std::cos(angles.x), std::sin(angles.x));
+
+			nvmath::vec3f angle(0.0f, nvmath::dot(camOffset, y), nvmath::dot(camOffset, z));
+			float newZ = angle.y * vert.y + angle.z * vert.x;
+			if (newZ > 0.0f) {
+				angle = nvmath::vec3f(0.0f, angle.y * vert.x - angle.z * vert.y, newZ);
+			}
+			angle = nvmath::vec3f(angle.z * hori.y, angle.y, angle.z * hori.x);
+
+			_camera.position = _camera.lookAt + x * angle.x + y * angle.y + z * angle.z;
+		}
+		break;
+	case GLFW_MOUSE_BUTTON_RIGHT:
+		_camera.fovYRadians = std::clamp(_camera.fovYRadians + 0.005f * offset.y, 0.01f, nv_pi - 0.01f);
+		break;
+	case GLFW_MOUSE_BUTTON_MIDDLE:
+		{
+			nvmath::vec3f offset3D = -offset.x * _camera.unitRight + offset.y * _camera.unitUp;
+			offset3D *= 0.05f;
+			_camera.position += offset3D;
+			_camera.lookAt += offset3D;
+		}
+		break;
+	default:
+		cameraChanged = false;
+		break;
+	}
+	if (cameraChanged) {
+		_camera.recomputeAttributes();
+		_cameraUpdated = true;
+	}
+	_lastMouse = newPos;
+}
+
+void App::_onScrollEvent(double x, double y) {
+	_camera.position += _camera.unitForward * static_cast<float>(y) * 1.0f;
+	_camera.recomputeAttributes();
+	_cameraUpdated = true;
 }

@@ -38,31 +38,27 @@ public:
 		commandBuffer.endRenderPass();
 	}
 
-	vk::UniqueDescriptorSet createDescriptorSetFor(GBuffer &buf, vk::Device device, vk::DescriptorPool pool) {
-		std::array<vk::DescriptorSetLayout, 1> setLayouts{ _descriptorSetLayout.get() };
-		vk::DescriptorSetAllocateInfo setInfo;
-		setInfo
-			.setDescriptorPool(pool)
-			.setDescriptorSetCount(1)
-			.setSetLayouts(setLayouts);
-		vk::UniqueDescriptorSet set = std::move(device.allocateDescriptorSetsUnique(setInfo)[0]);
+	[[nodiscard]] vk::DescriptorSetLayout getDescriptorSetLayout() const {
+		return _descriptorSetLayout.get();
+	}
 
-		std::array<vk::DescriptorImageInfo, 3> bufferInfo{
+	void initializeDescriptorSetFor(GBuffer &buf, vk::Device device, vk::DescriptorSet set) {
+		std::array<vk::DescriptorImageInfo, 3> imageInfo{
 			vk::DescriptorImageInfo(_sampler.get(), buf.getAlbedoView(), vk::ImageLayout::eShaderReadOnlyOptimal),
 			vk::DescriptorImageInfo(_sampler.get(), buf.getNormalView(), vk::ImageLayout::eShaderReadOnlyOptimal),
 			vk::DescriptorImageInfo(_sampler.get(), buf.getDepthView(), vk::ImageLayout::eShaderReadOnlyOptimal)
 		};
 
-		vk::WriteDescriptorSet descriptorWrite;
-		descriptorWrite
-			.setDstSet(set.get())
-			.setDstBinding(0)
-			.setDstArrayElement(0)
-			.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
-			.setImageInfo(bufferInfo);
-		device.updateDescriptorSets({ descriptorWrite }, {});
-
-		return set;
+		std::array<vk::WriteDescriptorSet, 3> descriptorWrite;
+		for (std::size_t i = 0; i < 3; ++i) {
+			descriptorWrite[i]
+				.setDstSet(set)
+				.setDstBinding(i)
+				.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
+				.setPImageInfo(&imageInfo[i])
+				.setDescriptorCount(1);
+		}
+		device.updateDescriptorSets(descriptorWrite, {});
 	}
 
 	vk::Extent2D imageExtent;
@@ -142,19 +138,17 @@ protected:
 
 		_sampler = createSampler(dev, vk::Filter::eNearest, vk::Filter::eNearest, vk::SamplerMipmapMode::eNearest);
 
-		std::array<vk::DescriptorSetLayoutBinding, 1> descriptorBindings{
-			vk::DescriptorSetLayoutBinding(
-				0, vk::DescriptorType::eCombinedImageSampler, 3, vk::ShaderStageFlagBits::eFragment
-			)
+		std::array<vk::DescriptorSetLayoutBinding, 3> descriptorBindings{
+			vk::DescriptorSetLayoutBinding(0, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment),
+			vk::DescriptorSetLayoutBinding(1, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment),
+			vk::DescriptorSetLayoutBinding(2, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment)
 		};
 		vk::DescriptorSetLayoutCreateInfo descriptorInfo;
 		descriptorInfo
 			.setBindings(descriptorBindings);
 		_descriptorSetLayout = dev.createDescriptorSetLayoutUnique(descriptorInfo);
 
-		std::array<vk::DescriptorSetLayout, 1> descriptorLayouts{
-			_descriptorSetLayout.get()
-		};
+		std::array<vk::DescriptorSetLayout, 1> descriptorLayouts{ _descriptorSetLayout.get() };
 		vk::PipelineLayoutCreateInfo pipelineInfo;
 		pipelineInfo
 			.setSetLayouts(descriptorLayouts);
