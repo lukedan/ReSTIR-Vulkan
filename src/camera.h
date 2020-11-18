@@ -20,6 +20,7 @@ public:
 	nvmath::mat4f viewMatrix;
 	nvmath::mat4f projectionMatrix;
 	nvmath::mat4f projectionViewMatrix;
+	nvmath::mat4f inverseViewMatrix;
 
 	void recomputeAttributes() {
 		unitForward = nvmath::normalize(lookAt - position);
@@ -45,5 +46,6 @@ public:
 		projectionMatrix.set_row(3, nvmath::vec4f(0.0f, 0.0f, 1.0f, 0.0f));
 
 		projectionViewMatrix = projectionMatrix * viewMatrix;
+		inverseViewMatrix = nvmath::invert(viewMatrix);
 	}
 };

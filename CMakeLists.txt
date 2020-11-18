@@ -20,12 +20,15 @@ endif()
 
 target_sources(restir
 	PRIVATE
+		"src/shaderStructs/aabbTree.h"
 		"src/shaderStructs/vertex.h"
 		"src/passes/demoPass.h"
 		"src/passes/gBufferPass.cpp"
 		"src/passes/gBufferPass.h"
 		"src/passes/lightingPass.h"
 		"src/passes/pass.h"
+		"src/aabbTreeBuilder.cpp"
+		"src/aabbTreeBuilder.h"
 		"src/app.cpp"
 		"src/app.h"
 		"src/camera.h"

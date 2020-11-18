@@ -157,6 +157,27 @@ namespace vma {
 			vk::ImageLayout initialLayout = vk::ImageLayout::eUndefined,
 			uint32_t arrayLayers = 1
 		);
+		[[nodiscard]] UniqueBuffer createBuffer(
+			uint32_t size, vk::BufferUsageFlags usage, VmaMemoryUsage memoryUsage,
+			const std::vector<uint32_t> *sharedQueues = nullptr
+		) {
+			vk::BufferCreateInfo bufferInfo;
+			bufferInfo
+				.setSize(size)
+				.setUsage(usage);
+			if (sharedQueues) {
+				bufferInfo
+					.setSharingMode(vk::SharingMode::eConcurrent)
+					.setQueueFamilyIndices(*sharedQueues);
+			} else {
+				bufferInfo.setSharingMode(vk::SharingMode::eExclusive);
+			}
+
+			VmaAllocationCreateInfo allocationInfo{};
+			allocationInfo.usage = memoryUsage;
+
+			return createBuffer(bufferInfo, allocationInfo);
+		}
 		template <typename T> [[nodiscard]] UniqueBuffer createTypedBuffer(
 			std::size_t numElements, vk::BufferUsageFlags usage, VmaMemoryUsage memoryUsage,
 			const std::vector<uint32_t> *sharedQueues = nullptr
