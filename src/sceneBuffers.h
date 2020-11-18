@@ -35,6 +35,9 @@ public:
 		result._matrices = allocator.createTypedBuffer<ModelMatrices>(
 			scene.m_nodes.size(), vk::BufferUsageFlagBits::eUniformBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU
 			);
+		result._materials = allocator.createTypedBuffer<nvh::GltfMaterial>(
+			scene.m_materials.size(), vk::BufferUsageFlagBits::eStorageBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU
+			);
 		// Create vma::imageunique
 		if (scene.m_textures.size() > 0) {
 
@@ -50,23 +53,22 @@ public:
 					vk::Extent2D(gltfimage.width, gltfimage.height),
 					format,
 					vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst,
-					VMA_MEMORY_USAGE_GPU_ONLY,
-					vk::ImageTiling::eOptimal,
+					VMA_MEMORY_USAGE_CPU_TO_GPU,
+					vk::ImageTiling::eLinear,
 					1,
 					vk::SampleCountFlagBits::e1,
 					nullptr, // SharedQueues
 					vk::ImageLayout::eUndefined);
 				
-				// Map GPU memory to RAM
-				
+				// Map GPU memory to RAM and put data from RAM to GPU
+				void* image_device = result._textureImages[i].map();
+				memcpy(image_device, gltfimage.image.data(), sizeof(gltfimage.image));
 
-				// Put data from RAM to GPU
-
-
+				// Unmap and flush
+				result._textureImages[i].unmap();
+				result._textureImages[i].flush();
 			}
 		}
-		
-		
 		
 		Vertex *vertices = result._vertices.mapAs<Vertex>();
 		for (std::size_t i = 0; i < scene.m_positions.size(); ++i) {

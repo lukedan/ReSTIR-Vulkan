@@ -165,7 +165,8 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 
 	_allocator = vma::Allocator::create(vulkanApiVersion, _instance.get(), _physicalDevice, _device.get());
 
-	loadScene("../../../scenes/cornellBox.gltf", _gltfScene);
+	// loadScene("../../../scenes/cornellBox.gltf", _gltfScene);
+	loadScene("../../../scenes/boxTextured/boxTextured.gltf", _gltfScene);
 	_sceneBuffers = SceneBuffers::create(_gltfScene, _allocator);
 
 	{ // create command pool
