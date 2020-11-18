@@ -97,13 +97,16 @@ protected:
 	vk::UniqueCommandBuffer _gBufferCommandBuffer;
 	GBufferPass::Resources _gBufferResources;
 
-	vk::UniqueDescriptorSet _lightingPassDescriptor;
 	LightingPass _lightingPass;
+	LightingPass::Resources _lightingPassResources;
 
 	DemoPass _demoPass;
 
 	nvh::GltfScene _gltfScene;
 	SceneBuffers _sceneBuffers;
+
+	AabbTree _aabbTree;
+	AabbTreeBuffers _aabbTreeBuffers;
 
 	// synchronization
 	std::vector<vk::UniqueSemaphore> _imageAvailableSemaphore;

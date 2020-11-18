@@ -167,6 +167,9 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 
 	loadScene("../../../scenes/cornellBox.gltf", _gltfScene);
 	_sceneBuffers = SceneBuffers::create(_gltfScene, _allocator);
+	_aabbTree = AabbTree::build(_gltfScene);
+	_aabbTreeBuffers = AabbTreeBuffers::create(_aabbTree, _allocator);
+
 
 	{ // create command pool
 		vk::CommandPoolCreateInfo poolInfo;
@@ -212,9 +215,10 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 	}
 
 	{ // create descriptor pool
-		std::array<vk::DescriptorPoolSize, 3> poolSizes{
+		std::array<vk::DescriptorPoolSize, 4> poolSizes{
 			vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, 3),
-			vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, 1),
+			vk::DescriptorPoolSize(vk::DescriptorType::eStorageBuffer, 2),
+			vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, 2),
 			vk::DescriptorPoolSize(vk::DescriptorType::eUniformBufferDynamic, 1)
 		};
 		vk::DescriptorPoolCreateInfo poolInfo;
@@ -279,17 +283,26 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 	// create lighting pass
 	_lightingPass = Pass::create<LightingPass>(_device.get(), _swapchain.getImageFormat());
 
-	std::array<vk::DescriptorSetLayout, 1> lightingPassDescLayout{ _lightingPass.getDescriptorSetLayout() };
-	vk::DescriptorSetAllocateInfo lightingPassDescAlloc;
-	lightingPassDescAlloc
-		.setDescriptorPool(_staticDescriptorPool.get())
-		.setDescriptorSetCount(1)
-		.setSetLayouts(lightingPassDescLayout);
-	_lightingPassDescriptor = std::move(_device->allocateDescriptorSetsUnique(lightingPassDescAlloc)[0]);
-	_lightingPass.initializeDescriptorSetFor(_gBuffer, _device.get(), _lightingPassDescriptor.get());
+	{
+		_lightingPassResources.gBuffer = &_gBuffer;
+		_lightingPassResources.aabbTreeBuffers = &_aabbTreeBuffers;
+
+		_lightingPassResources.uniformBuffer = _allocator.createTypedBuffer<LightingPass::Uniforms>(
+			1, vk::BufferUsageFlagBits::eUniformBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU
+			);
+
+		std::array<vk::DescriptorSetLayout, 1> lightingPassDescLayout{ _lightingPass.getDescriptorSetLayout() };
+		vk::DescriptorSetAllocateInfo lightingPassDescAlloc;
+		lightingPassDescAlloc
+			.setDescriptorPool(_staticDescriptorPool.get())
+			.setDescriptorSetCount(1)
+			.setSetLayouts(lightingPassDescLayout);
+		_lightingPassResources.descriptorSet = std::move(_device->allocateDescriptorSetsUnique(lightingPassDescAlloc)[0]);
+	}
+	_lightingPass.initializeDescriptorSetFor(_lightingPassResources, _device.get());
 
 	_lightingPass.imageExtent = _swapchain.getImageExtent();
-	_lightingPass.descriptorSet = _lightingPassDescriptor.get();
+	_lightingPass.descriptorSet = _lightingPassResources.descriptorSet.get();
 
 
 	_createAndRecordSwapchainBuffers(
@@ -393,10 +406,23 @@ void App::mainLoop() {
 			_device->resetFences(_gBufferFence.get());
 
 			if (_cameraUpdated) {
-				auto *uniforms = _gBufferResources.uniformBuffer.mapAs<GBufferPass::Uniforms>();
-				uniforms->projectionViewMatrix = _camera.projectionViewMatrix;
+				_graphicsQueue.waitIdle();
+
+				auto *gBufferUniforms = _gBufferResources.uniformBuffer.mapAs<GBufferPass::Uniforms>();
+				gBufferUniforms->projectionViewMatrix = _camera.projectionViewMatrix;
 				_gBufferResources.uniformBuffer.unmap();
 				_gBufferResources.uniformBuffer.flush();
+
+				auto *lightingPassUniforms = _lightingPassResources.uniformBuffer.mapAs<LightingPass::Uniforms>();
+				lightingPassUniforms->inverseViewMatrix = _camera.inverseViewMatrix;
+				lightingPassUniforms->tempLightPoint = _camera.lookAt;
+				lightingPassUniforms->cameraNear = _camera.zNear;
+				lightingPassUniforms->cameraFar = _camera.zFar;
+				lightingPassUniforms->tanHalfFovY = std::tan(0.5f * _camera.fovYRadians);
+				lightingPassUniforms->aspectRatio = _camera.aspectRatio;
+				_lightingPassResources.uniformBuffer.unmap();
+				_lightingPassResources.uniformBuffer.flush();
+
 				_cameraUpdated = false;
 			}
 
