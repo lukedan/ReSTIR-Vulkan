@@ -165,13 +165,6 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 
 	_allocator = vma::Allocator::create(vulkanApiVersion, _instance.get(), _physicalDevice, _device.get());
 
-	// loadScene("../../../scenes/cornellBox.gltf", _gltfScene);
-	loadScene("../../../scenes/boxTextured/boxTextured.gltf", _gltfScene);
-	_sceneBuffers = SceneBuffers::create(_gltfScene, _allocator);
-	_aabbTree = AabbTree::build(_gltfScene);
-	_aabbTreeBuffers = AabbTreeBuffers::create(_aabbTree, _allocator);
-
-
 	{ // create command pool
 		vk::CommandPoolCreateInfo poolInfo;
 		poolInfo
@@ -234,6 +227,11 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 	_graphicsQueue = _device->getQueue(_graphicsQueueIndex, 0);
 	_presentQueue = _device->getQueue(_presentQueueIndex, 0);
 
+	// loadScene("../../../scenes/cornellBox.gltf", _gltfScene);
+	loadScene("../../../scenes/boxTextured/boxTextured.gltf", _gltfScene);
+	_sceneBuffers = SceneBuffers::create(_gltfScene, _allocator, _physicalDevice, _device, _graphicsQueue, _commandPool);
+	_aabbTree = AabbTree::build(_gltfScene);
+	_aabbTreeBuffers = AabbTreeBuffers::create(_aabbTree, _allocator);
 
 	// create g buffer pass
 	GBuffer::Formats::initialize(_physicalDevice);
@@ -260,8 +258,8 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 			.setSetLayouts(gBufferMatricesLayout);
 		_gBufferResources.matrixDescriptor = std::move(_device->allocateDescriptorSetsUnique(gBufferMatricesAlloc)[0]);
 	}
-
-	_gBufferPass.initializeResourcesFor(_gltfScene, _sceneBuffers, _device.get(), _allocator, _gBufferResources);
+	
+	_gBufferPass.initializeResourcesFor(_gltfScene, _sceneBuffers, _device, _allocator, _gBufferResources);
 	_gBufferPass.descriptorSets = &_gBufferResources;
 	_gBufferPass.scene = &_gltfScene;
 	_gBufferPass.sceneBuffers = &_sceneBuffers;

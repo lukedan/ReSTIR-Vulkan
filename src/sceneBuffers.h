@@ -6,12 +6,23 @@
 #include "vma.h"
 #include "../gltf/gltfscene.h"
 
+
+
+
 class SceneBuffers {
 public:
 	struct ModelMatrices {
 		nvmath::mat4 transform;
 		nvmath::mat4 inverseTransposed;
 	};
+
+	struct SceneTexture {
+		vk::UniqueImageView imageView;
+		vk::UniqueSampler sampler;
+		vma::UniqueImage image;
+	};
+
+	std::vector<SceneTexture> _textureImages;
 
 	[[nodiscard]] vk::Buffer getVertices() const {
 		return _vertices.get();
@@ -22,8 +33,14 @@ public:
 	[[nodiscard]] vk::Buffer getMatrices() const {
 		return _matrices.get();
 	}
+	
 
-	[[nodiscard]] inline static SceneBuffers create(const nvh::GltfScene &scene, vma::Allocator &allocator) {
+	[[nodiscard]] static SceneBuffers create(const nvh::GltfScene &scene, 
+		vma::Allocator &allocator, 
+		const vk::PhysicalDevice& p_device, 
+		vk::UniqueDevice& l_device, 
+		vk::Queue& graphicsQueue,
+		vk::UniqueCommandPool const& commandPool) {
 		SceneBuffers result;
 
 		result._vertices = allocator.createTypedBuffer<Vertex>(
@@ -38,8 +55,14 @@ public:
 		result._materials = allocator.createTypedBuffer<nvh::GltfMaterial>(
 			scene.m_materials.size(), vk::BufferUsageFlagBits::eStorageBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU
 			);
+
 		// Create vma::imageunique
 		if (scene.m_textures.size() > 0) {
+			
+			vk::UniqueCommandBuffer commandBuffer = std::move(l_device
+				->allocateCommandBuffersUnique(vk::CommandBufferAllocateInfo(
+					commandPool.get(), vk::CommandBufferLevel::ePrimary, 1))
+				.front());
 
 			vk::Format format = vk::Format::eR8G8B8A8Srgb;
 			result._textureImages.resize(scene.m_textures.size());
@@ -48,8 +71,8 @@ public:
 				auto& gltfimage = scene.m_textures[i];
 				std::cout << "Created Texture Name:" << gltfimage.uri << std::endl;
 
-				// Create GPU mamory
-				result._textureImages[i] = allocator.createImage2D(
+				// Create vma::Uniqueimage
+				result._textureImages[i].image = allocator.createImage2D(
 					vk::Extent2D(gltfimage.width, gltfimage.height),
 					format,
 					vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst,
@@ -58,15 +81,49 @@ public:
 					1,
 					vk::SampleCountFlagBits::e1,
 					nullptr, // SharedQueues
-					vk::ImageLayout::eUndefined);
-				
-				// Map GPU memory to RAM and put data from RAM to GPU
-				void* image_device = result._textureImages[i].map();
-				memcpy(image_device, gltfimage.image.data(), sizeof(gltfimage.image));
+					vk::ImageLayout::ePreinitialized);
 
+				// Map GPU memory to RAM and put data from RAM to GPU
+				void* image_device = result._textureImages[i].image.map();
+				memcpy(image_device, gltfimage.image.data(), gltfimage.image.size() * sizeof(unsigned char));
 				// Unmap and flush
-				result._textureImages[i].unmap();
-				result._textureImages[i].flush();
+				result._textureImages[i].image.unmap();
+				result._textureImages[i].image.flush();
+
+				commandBuffer->begin(vk::CommandBufferBeginInfo());
+				setImageLayout(commandBuffer, result._textureImages[i].image.get(), format, vk::ImageLayout::ePreinitialized, vk::ImageLayout::eShaderReadOnlyOptimal);
+				commandBuffer->end();
+				
+				submitAndWait(l_device, graphicsQueue, commandBuffer);
+
+				vk::UniqueSampler sampler =
+					l_device->createSamplerUnique(vk::SamplerCreateInfo(vk::SamplerCreateFlags(),
+						vk::Filter::eNearest,
+						vk::Filter::eNearest,
+						vk::SamplerMipmapMode::eNearest,
+						vk::SamplerAddressMode::eClampToEdge,
+						vk::SamplerAddressMode::eClampToEdge,
+						vk::SamplerAddressMode::eClampToEdge,
+						0.0f,
+						false,
+						1.0f,
+						false,
+						vk::CompareOp::eNever,
+						0.0f,
+						0.0f,
+						vk::BorderColor::eFloatOpaqueWhite));
+
+				vk::ComponentMapping componentMapping(vk::ComponentSwizzle::eR, vk::ComponentSwizzle::eG, vk::ComponentSwizzle::eB, vk::ComponentSwizzle::eA);
+				
+				vk::ImageViewCreateInfo imageViewCreateInfo(
+					vk::ImageViewCreateFlags(),
+					result._textureImages[i].image.get(),
+					vk::ImageViewType::e2D,
+					format,
+					componentMapping,
+					vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1));
+
+				vk::UniqueImageView imageView = l_device->createImageViewUnique(imageViewCreateInfo);
 			}
 		}
 		
@@ -120,5 +177,103 @@ private:
 	vma::UniqueBuffer _indices;
 	vma::UniqueBuffer _matrices;
 	vma::UniqueBuffer _materials;
-	std::vector<vma::UniqueImage> _textureImages;
+	// std::vector<vma::UniqueImage> _textureImages;
+	
+
+	void static setImageLayout(vk::UniqueCommandBuffer const& commandBuffer,
+		vk::Image                       image,
+		vk::Format                      format,
+		vk::ImageLayout                 oldImageLayout,
+		vk::ImageLayout                 newImageLayout)
+	{
+		vk::AccessFlags sourceAccessMask;
+		switch (oldImageLayout)
+		{
+		case vk::ImageLayout::eTransferDstOptimal: sourceAccessMask = vk::AccessFlagBits::eTransferWrite; break;
+		case vk::ImageLayout::ePreinitialized: sourceAccessMask = vk::AccessFlagBits::eHostWrite; break;
+		case vk::ImageLayout::eGeneral:  // sourceAccessMask is empty
+		case vk::ImageLayout::eUndefined: break;
+		default: assert(false); break;
+		}
+
+		vk::PipelineStageFlags sourceStage;
+		switch (oldImageLayout)
+		{
+		case vk::ImageLayout::eGeneral:
+		case vk::ImageLayout::ePreinitialized: sourceStage = vk::PipelineStageFlagBits::eHost; break;
+		case vk::ImageLayout::eTransferDstOptimal: sourceStage = vk::PipelineStageFlagBits::eTransfer; break;
+		case vk::ImageLayout::eUndefined: sourceStage = vk::PipelineStageFlagBits::eTopOfPipe; break;
+		default: assert(false); break;
+		}
+
+		vk::AccessFlags destinationAccessMask;
+		switch (newImageLayout)
+		{
+		case vk::ImageLayout::eColorAttachmentOptimal:
+			destinationAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
+			break;
+		case vk::ImageLayout::eDepthStencilAttachmentOptimal:
+			destinationAccessMask =
+				vk::AccessFlagBits::eDepthStencilAttachmentRead | vk::AccessFlagBits::eDepthStencilAttachmentWrite;
+			break;
+		case vk::ImageLayout::eGeneral:  // empty destinationAccessMask
+		case vk::ImageLayout::ePresentSrcKHR: break;
+		case vk::ImageLayout::eShaderReadOnlyOptimal: destinationAccessMask = vk::AccessFlagBits::eShaderRead; break;
+		case vk::ImageLayout::eTransferSrcOptimal: destinationAccessMask = vk::AccessFlagBits::eTransferRead; break;
+		case vk::ImageLayout::eTransferDstOptimal: destinationAccessMask = vk::AccessFlagBits::eTransferWrite; break;
+		default: assert(false); break;
+		}
+
+		vk::PipelineStageFlags destinationStage;
+		switch (newImageLayout)
+		{
+		case vk::ImageLayout::eColorAttachmentOptimal:
+			destinationStage = vk::PipelineStageFlagBits::eColorAttachmentOutput;
+			break;
+		case vk::ImageLayout::eDepthStencilAttachmentOptimal:
+			destinationStage = vk::PipelineStageFlagBits::eEarlyFragmentTests;
+			break;
+		case vk::ImageLayout::eGeneral: destinationStage = vk::PipelineStageFlagBits::eHost; break;
+		case vk::ImageLayout::ePresentSrcKHR: destinationStage = vk::PipelineStageFlagBits::eBottomOfPipe; break;
+		case vk::ImageLayout::eShaderReadOnlyOptimal:
+			destinationStage = vk::PipelineStageFlagBits::eFragmentShader;
+			break;
+		case vk::ImageLayout::eTransferDstOptimal:
+		case vk::ImageLayout::eTransferSrcOptimal: destinationStage = vk::PipelineStageFlagBits::eTransfer; break;
+		default: assert(false); break;
+		}
+
+		vk::ImageAspectFlags aspectMask;
+		if (newImageLayout == vk::ImageLayout::eDepthStencilAttachmentOptimal)
+		{
+			aspectMask = vk::ImageAspectFlagBits::eDepth;
+			if (format == vk::Format::eD32SfloatS8Uint || format == vk::Format::eD24UnormS8Uint)
+			{
+				aspectMask |= vk::ImageAspectFlagBits::eStencil;
+			}
+		}
+		else
+		{
+			aspectMask = vk::ImageAspectFlagBits::eColor;
+		}
+
+		vk::ImageSubresourceRange imageSubresourceRange(aspectMask, 0, 1, 0, 1);
+		vk::ImageMemoryBarrier    imageMemoryBarrier(sourceAccessMask,
+			destinationAccessMask,
+			oldImageLayout,
+			newImageLayout,
+			VK_QUEUE_FAMILY_IGNORED,
+			VK_QUEUE_FAMILY_IGNORED,
+			image,
+			imageSubresourceRange);
+		return commandBuffer->pipelineBarrier(sourceStage, destinationStage, {}, nullptr, nullptr, imageMemoryBarrier);
+	}
+
+	void static submitAndWait(vk::UniqueDevice& device, vk::Queue queue, vk::UniqueCommandBuffer& commandBuffer)
+	{
+		vk::UniqueFence fence = device->createFenceUnique(vk::FenceCreateInfo());
+		queue.submit(vk::SubmitInfo({}, {}, *commandBuffer), fence.get());
+		while (vk::Result::eTimeout == device->waitForFences(fence.get(), VK_TRUE, 100000000))
+			;
+	}
 };

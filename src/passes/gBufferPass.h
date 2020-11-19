@@ -132,7 +132,7 @@ public:
 
 	void initializeResourcesFor(
 		const nvh::GltfScene &scene, const SceneBuffers &buffers,
-		vk::Device device, vma::Allocator &alloc, Resources &sets
+		vk::UniqueDevice& device, vma::Allocator &alloc, Resources &sets
 	) {
 		std::vector<vk::WriteDescriptorSet> bufferWrite;
 		bufferWrite.reserve(sets.textures.size() + 2);
@@ -165,7 +165,11 @@ public:
 			.setDescriptorType(vk::DescriptorType::eUniformBufferDynamic)
 			.setBufferInfo(matricesBufferInfo);
 
-		device.updateDescriptorSets(bufferWrite, {});
+		// Init Textures in the scene -- Get combined sampler
+		// TODO
+		
+
+		device.get().updateDescriptorSets(bufferWrite, {});
 	}
 
 	const nvh::GltfScene *scene = nullptr;
