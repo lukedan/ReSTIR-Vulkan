@@ -143,14 +143,14 @@ void main() {
 
 	/*outColor = vec4((vec3(normal) + 1.0f) * 0.5f, 1.0f);*/
 	/*outColor = vec4(depth, depth, depth, 1.0f);*/
-	/*outColor = albedo;*/
+	outColor = vec4(albedo, 1.0f);
 
 	float worldDepth = sceneDepthToWorldDepth(depth, uniforms.cameraNear, uniforms.cameraFar);
 	vec3 viewPos = fragCoordDepthToViewPos(inUv, worldDepth, uniforms.tanHalfFovY, uniforms.aspectRatio);
 	vec3 worldPos = (uniforms.inverseViewMatrix * vec4(viewPos, 1.0f)).xyz;
 
 	/*outColor = vec4(vec3(worldDepth / 10.0f), 1.0f);*/
-	outColor = vec4(worldPos / 10.0f + 0.5f, 1.0f);
+	/*outColor = vec4(worldPos / 10.0f + 0.5f, 1.0f);*/
 
 	vec3 rayDir = uniforms.tempLightPoint.xyz - worldPos;
 	bool visible = traverseAabbTree(worldPos + 0.01 * rayDir, rayDir * 0.98);

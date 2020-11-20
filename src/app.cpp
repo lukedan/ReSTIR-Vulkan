@@ -208,34 +208,37 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 		_swapchain = Swapchain::create(_device.get(), _swapchainInfo);
 	}
 
+	// loadScene("../../../scenes/cornellBox.gltf", _gltfScene);
+	loadScene("../../../scenes/boxTextured/boxTextured.gltf", _gltfScene);
+
 	{ // create descriptor pool
-		std::array<vk::DescriptorPoolSize, 4> poolSizes{
+		std::array<vk::DescriptorPoolSize, 5> poolSizes{
 			vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, 3),
 			vk::DescriptorPoolSize(vk::DescriptorType::eStorageBuffer, 2),
 			vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, 2),
-			vk::DescriptorPoolSize(vk::DescriptorType::eUniformBufferDynamic, 1)
+			vk::DescriptorPoolSize(vk::DescriptorType::eUniformBufferDynamic, 1),
+			vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, 1) // SceneTextures
 		};
 		vk::DescriptorPoolCreateInfo poolInfo;
 		poolInfo
 			.setFlags(vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet)
 			.setPoolSizes(poolSizes)
-			.setMaxSets(3);
+			.setMaxSets(4);
 		_staticDescriptorPool = _device->createDescriptorPoolUnique(poolInfo);
 	}
 
 
 	_graphicsQueue = _device->getQueue(_graphicsQueueIndex, 0);
 	_presentQueue = _device->getQueue(_presentQueueIndex, 0);
-
-	// loadScene("../../../scenes/cornellBox.gltf", _gltfScene);
-	loadScene("../../../scenes/boxTextured/boxTextured.gltf", _gltfScene);
+	
 	_sceneBuffers = SceneBuffers::create(_gltfScene, _allocator, _physicalDevice, _device, _graphicsQueue, _commandPool);
 	_aabbTree = AabbTree::build(_gltfScene);
 	_aabbTreeBuffers = AabbTreeBuffers::create(_aabbTree, _allocator);
 
 	// create g buffer pass
 	GBuffer::Formats::initialize(_physicalDevice);
-	_gBufferPass = Pass::create<GBufferPass>(_device.get(), _swapchain.getImageExtent());
+	// _gBufferPass = Pass::create<GBufferPass>(_device.get(), _swapchain.getImageExtent());
+	_gBufferPass = Pass::create<GBufferPass>(_device.get(), &_sceneBuffers, _swapchain.getImageExtent());
 
 	{
 		_gBufferResources.uniformBuffer = _allocator.createTypedBuffer<GBufferPass::Uniforms>(
@@ -257,12 +260,21 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 			.setDescriptorSetCount(1)
 			.setSetLayouts(gBufferMatricesLayout);
 		_gBufferResources.matrixDescriptor = std::move(_device->allocateDescriptorSetsUnique(gBufferMatricesAlloc)[0]);
+
+		// Scene textures
+		std::array<vk::DescriptorSetLayout, 1> gSceneTexturesLayout{ _gBufferPass.getSceneTexturesDescriptorSetLayout() };
+		vk::DescriptorSetAllocateInfo gBufferSceneTexturesAlloc;
+		gBufferSceneTexturesAlloc
+			.setDescriptorPool(_staticDescriptorPool.get())
+			.setDescriptorSetCount(1)
+			.setSetLayouts(gSceneTexturesLayout);
+		_gBufferResources.tempTexture = std::move(_device->allocateDescriptorSetsUnique(gBufferSceneTexturesAlloc)[0]);
 	}
 	
 	_gBufferPass.initializeResourcesFor(_gltfScene, _sceneBuffers, _device, _allocator, _gBufferResources);
 	_gBufferPass.descriptorSets = &_gBufferResources;
 	_gBufferPass.scene = &_gltfScene;
-	_gBufferPass.sceneBuffers = &_sceneBuffers;
+	// _gBufferPass.sceneBuffers = &_sceneBuffers;
 
 	_gBuffer = GBuffer::create(_allocator, _device.get(), _swapchain.getImageExtent(), _gBufferPass);
 	{

@@ -79,6 +79,7 @@ public:
 		vma::UniqueBuffer uniformBuffer;
 		vk::UniqueDescriptorSet uniformDescriptor;
 		vk::UniqueDescriptorSet matrixDescriptor;
+		vk::UniqueDescriptorSet tempTexture;
 		std::vector<vk::UniqueDescriptorSet> textures;
 	};
 
@@ -109,7 +110,7 @@ public:
 			// TODO textures
 			commandBuffer.bindDescriptorSets(
 				vk::PipelineBindPoint::eGraphics, _pipelineLayout.get(), 0,
-				{ descriptorSets->uniformDescriptor.get(), descriptorSets->matrixDescriptor.get() },
+				{ descriptorSets->uniformDescriptor.get(), descriptorSets->matrixDescriptor.get(), descriptorSets->tempTexture.get() },
 				{ static_cast<uint32_t>(i * sizeof(SceneBuffers::ModelMatrices)) }
 			);
 			commandBuffer.drawIndexed(mesh.indexCount, 1, mesh.firstIndex, mesh.vertexOffset, 0);
@@ -129,13 +130,16 @@ public:
 	[[nodiscard]] vk::DescriptorSetLayout getUniformsDescriptorSetLayout() const {
 		return _uniformsDescriptorSetLayout.get();
 	}
+	[[nodiscard]] vk::DescriptorSetLayout getSceneTexturesDescriptorSetLayout() const {
+		return _sceneTexturesDescriptorSetLayout.get();
+	}
 
 	void initializeResourcesFor(
 		const nvh::GltfScene &scene, const SceneBuffers &buffers,
 		vk::UniqueDevice& device, vma::Allocator &alloc, Resources &sets
 	) {
 		std::vector<vk::WriteDescriptorSet> bufferWrite;
-		bufferWrite.reserve(sets.textures.size() + 2);
+		bufferWrite.reserve(sets.textures.size() + 2 + scene.m_textures.size());
 
 		/*std::vector<vk::DescriptorImageInfo> imageInfo(sets.textures.size());
 		for (std::size_t i = 0; i < sets.textures.size(); ++i) {
@@ -167,7 +171,15 @@ public:
 
 		// Init Textures in the scene -- Get combined sampler
 		// TODO
-		
+		vk::DescriptorImageInfo sceneTextureImageInfo{};
+		sceneTextureImageInfo.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+		sceneTextureImageInfo.imageView = buffers._textureImages[0].imageView.get();
+		sceneTextureImageInfo.sampler = buffers._textureImages[0].sampler.get();
+		bufferWrite.emplace_back()
+			.setDstSet(sets.tempTexture.get())
+			.setDstBinding(0)
+			.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
+			.setImageInfo(sceneTextureImageInfo);
 
 		device.get().updateDescriptorSets(bufferWrite, {});
 	}
@@ -184,7 +196,9 @@ protected:
 	vk::UniqueDescriptorSetLayout _uniformsDescriptorSetLayout;
 	vk::UniqueDescriptorSetLayout _matricesDescriptorSetLayout;
 	vk::UniqueDescriptorSetLayout _textureDescriptorSetLayout;
+	vk::UniqueDescriptorSetLayout _sceneTexturesDescriptorSetLayout;
 	vk::UniquePipelineLayout _pipelineLayout;
+	// SceneBuffers& _scenebuffers;
 
 	vk::UniqueRenderPass _createPass(vk::Device device) override {
 		const GBuffer::Formats &formats = GBuffer::Formats::get();
@@ -294,6 +308,62 @@ protected:
 
 		return result;
 	}
+	
+
+	void _initialize(vk::Device dev, SceneBuffers* i_scene_buffer) override {
+		_vert = Shader::load(dev, "shaders/gBuffer.vert.spv", "main", vk::ShaderStageFlagBits::eVertex);
+		_frag = Shader::load(dev, "shaders/gBuffer.frag.spv", "main", vk::ShaderStageFlagBits::eFragment);
+
+		std::array<vk::DescriptorSetLayoutBinding, 1> uniformsDescriptorBindings{
+			vk::DescriptorSetLayoutBinding(0, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eVertex)
+		};
+		vk::DescriptorSetLayoutCreateInfo uniformsDescriptorSetInfo;
+		uniformsDescriptorSetInfo.setBindings(uniformsDescriptorBindings);
+		_uniformsDescriptorSetLayout = dev.createDescriptorSetLayoutUnique(uniformsDescriptorSetInfo);
+
+		std::array<vk::DescriptorSetLayoutBinding, 1> matricesDescriptorBindings{
+			vk::DescriptorSetLayoutBinding(0, vk::DescriptorType::eUniformBufferDynamic, 1, vk::ShaderStageFlagBits::eVertex)
+		};
+		vk::DescriptorSetLayoutCreateInfo matricesDescriptorSetInfo;
+		matricesDescriptorSetInfo.setBindings(matricesDescriptorBindings);
+		_matricesDescriptorSetLayout = dev.createDescriptorSetLayoutUnique(matricesDescriptorSetInfo);
+
+		std::array<vk::DescriptorSetLayoutBinding, 1> textureDescriptorBindings{
+			vk::DescriptorSetLayoutBinding(0, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment)
+		};
+		vk::DescriptorSetLayoutCreateInfo textureDescriptorSetInfo;
+		textureDescriptorSetInfo.setBindings(textureDescriptorBindings);
+		_textureDescriptorSetLayout = dev.createDescriptorSetLayoutUnique(textureDescriptorSetInfo);
+
+		sceneBuffers = i_scene_buffer;
+		// Scene textures -- Temporily only one texture:
+		vk::DescriptorSetLayoutBinding sceneTextureSamplerLayoutBinding{};
+		sceneTextureSamplerLayoutBinding.binding = 0;
+		sceneTextureSamplerLayoutBinding.descriptorCount = 1;
+		sceneTextureSamplerLayoutBinding.descriptorType = vk::DescriptorType::eCombinedImageSampler;
+		sceneTextureSamplerLayoutBinding.pImmutableSamplers = nullptr;
+		sceneTextureSamplerLayoutBinding.stageFlags = vk::ShaderStageFlagBits::eFragment;
+		std::array<vk::DescriptorSetLayoutBinding, 1> sceneTextureDescriptorBindings;
+		sceneTextureDescriptorBindings[0] = std::move(sceneTextureSamplerLayoutBinding);
+		vk::DescriptorSetLayoutCreateInfo sceneTextureLayoutInfo;
+		sceneTextureLayoutInfo.setBindings(sceneTextureDescriptorBindings);
+		_sceneTexturesDescriptorSetLayout = dev.createDescriptorSetLayoutUnique(sceneTextureLayoutInfo);
+
+		std::array<vk::DescriptorSetLayout, 4> descriptorSetLayouts{
+			_uniformsDescriptorSetLayout.get(),
+			_matricesDescriptorSetLayout.get(),
+			_textureDescriptorSetLayout.get(),
+			_sceneTexturesDescriptorSetLayout.get()
+		};
+		vk::PipelineLayoutCreateInfo pipelineInfo;
+		pipelineInfo
+			.setSetLayouts(descriptorSetLayouts);
+		_pipelineLayout = dev.createPipelineLayoutUnique(pipelineInfo);
+
+		Pass::_initialize(dev);
+	}
+
+
 	void _initialize(vk::Device dev) override {
 		_vert = Shader::load(dev, "shaders/gBuffer.vert.spv", "main", vk::ShaderStageFlagBits::eVertex);
 		_frag = Shader::load(dev, "shaders/gBuffer.frag.spv", "main", vk::ShaderStageFlagBits::eFragment);
@@ -318,6 +388,9 @@ protected:
 		vk::DescriptorSetLayoutCreateInfo textureDescriptorSetInfo;
 		textureDescriptorSetInfo.setBindings(textureDescriptorBindings);
 		_textureDescriptorSetLayout = dev.createDescriptorSetLayoutUnique(textureDescriptorSetInfo);
+
+		// Scene textures:
+
 
 		std::array<vk::DescriptorSetLayout, 3> descriptorSetLayouts{
 			_uniformsDescriptorSetLayout.get(),

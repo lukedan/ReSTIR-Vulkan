@@ -33,6 +33,15 @@ public:
 	[[nodiscard]] vk::Buffer getMatrices() const {
 		return _matrices.get();
 	}
+	[[nodiscard]] vk::Buffer getUVCoords() const {
+		return _uvCoords.get();
+	}
+	[[nodiscard]] vk::Buffer getGeoNormals() const {
+		return _geoNormal.get();
+	}
+	[[nodiscard]] vk::Buffer getGeoTangents() const {
+		return _geoTangent.get();
+	}
 	
 
 	[[nodiscard]] static SceneBuffers create(const nvh::GltfScene &scene, 
@@ -95,8 +104,8 @@ public:
 				commandBuffer->end();
 				
 				submitAndWait(l_device, graphicsQueue, commandBuffer);
-
-				vk::UniqueSampler sampler =
+				
+				result._textureImages[i].sampler =
 					l_device->createSamplerUnique(vk::SamplerCreateInfo(vk::SamplerCreateFlags(),
 						vk::Filter::eNearest,
 						vk::Filter::eNearest,
@@ -123,7 +132,7 @@ public:
 					componentMapping,
 					vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1));
 
-				vk::UniqueImageView imageView = l_device->createImageViewUnique(imageViewCreateInfo);
+				result._textureImages[i].imageView = l_device->createImageViewUnique(imageViewCreateInfo);
 			}
 		}
 		
@@ -177,6 +186,9 @@ private:
 	vma::UniqueBuffer _indices;
 	vma::UniqueBuffer _matrices;
 	vma::UniqueBuffer _materials;
+	vma::UniqueBuffer _uvCoords;
+	vma::UniqueBuffer _geoNormal;
+	vma::UniqueBuffer _geoTangent;
 	// std::vector<vma::UniqueImage> _textureImages;
 	
 
