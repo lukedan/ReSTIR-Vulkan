@@ -231,7 +231,7 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 	_graphicsQueue = _device->getQueue(_graphicsQueueIndex, 0);
 	_presentQueue = _device->getQueue(_presentQueueIndex, 0);
 	
-	_sceneBuffers = SceneBuffers::create(_gltfScene, _allocator, _physicalDevice, _device, _graphicsQueue, _commandPool);
+	_sceneBuffers = SceneBuffers::create(_gltfScene, _allocator, _physicalDevice, _device.get(), _graphicsQueue, _commandPool);
 	_aabbTree = AabbTree::build(_gltfScene);
 	_aabbTreeBuffers = AabbTreeBuffers::create(_aabbTree, _allocator);
 

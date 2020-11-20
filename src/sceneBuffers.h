@@ -47,7 +47,8 @@ public:
 	[[nodiscard]] static SceneBuffers create(const nvh::GltfScene &scene, 
 		vma::Allocator &allocator, 
 		const vk::PhysicalDevice& p_device, 
-		vk::UniqueDevice& l_device, 
+		// vk::UniqueDevice& l_device, 
+		vk::Device l_device,
 		vk::Queue& graphicsQueue,
 		vk::UniqueCommandPool const& commandPool) {
 		SceneBuffers result;
@@ -67,9 +68,8 @@ public:
 
 		// Create vma::imageunique
 		if (scene.m_textures.size() > 0) {
-			
-			vk::UniqueCommandBuffer commandBuffer = std::move(l_device
-				->allocateCommandBuffersUnique(vk::CommandBufferAllocateInfo(
+			vk::UniqueCommandBuffer commandBuffer = std::move(l_device.
+				allocateCommandBuffersUnique(vk::CommandBufferAllocateInfo(
 					commandPool.get(), vk::CommandBufferLevel::ePrimary, 1))
 				.front());
 
@@ -106,13 +106,13 @@ public:
 				submitAndWait(l_device, graphicsQueue, commandBuffer);
 				
 				result._textureImages[i].sampler =
-					l_device->createSamplerUnique(vk::SamplerCreateInfo(vk::SamplerCreateFlags(),
+					l_device.createSamplerUnique(vk::SamplerCreateInfo(vk::SamplerCreateFlags(),
 						vk::Filter::eNearest,
 						vk::Filter::eNearest,
 						vk::SamplerMipmapMode::eNearest,
-						vk::SamplerAddressMode::eClampToEdge,
-						vk::SamplerAddressMode::eClampToEdge,
-						vk::SamplerAddressMode::eClampToEdge,
+						vk::SamplerAddressMode::eRepeat,
+						vk::SamplerAddressMode::eRepeat,
+						vk::SamplerAddressMode::eRepeat,
 						0.0f,
 						false,
 						1.0f,
@@ -122,17 +122,14 @@ public:
 						0.0f,
 						vk::BorderColor::eFloatOpaqueWhite));
 
-				vk::ComponentMapping componentMapping(vk::ComponentSwizzle::eR, vk::ComponentSwizzle::eG, vk::ComponentSwizzle::eB, vk::ComponentSwizzle::eA);
-				
-				vk::ImageViewCreateInfo imageViewCreateInfo(
+				result._textureImages[i].imageView = l_device.createImageViewUnique(vk::ImageViewCreateInfo(
 					vk::ImageViewCreateFlags(),
 					result._textureImages[i].image.get(),
 					vk::ImageViewType::e2D,
 					format,
-					componentMapping,
-					vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1));
-
-				result._textureImages[i].imageView = l_device->createImageViewUnique(imageViewCreateInfo);
+					vk::ComponentMapping(vk::ComponentSwizzle::eR, vk::ComponentSwizzle::eG, vk::ComponentSwizzle::eB, vk::ComponentSwizzle::eA),
+					vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1)
+				));
 			}
 		}
 		
@@ -281,11 +278,11 @@ private:
 		return commandBuffer->pipelineBarrier(sourceStage, destinationStage, {}, nullptr, nullptr, imageMemoryBarrier);
 	}
 
-	void static submitAndWait(vk::UniqueDevice& device, vk::Queue queue, vk::UniqueCommandBuffer& commandBuffer)
+	void static submitAndWait(vk::Device& device, vk::Queue queue, vk::UniqueCommandBuffer& commandBuffer)
 	{
-		vk::UniqueFence fence = device->createFenceUnique(vk::FenceCreateInfo());
+		vk::UniqueFence fence = device.createFenceUnique(vk::FenceCreateInfo());
 		queue.submit(vk::SubmitInfo({}, {}, *commandBuffer), fence.get());
-		while (vk::Result::eTimeout == device->waitForFences(fence.get(), VK_TRUE, 100000000))
+		while (vk::Result::eTimeout == device.waitForFences(fence.get(), VK_TRUE, 100000000))
 			;
 	}
 };
