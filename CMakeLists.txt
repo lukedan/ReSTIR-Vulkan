@@ -20,8 +20,7 @@ endif()
 
 target_sources(restir
 	PRIVATE
-		"src/shaderStructs/aabbTree.h"
-		"src/shaderStructs/vertex.h"
+		"src/vertex.h"
 		"src/passes/demoPass.h"
 		"src/passes/gBufferPass.cpp"
 		"src/passes/gBufferPass.h"
@@ -38,6 +37,7 @@ target_sources(restir
 		"src/misc.cpp"
 		"src/misc.h"
 		"src/sceneBuffers.h"
+		"src/shaderIncludes.h"
 		"src/swapchain.cpp"
 		"src/swapchain.h"
 		# "gltf/gltfscene.h"

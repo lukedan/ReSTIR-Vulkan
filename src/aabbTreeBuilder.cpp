@@ -5,7 +5,7 @@
 
 #include <nvmath.h>
 
-void aabbForTriangle(const Triangle &tri, nvmath::vec3f &min, nvmath::vec3f &max) {
+void aabbForTriangle(const shader::Triangle &tri, nvmath::vec3f &min, nvmath::vec3f &max) {
 	min = max = tri.p1;
 	min = nvmath::nv_min(min, nvmath::vec3f(tri.p2));
 	max = nvmath::nv_max(max, nvmath::vec3f(tri.p2));
@@ -63,7 +63,7 @@ AabbTree AabbTree::build(const nvh::GltfScene &scene) {
 		const nvmath::vec3 *pos = scene.m_positions.data() + mesh.vertexOffset;
 		for (uint32_t i = 0; i < mesh.indexCount; i += 3, indices += 3) {
 			// triangle
-			Triangle &tri = result.triangles.emplace_back();
+			shader::Triangle &tri = result.triangles.emplace_back();
 			tri.p1 = node.worldMatrix * nvmath::vec4(pos[indices[0]], 1.0f);
 			tri.p2 = node.worldMatrix * nvmath::vec4(pos[indices[1]], 1.0f);
 			tri.p3 = node.worldMatrix * nvmath::vec4(pos[indices[2]], 1.0f);
@@ -93,7 +93,7 @@ AabbTree AabbTree::build(const nvh::GltfScene &scene) {
 				Leaf &left = leaves[step.rangeBeg], &right = leaves[step.rangeBeg + 1];
 				int32_t nodeIndex = alloc++;
 				*step.parentPtr = nodeIndex;
-				AabbNode &node = result.nodes[nodeIndex];
+				shader::AabbTreeNode &node = result.nodes[nodeIndex];
 				node.leftChild = ~left.geomIndex;
 				node.rightChild = ~right.geomIndex;
 				node.leftAabbMin = left.aabbMin;
@@ -200,7 +200,7 @@ AabbTree AabbTree::build(const nvh::GltfScene &scene) {
 
 				int32_t nodeIndex = alloc++;
 				*step.parentPtr = nodeIndex;
-				AabbNode &n = result.nodes[nodeIndex];
+				shader::AabbTreeNode &n = result.nodes[nodeIndex];
 				n.leftAabbMin = leftMin;
 				n.leftAabbMax = leftMax;
 				n.rightAabbMin = rightMin;

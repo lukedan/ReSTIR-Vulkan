@@ -2,12 +2,9 @@
 
 #include <nvmath_glsltypes.h>
 
-#include "shaderStructs/vertex.h"
+#include "vertex.h"
 #include "vma.h"
 #include "../gltf/gltfscene.h"
-
-
-
 
 class SceneBuffers {
 public:
