@@ -47,10 +47,8 @@ public:
 	[[nodiscard]] static SceneBuffers create(const nvh::GltfScene &scene, 
 		vma::Allocator &allocator, 
 		const vk::PhysicalDevice& p_device, 
-		// vk::UniqueDevice& l_device, 
 		vk::Device l_device,
 		vk::Queue& graphicsQueue,
-		// vk::UniqueCommandPool const& commandPool
 		vk::CommandPool commandPool
 		) {
 		SceneBuffers result;
@@ -69,15 +67,15 @@ public:
 			);
 
 		// Create vma::imageunique
+		vk::UniqueCommandBuffer commandBuffer = std::move(l_device.
+			allocateCommandBuffersUnique(vk::CommandBufferAllocateInfo(
+				commandPool, vk::CommandBufferLevel::ePrimary, 1))
+			.front());
+
+		vk::Format format = vk::Format::eR8G8B8A8Srgb;
+		
 		if (scene.m_textures.size() > 0) {
-			vk::UniqueCommandBuffer commandBuffer = std::move(l_device.
-				allocateCommandBuffersUnique(vk::CommandBufferAllocateInfo(
-					commandPool, vk::CommandBufferLevel::ePrimary, 1))
-				.front());
-
-			vk::Format format = vk::Format::eR8G8B8A8Srgb;
 			result._textureImages.resize(scene.m_textures.size());
-
 			for (int i = 0; i < scene.m_textures.size(); ++i) {
 				auto& gltfimage = scene.m_textures[i];
 				std::cout << "Created Texture Name:" << gltfimage.uri << std::endl;
@@ -134,6 +132,73 @@ public:
 				));
 			}
 		}
+		else {
+			// Generate a default texture
+			// Create vma::Uniqueimage
+			result._textureImages.resize(1);
+			result._textureImages[0].image = allocator.createImage2D(
+				vk::Extent2D(50, 50),
+				format,
+				vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst,
+				VMA_MEMORY_USAGE_CPU_TO_GPU,
+				vk::ImageTiling::eLinear,
+				1,
+				vk::SampleCountFlagBits::e1,
+				nullptr, // SharedQueues
+				vk::ImageLayout::ePreinitialized);
+			// Map GPU memory to RAM and put data from RAM to GPU
+			void* image_device = result._textureImages[0].image.map();
+			// Checkerboard of 16x16 pixel squares
+			unsigned char* pImageMemory = static_cast<unsigned char*>(image_device);
+			for (uint32_t row = 0; row < 50; row++)
+			{
+				for (uint32_t col = 0; col < 50; col++)
+				{
+					unsigned char rgb = (((row & 0x10) == 0) ^ ((col & 0x10) == 0)) * 255;
+					pImageMemory[0] = rgb;
+					pImageMemory[1] = rgb;
+					pImageMemory[2] = rgb;
+					pImageMemory[3] = 255;
+					pImageMemory += 4;
+				}
+			}
+			// Unmap and flush
+			result._textureImages[0].image.unmap();
+			result._textureImages[0].image.flush();
+
+			commandBuffer->begin(vk::CommandBufferBeginInfo());
+			setImageLayout(commandBuffer, result._textureImages[0].image.get(), format, vk::ImageLayout::ePreinitialized, vk::ImageLayout::eShaderReadOnlyOptimal);
+			commandBuffer->end();
+
+
+			submitAndWait(l_device, graphicsQueue, commandBuffer);
+
+			result._textureImages[0].sampler =
+				l_device.createSamplerUnique(vk::SamplerCreateInfo(vk::SamplerCreateFlags(),
+					vk::Filter::eNearest,
+					vk::Filter::eNearest,
+					vk::SamplerMipmapMode::eNearest,
+					vk::SamplerAddressMode::eRepeat,
+					vk::SamplerAddressMode::eRepeat,
+					vk::SamplerAddressMode::eRepeat,
+					0.0f,
+					false,
+					1.0f,
+					false,
+					vk::CompareOp::eNever,
+					0.0f,
+					0.0f,
+					vk::BorderColor::eFloatOpaqueWhite));
+
+			result._textureImages[0].imageView = l_device.createImageViewUnique(vk::ImageViewCreateInfo(
+				vk::ImageViewCreateFlags(),
+				result._textureImages[0].image.get(),
+				vk::ImageViewType::e2D,
+				format,
+				vk::ComponentMapping(vk::ComponentSwizzle::eR, vk::ComponentSwizzle::eG, vk::ComponentSwizzle::eB, vk::ComponentSwizzle::eA),
+				vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1)
+			));
+		}
 		
 		Vertex *vertices = result._vertices.mapAs<Vertex>();
 		for (std::size_t i = 0; i < scene.m_positions.size(); ++i) {
@@ -177,6 +242,7 @@ public:
 		}
 		result._matrices.unmap();
 		result._matrices.flush();
+
 
 		return result;
 	}

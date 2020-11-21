@@ -103,15 +103,27 @@ public:
 		commandBuffer.bindVertexBuffers(0, { sceneBuffers->getVertices() }, { 0 });
 		commandBuffer.bindIndexBuffer(sceneBuffers->getIndices(), 0, vk::IndexType::eUint32);
 
+		// Keeping track of the last material to avoid binding them again
+		uint32_t lastMaterial = -1;
+
 		for (std::size_t i = 0; i < scene->m_nodes.size(); ++i) {
 			const nvh::GltfNode &node = scene->m_nodes[i];
 			const nvh::GltfPrimMesh &mesh = scene->m_primMeshes[node.primMesh];
 			/*const nvh::GltfMaterial &material = scene->m_materials[mesh.materialIndex];*/
+			// Material Push Constants
+			if (lastMaterial != mesh.materialIndex) {
+				lastMaterial = mesh.materialIndex;
+				const nvh::GltfMaterial& mat(scene->m_materials[lastMaterial]);
+				commandBuffer.pushConstants<nvh::GltfMaterial>(_pipelineLayout.get(), vk::ShaderStageFlagBits::eFragment, 0, mat);
+			}
+
 			// TODO textures
-			std::vector<vk::DescriptorSet> bindedDescripotrs{ descriptorSets->uniformDescriptor.get(), descriptorSets->matrixDescriptor.get() };
+			std::vector<vk::DescriptorSet> bindedDescripotrs{ descriptorSets->uniformDescriptor.get(), descriptorSets->matrixDescriptor.get(), descriptorSets->tempTexture.get() };
+			/*
 			if (sceneBuffers->_textureImages.size() > 0) {
 				bindedDescripotrs.push_back(descriptorSets->tempTexture.get());
 			}
+			*/
 			commandBuffer.bindDescriptorSets(
 				vk::PipelineBindPoint::eGraphics, _pipelineLayout.get(), 0,
 				// { descriptorSets->uniformDescriptor.get(), descriptorSets->matrixDescriptor.get(), descriptorSets->tempTexture.get() },
@@ -176,18 +188,20 @@ public:
 
 		// Init Textures in the scene -- Get combined sampler
 		// TODO
+		vk::DescriptorImageInfo sceneTextureImageInfo{};
+		sceneTextureImageInfo.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+		sceneTextureImageInfo.imageView = buffers._textureImages[0].imageView.get();
+		sceneTextureImageInfo.sampler = buffers._textureImages[0].sampler.get();
+		bufferWrite.emplace_back()
+			.setDstSet(sets.tempTexture.get())
+			.setDstBinding(0)
+			.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
+			.setImageInfo(sceneTextureImageInfo);
+		/*
 		if (sceneBuffers->_textureImages.size() > 0) {
-			vk::DescriptorImageInfo sceneTextureImageInfo{};
-			sceneTextureImageInfo.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
-			sceneTextureImageInfo.imageView = buffers._textureImages[0].imageView.get();
-			sceneTextureImageInfo.sampler = buffers._textureImages[0].sampler.get();
-			bufferWrite.emplace_back()
-				.setDstSet(sets.tempTexture.get())
-				.setDstBinding(0)
-				.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
-				.setImageInfo(sceneTextureImageInfo);
+			
 		}
-		
+		*/
 		device.get().updateDescriptorSets(bufferWrite, {});
 	}
 
@@ -350,21 +364,25 @@ protected:
 
 		sceneBuffers = i_scene_buffer;
 
+		// Scene textures -- Temporily only one texture:
+		vk::DescriptorSetLayoutBinding sceneTextureSamplerLayoutBinding{};
+		sceneTextureSamplerLayoutBinding.binding = 0;
+		sceneTextureSamplerLayoutBinding.descriptorCount = 1;
+		sceneTextureSamplerLayoutBinding.descriptorType = vk::DescriptorType::eCombinedImageSampler;
+		sceneTextureSamplerLayoutBinding.pImmutableSamplers = nullptr;
+		sceneTextureSamplerLayoutBinding.stageFlags = vk::ShaderStageFlagBits::eFragment;
+		std::array<vk::DescriptorSetLayoutBinding, 1> sceneTextureDescriptorBindings;
+		sceneTextureDescriptorBindings[0] = std::move(sceneTextureSamplerLayoutBinding);
+		vk::DescriptorSetLayoutCreateInfo sceneTextureLayoutInfo;
+		sceneTextureLayoutInfo.setBindings(sceneTextureDescriptorBindings);
+		_sceneTexturesDescriptorSetLayout = dev.createDescriptorSetLayoutUnique(sceneTextureLayoutInfo);
+		descriptorSetLayouts.push_back(_sceneTexturesDescriptorSetLayout.get());
+
+		/*
 		if (sceneBuffers->_textureImages.size() > 0) {
-			// Scene textures -- Temporily only one texture:
-			vk::DescriptorSetLayoutBinding sceneTextureSamplerLayoutBinding{};
-			sceneTextureSamplerLayoutBinding.binding = 0;
-			sceneTextureSamplerLayoutBinding.descriptorCount = 1;
-			sceneTextureSamplerLayoutBinding.descriptorType = vk::DescriptorType::eCombinedImageSampler;
-			sceneTextureSamplerLayoutBinding.pImmutableSamplers = nullptr;
-			sceneTextureSamplerLayoutBinding.stageFlags = vk::ShaderStageFlagBits::eFragment;
-			std::array<vk::DescriptorSetLayoutBinding, 1> sceneTextureDescriptorBindings;
-			sceneTextureDescriptorBindings[0] = std::move(sceneTextureSamplerLayoutBinding);
-			vk::DescriptorSetLayoutCreateInfo sceneTextureLayoutInfo;
-			sceneTextureLayoutInfo.setBindings(sceneTextureDescriptorBindings);
-			_sceneTexturesDescriptorSetLayout = dev.createDescriptorSetLayoutUnique(sceneTextureLayoutInfo);
-			descriptorSetLayouts.push_back(_sceneTexturesDescriptorSetLayout.get());
+			
 		}
+		*/
 		/*
 		std::array<vk::DescriptorSetLayout, 4> descriptorSetLayouts{
 			_uniformsDescriptorSetLayout.get(),
@@ -374,9 +392,14 @@ protected:
 		};
 		*/
 
+		// Push constants in the fragment shader
+		vk::PushConstantRange pushConstantRanges = { vk::ShaderStageFlagBits::eFragment, 0, sizeof(nvh::GltfMaterial) };
+
 		vk::PipelineLayoutCreateInfo pipelineInfo;
 		pipelineInfo
-			.setSetLayouts(descriptorSetLayouts);
+			.setSetLayouts(descriptorSetLayouts)
+			.setPushConstantRangeCount(1)
+			.setPPushConstantRanges(&pushConstantRanges);
 		_pipelineLayout = dev.createPipelineLayoutUnique(pipelineInfo);
 
 		Pass::_initialize(dev);

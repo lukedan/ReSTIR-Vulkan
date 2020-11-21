@@ -12,7 +12,7 @@
 
 class App {
 public:
-	constexpr static uint32_t vulkanApiVersion = VK_MAKE_VERSION(1, 0, 0);
+	constexpr static uint32_t vulkanApiVersion = VK_MAKE_VERSION(1, 2, 0);
 	constexpr static std::size_t maxFramesInFlight = 2;
 
 	App();
