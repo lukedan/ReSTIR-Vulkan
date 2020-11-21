@@ -50,7 +50,9 @@ public:
 		// vk::UniqueDevice& l_device, 
 		vk::Device l_device,
 		vk::Queue& graphicsQueue,
-		vk::UniqueCommandPool const& commandPool) {
+		// vk::UniqueCommandPool const& commandPool
+		vk::CommandPool commandPool
+		) {
 		SceneBuffers result;
 
 		result._vertices = allocator.createTypedBuffer<Vertex>(
@@ -70,7 +72,7 @@ public:
 		if (scene.m_textures.size() > 0) {
 			vk::UniqueCommandBuffer commandBuffer = std::move(l_device.
 				allocateCommandBuffersUnique(vk::CommandBufferAllocateInfo(
-					commandPool.get(), vk::CommandBufferLevel::ePrimary, 1))
+					commandPool, vk::CommandBufferLevel::ePrimary, 1))
 				.front());
 
 			vk::Format format = vk::Format::eR8G8B8A8Srgb;
