@@ -1,5 +1,6 @@
 #pragma once
 
+#define VK_ENABLE_BETA_EXTENSIONS
 #include "glfwWindow.h"
 #include "misc.h"
 #include "swapchain.h"
@@ -8,11 +9,27 @@
 #include "passes/demoPass.h"
 #include "passes/gBufferPass.h"
 #include "passes/lightingPass.h"
+#include "passes/rtPass.h"
 #include "camera.h"
+
+struct PhysicalDeviceInfo
+{
+	vk::PhysicalDeviceMemoryProperties     memoryProperties{};
+	std::vector<vk::QueueFamilyProperties> queueProperties;
+
+	vk::PhysicalDeviceFeatures         features10{};
+	vk::PhysicalDeviceVulkan11Features features11;
+	vk::PhysicalDeviceVulkan12Features features12;
+
+	vk::PhysicalDeviceProperties         properties10{};
+	vk::PhysicalDeviceVulkan11Properties properties11;
+	vk::PhysicalDeviceVulkan12Properties properties12;
+};
+
 
 class App {
 public:
-	constexpr static uint32_t vulkanApiVersion = VK_MAKE_VERSION(1, 0, 0);
+	constexpr static uint32_t vulkanApiVersion = VK_MAKE_VERSION(1, 2, 0);
 	constexpr static std::size_t maxFramesInFlight = 2;
 
 	App();
@@ -102,6 +119,8 @@ protected:
 
 	DemoPass _demoPass;
 
+	RtPass _rtPass;
+
 	nvh::GltfScene _gltfScene;
 	SceneBuffers _sceneBuffers;
 
@@ -125,6 +144,7 @@ protected:
 	void _onMouseButtonEvent(int button, int action, int mods);
 	void _onScrollEvent(double x, double y);
 
+	void initPhysicalInfo(PhysicalDeviceInfo& info, vk::PhysicalDevice physicalDevice);
 
 	void _createAndRecordSwapchainBuffers(
 		const Swapchain &swapchain, vk::Device device, vk::CommandPool commandPool, Pass &pass
@@ -159,5 +179,30 @@ protected:
 		submitInfo.setCommandBuffers(buffers);
 		_graphicsQueue.submit(submitInfo, nullptr);
 		_graphicsQueue.waitIdle();
+	}
+
+	void createAndRecordRTSwapchainBuffers(
+		const Swapchain& swapchain, vk::Device device, vk::CommandPool commandPool, RtPass& rtPass, vk::DispatchLoaderDynamic dld
+	) {
+		int imageSize = swapchain.getNumImages();
+		vk::CommandBufferAllocateInfo allocInfo;
+		allocInfo
+			.setCommandPool(commandPool)
+			.setLevel(vk::CommandBufferLevel::ePrimary)
+			.setCommandBufferCount(static_cast<uint32_t>(imageSize));
+		std::vector<vk::UniqueCommandBuffer> commandBuffers = device.allocateCommandBuffersUnique(allocInfo);
+		_swapchainBuffers.resize(imageSize);
+
+		for (int i = 0; i < imageSize; i++)
+		{
+			_swapchainBuffers[i].commandBuffer = std::move(commandBuffers[i]);
+			vk::CommandBufferBeginInfo beginInfo;
+			_swapchainBuffers[i].commandBuffer->begin(beginInfo);
+			rtPass.issueCommands(_swapchainBuffers[i].commandBuffer.get(),
+				_swapchainBuffers[i].framebuffer.get(),
+				swapchain.getImageExtent(),
+				_swapchain.getImageAtIndexs(i), dld);
+			_swapchainBuffers[i].commandBuffer->end();
+		}
 	}
 };

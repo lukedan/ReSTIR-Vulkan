@@ -44,7 +44,8 @@ target_sources(restir
 		"gltf/gltfscene.cpp"
 		"src/shader.h"
 		"src/vma.cpp"
-		"src/vma.h")
+		"src/vma.h" 
+		"src/passes/rtPass.h")
 
 
 find_package(Vulkan REQUIRED)
@@ -66,3 +67,8 @@ add_shader(restir "src/shaders/gBuffer.frag")
 
 add_shader(restir "src/shaders/quad.vert")
 add_shader(restir "src/shaders/lighting.frag")
+
+add_shader(restir "src/shaders/raytrace.rgen")
+add_shader(restir "src/shaders/raytrace.rchit")
+add_shader(restir "src/shaders/raytrace.rmiss")
+
