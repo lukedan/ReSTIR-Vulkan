@@ -162,6 +162,7 @@ public:
 			.setBufferInfo(matricesBufferInfo);
 
 		std::vector<vk::DescriptorImageInfo> materialTextureInfo(buffers.getTextures().size());
+		vk::DescriptorImageInfo defaultNormalInfo = buffers.getDefaultNormal().getDescriptorInfo();
 		for (std::size_t i = 0; i < buffers.getTextures().size(); ++i) {
 			materialTextureInfo[i] = buffers.getTextures()[i].getDescriptorInfo();
 		}
@@ -176,13 +177,11 @@ public:
 					.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
 					.setImageInfo(materialTextureInfo[mat.pbrBaseColorTexture]);
 			}
-			if (mat.normalTexture >= 0) {
-				bufferWrite.emplace_back()
-					.setDstSet(set)
-					.setDstBinding(1)
-					.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
-					.setImageInfo(materialTextureInfo[mat.normalTexture]);
-			}
+			bufferWrite.emplace_back()
+				.setDstSet(set)
+				.setDstBinding(1)
+				.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
+				.setImageInfo(mat.normalTexture >= 0 ? materialTextureInfo[mat.normalTexture] : defaultNormalInfo);
 			if (mat.pbrMetallicRoughnessTexture >= 0) {
 				bufferWrite.emplace_back()
 					.setDstSet(set)
@@ -284,8 +283,9 @@ protected:
 		info.vertexInputBindingStorage.emplace_back(0, sizeof(Vertex), vk::VertexInputRate::eVertex);
 		info.vertexInputAttributeStorage.emplace_back(0, 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, position));
 		info.vertexInputAttributeStorage.emplace_back(1, 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, normal));
-		info.vertexInputAttributeStorage.emplace_back(2, 0, vk::Format::eR32G32B32A32Sfloat, offsetof(Vertex, color));
-		info.vertexInputAttributeStorage.emplace_back(3, 0, vk::Format::eR32G32Sfloat, offsetof(Vertex, uv));
+		info.vertexInputAttributeStorage.emplace_back(2, 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, tangent));
+		info.vertexInputAttributeStorage.emplace_back(3, 0, vk::Format::eR32G32B32A32Sfloat, offsetof(Vertex, color));
+		info.vertexInputAttributeStorage.emplace_back(4, 0, vk::Format::eR32G32Sfloat, offsetof(Vertex, uv));
 		info.vertexInputState
 			.setVertexBindingDescriptions(info.vertexInputBindingStorage)
 			.setVertexAttributeDescriptions(info.vertexInputAttributeStorage);

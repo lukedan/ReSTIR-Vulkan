@@ -34,17 +34,11 @@ public:
 	[[nodiscard]] vk::Buffer getMatrices() const {
 		return _matrices.get();
 	}
-	[[nodiscard]] vk::Buffer getUVCoords() const {
-		return _uvCoords.get();
-	}
-	[[nodiscard]] vk::Buffer getGeoNormals() const {
-		return _geoNormal.get();
-	}
-	[[nodiscard]] vk::Buffer getGeoTangents() const {
-		return _geoTangent.get();
-	}
 	[[nodiscard]] const std::vector<SceneTexture> &getTextures() const {
 		return _textureImages;
+	}
+	[[nodiscard]] const SceneTexture &getDefaultNormal() const {
+		return _defaultNormal;
 	}
 
 	[[nodiscard]] static SceneBuffers create(const nvh::GltfScene &scene, 
@@ -75,137 +69,76 @@ public:
 				commandPool, vk::CommandBufferLevel::ePrimary, 1))
 			.front());
 
-		vk::Format format = vk::Format::eR8G8B8A8Srgb;
+		vk::Format format = vk::Format::eR8G8B8A8Unorm;
 		
-		if (scene.m_textures.size() > 0) {
-			result._textureImages.resize(scene.m_textures.size());
-			vk::CommandBufferBeginInfo cmdBeginInfo;
-			cmdBeginInfo.setFlags({ vk::CommandBufferUsageFlagBits::eOneTimeSubmit });
+		result._textureImages.resize(scene.m_textures.size());
+		vk::CommandBufferBeginInfo cmdBeginInfo;
+		cmdBeginInfo.setFlags({ vk::CommandBufferUsageFlagBits::eOneTimeSubmit });
 
-			for (int i = 0; i < scene.m_textures.size(); ++i) {
-				auto& gltfimage = scene.m_textures[i];
-				std::cout << "Created Texture Name:" << gltfimage.uri << std::endl;
+		for (int i = 0; i < scene.m_textures.size(); ++i) {
+			auto& gltfimage = scene.m_textures[i];
+			std::cout << "Loaded Texture: " << gltfimage.uri << std::endl;
 
-				// Create vma::Uniqueimage
-				result._textureImages[i].image = allocator.createImage2D(
-					vk::Extent2D(gltfimage.width, gltfimage.height),
-					format,
-					vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst,
-					VMA_MEMORY_USAGE_CPU_TO_GPU,
-					vk::ImageTiling::eLinear,
-					1,
-					vk::SampleCountFlagBits::e1,
-					nullptr, // SharedQueues
-					vk::ImageLayout::ePreinitialized);
-
-				// Map GPU memory to RAM and put data from RAM to GPU
-				void* image_device = result._textureImages[i].image.map();
-				memcpy(image_device, gltfimage.image.data(), gltfimage.image.size() * sizeof(unsigned char));
-				// Unmap and flush
-				result._textureImages[i].image.unmap();
-				result._textureImages[i].image.flush();
-
-				commandBuffer->begin(cmdBeginInfo);
-				setImageLayout(commandBuffer, result._textureImages[i].image.get(), format, vk::ImageLayout::ePreinitialized, vk::ImageLayout::eShaderReadOnlyOptimal);
-				commandBuffer->end();
-				
-				submitAndWait(l_device, graphicsQueue, commandBuffer);
-				
-				result._textureImages[i].sampler =
-					l_device.createSamplerUnique(vk::SamplerCreateInfo(vk::SamplerCreateFlags(),
-						vk::Filter::eNearest,
-						vk::Filter::eNearest,
-						vk::SamplerMipmapMode::eNearest,
-						vk::SamplerAddressMode::eRepeat,
-						vk::SamplerAddressMode::eRepeat,
-						vk::SamplerAddressMode::eRepeat,
-						0.0f,
-						false,
-						1.0f,
-						false,
-						vk::CompareOp::eNever,
-						0.0f,
-						0.0f,
-						vk::BorderColor::eFloatOpaqueWhite));
-
-				result._textureImages[i].imageView = l_device.createImageViewUnique(vk::ImageViewCreateInfo(
-					vk::ImageViewCreateFlags(),
-					result._textureImages[i].image.get(),
-					vk::ImageViewType::e2D,
-					format,
-					vk::ComponentMapping(vk::ComponentSwizzle::eR, vk::ComponentSwizzle::eG, vk::ComponentSwizzle::eB, vk::ComponentSwizzle::eA),
-					vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1)
-				));
-			}
-		}
-		else {
-			// Generate a default texture
 			// Create vma::Uniqueimage
-			result._textureImages.resize(1);
-			result._textureImages[0].image = allocator.createImage2D(
-				vk::Extent2D(50, 50),
+			result._textureImages[i].image = allocator.createImage2D(
+				vk::Extent2D(gltfimage.width, gltfimage.height),
 				format,
 				vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst,
 				VMA_MEMORY_USAGE_CPU_TO_GPU,
 				vk::ImageTiling::eLinear,
-				1,
-				vk::SampleCountFlagBits::e1,
-				nullptr, // SharedQueues
-				vk::ImageLayout::ePreinitialized);
+				vk::ImageLayout::ePreinitialized
+			);
+
 			// Map GPU memory to RAM and put data from RAM to GPU
-			void* image_device = result._textureImages[0].image.map();
-			// Checkerboard of 16x16 pixel squares
-			unsigned char* pImageMemory = static_cast<unsigned char*>(image_device);
-			for (uint32_t row = 0; row < 50; row++)
-			{
-				for (uint32_t col = 0; col < 50; col++)
-				{
-					unsigned char rgb = (((row & 0x10) == 0) ^ ((col & 0x10) == 0)) * 255;
-					pImageMemory[0] = rgb;
-					pImageMemory[1] = rgb;
-					pImageMemory[2] = rgb;
-					pImageMemory[3] = 255;
-					pImageMemory += 4;
-				}
-			}
+			void* image_device = result._textureImages[i].image.map();
+			memcpy(image_device, gltfimage.image.data(), gltfimage.image.size() * sizeof(unsigned char));
 			// Unmap and flush
-			result._textureImages[0].image.unmap();
-			result._textureImages[0].image.flush();
+			result._textureImages[i].image.unmap();
+			result._textureImages[i].image.flush();
+
+			commandBuffer->begin(cmdBeginInfo);
+			setImageLayout(commandBuffer, result._textureImages[i].image.get(), format, vk::ImageLayout::ePreinitialized, vk::ImageLayout::eShaderReadOnlyOptimal);
+			commandBuffer->end();
+			submitAndWait(l_device, graphicsQueue, commandBuffer);
+				
+			result._textureImages[i].sampler = createSampler(l_device);
+			result._textureImages[i].imageView = createImageView2D(
+				l_device, result._textureImages[i].image.get(), format, vk::ImageAspectFlagBits::eColor
+			);
+		}
+
+		{// Generate default textures
+			result._defaultNormal.image = allocator.createImage2D(
+				vk::Extent2D(1, 1),
+				format,
+				vk::ImageUsageFlagBits::eSampled,
+				VMA_MEMORY_USAGE_CPU_TO_GPU,
+				vk::ImageTiling::eLinear,
+				vk::ImageLayout::ePreinitialized
+			);
+			// Map GPU memory to RAM and put data from RAM to GPU
+			unsigned char* image_device = result._defaultNormal.image.mapAs<unsigned char>();
+			image_device[0] = 127;
+			image_device[1] = 127;
+			image_device[2] = 255;
+			image_device[3] = 255;
+			// Unmap and flush
+			result._defaultNormal.image.unmap();
+			result._defaultNormal.image.flush();
 
 			commandBuffer->begin(vk::CommandBufferBeginInfo());
-			setImageLayout(commandBuffer, result._textureImages[0].image.get(), format, vk::ImageLayout::ePreinitialized, vk::ImageLayout::eShaderReadOnlyOptimal);
+			setImageLayout(commandBuffer, result._defaultNormal.image.get(), format, vk::ImageLayout::ePreinitialized, vk::ImageLayout::eShaderReadOnlyOptimal);
 			commandBuffer->end();
-
-
 			submitAndWait(l_device, graphicsQueue, commandBuffer);
 
-			result._textureImages[0].sampler =
-				l_device.createSamplerUnique(vk::SamplerCreateInfo(vk::SamplerCreateFlags(),
-					vk::Filter::eNearest,
-					vk::Filter::eNearest,
-					vk::SamplerMipmapMode::eNearest,
-					vk::SamplerAddressMode::eRepeat,
-					vk::SamplerAddressMode::eRepeat,
-					vk::SamplerAddressMode::eRepeat,
-					0.0f,
-					false,
-					1.0f,
-					false,
-					vk::CompareOp::eNever,
-					0.0f,
-					0.0f,
-					vk::BorderColor::eFloatOpaqueWhite));
-
-			result._textureImages[0].imageView = l_device.createImageViewUnique(vk::ImageViewCreateInfo(
-				vk::ImageViewCreateFlags(),
-				result._textureImages[0].image.get(),
-				vk::ImageViewType::e2D,
-				format,
-				vk::ComponentMapping(vk::ComponentSwizzle::eR, vk::ComponentSwizzle::eG, vk::ComponentSwizzle::eB, vk::ComponentSwizzle::eA),
-				vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1)
-			));
+			result._defaultNormal.sampler = createSampler(l_device);
+			result._defaultNormal.imageView = createImageView2D(
+				l_device, result._defaultNormal.image.get(), format, vk::ImageAspectFlagBits::eColor
+			);
 		}
-		
+
+
+		// collect vertices
 		Vertex *vertices = result._vertices.mapAs<Vertex>();
 		for (std::size_t i = 0; i < scene.m_positions.size(); ++i) {
 			Vertex &v = vertices[i];
@@ -220,6 +153,9 @@ public:
 			}
 			if (i < scene.m_texcoords0.size()) {
 				v.uv = scene.m_texcoords0[i];
+			}
+			if (i < scene.m_tangents.size()) {
+				v.tangent = scene.m_tangents[i];
 			}
 		}
 		result._vertices.unmap();
@@ -257,10 +193,8 @@ private:
 	vma::UniqueBuffer _indices;
 	vma::UniqueBuffer _matrices;
 	vma::UniqueBuffer _materials;
-	vma::UniqueBuffer _uvCoords;
-	vma::UniqueBuffer _geoNormal;
-	vma::UniqueBuffer _geoTangent;
 	std::vector<SceneTexture> _textureImages;
+	SceneTexture _defaultNormal;
 
 	void static setImageLayout(vk::UniqueCommandBuffer const& commandBuffer,
 		vk::Image                       image,
@@ -355,7 +289,7 @@ private:
 	{
 		vk::UniqueFence fence = device.createFenceUnique(vk::FenceCreateInfo());
 		queue.submit(vk::SubmitInfo({}, {}, *commandBuffer), fence.get());
-		while (vk::Result::eTimeout == device.waitForFences(fence.get(), VK_TRUE, 100000000))
-			;
+		while (vk::Result::eTimeout == device.waitForFences(fence.get(), VK_TRUE, std::numeric_limits<uint64_t>::max())) {
+		}
 	}
 };

@@ -151,10 +151,10 @@ namespace vma {
 			vk::Extent2D size, vk::Format format, vk::ImageUsageFlags usage,
 			VmaMemoryUsage memoryUsage = VMA_MEMORY_USAGE_GPU_ONLY,
 			vk::ImageTiling tiling = vk::ImageTiling::eOptimal,
+			vk::ImageLayout initialLayout = vk::ImageLayout::eUndefined,
 			uint32_t mipLevels = 1,
 			vk::SampleCountFlagBits sampleCount = vk::SampleCountFlagBits::e1,
 			const std::vector<uint32_t> *sharedQueues = nullptr,
-			vk::ImageLayout initialLayout = vk::ImageLayout::eUndefined,
 			uint32_t arrayLayers = 1
 		);
 		[[nodiscard]] UniqueBuffer createBuffer(

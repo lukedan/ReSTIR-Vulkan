@@ -57,7 +57,7 @@ template <auto MPtr, typename T> bool checkSupport(
 [[nodiscard]] inline vk::UniqueSampler createSampler(
 	vk::Device device, vk::Filter magFilter = vk::Filter::eLinear, vk::Filter minFilter = vk::Filter::eLinear,
 	vk::SamplerMipmapMode mipmapMode = vk::SamplerMipmapMode::eLinear,
-	float minMipLod = 0.0f, float maxMipLod = 0.0f, float mipLodBias = 0.0f,
+	float minMipLod = 0.0f, float maxMipLod = std::numeric_limits<float>::max(), float mipLodBias = 0.0f,
 	vk::SamplerAddressMode addressMode = vk::SamplerAddressMode::eRepeat,
 	std::optional<float> anisotropy = std::nullopt,
 	std::optional<vk::CompareOp> compare = std::nullopt,
