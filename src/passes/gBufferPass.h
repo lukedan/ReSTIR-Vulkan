@@ -79,8 +79,9 @@ public:
 		vma::UniqueBuffer uniformBuffer;
 		vk::UniqueDescriptorSet uniformDescriptor;
 		vk::UniqueDescriptorSet matrixDescriptor;
-		vk::UniqueDescriptorSet tempTexture;
-		std::vector<vk::UniqueDescriptorSet> textures;
+		vk::UniqueDescriptorSet sceneTexturesDescriptorSet;
+		// vk::UniqueDescriptorSet tempTexture;
+		// std::vector<vk::UniqueDescriptorSet> textures;
 	};
 
 	GBufferPass() = default;
@@ -118,7 +119,12 @@ public:
 			}
 
 			// TODO textures
-			std::vector<vk::DescriptorSet> bindedDescripotrs{ descriptorSets->uniformDescriptor.get(), descriptorSets->matrixDescriptor.get(), descriptorSets->tempTexture.get() };
+			std::vector<vk::DescriptorSet> bindedDescripotrs{ descriptorSets->uniformDescriptor.get(), descriptorSets->matrixDescriptor.get(), descriptorSets->sceneTexturesDescriptorSet.get() };
+			/*std::vector<vk::DescriptorSet> bindedDescripotrs{ descriptorSets->uniformDescriptor.get(), descriptorSets->matrixDescriptor.get() };
+			for (int j = 0; j < descriptorSets->textures.size(); ++j) {
+				bindedDescripotrs.push_back(descriptorSets->textures[j].get());
+			}*/
+			// bindedDescripotrs.push_back();
 			/*
 			if (sceneBuffers->_textureImages.size() > 0) {
 				bindedDescripotrs.push_back(descriptorSets->tempTexture.get());
@@ -156,7 +162,7 @@ public:
 		vk::UniqueDevice& device, vma::Allocator &alloc, Resources &sets
 	) {
 		std::vector<vk::WriteDescriptorSet> bufferWrite;
-		bufferWrite.reserve(sets.textures.size() + 2 + scene.m_textures.size());
+		bufferWrite.reserve(2 + sceneBuffers->_textureImages.size());
 
 		/*std::vector<vk::DescriptorImageInfo> imageInfo(sets.textures.size());
 		for (std::size_t i = 0; i < sets.textures.size(); ++i) {
@@ -188,15 +194,22 @@ public:
 
 		// Init Textures in the scene -- Get combined sampler
 		// TODO
-		vk::DescriptorImageInfo sceneTextureImageInfo{};
-		sceneTextureImageInfo.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
-		sceneTextureImageInfo.imageView = buffers._textureImages[0].imageView.get();
-		sceneTextureImageInfo.sampler = buffers._textureImages[0].sampler.get();
-		bufferWrite.emplace_back()
-			.setDstSet(sets.tempTexture.get())
-			.setDstBinding(0)
-			.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
-			.setImageInfo(sceneTextureImageInfo);
+		std::vector<vk::DescriptorImageInfo> sceneTextureImageInfoVec;
+		for (int i = 0; i < sceneBuffers->_textureImages.size(); ++i) {
+			vk::DescriptorImageInfo sceneTextureImageInfo{};
+			sceneTextureImageInfo.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+			sceneTextureImageInfo.imageView = buffers._textureImages[i].imageView.get();
+			sceneTextureImageInfo.sampler = buffers._textureImages[i].sampler.get();
+			sceneTextureImageInfoVec.push_back(sceneTextureImageInfo);
+		}
+		for (int i = 0; i < sceneBuffers->_textureImages.size(); ++i) {
+			bufferWrite.emplace_back()
+				.setDstSet(sets.sceneTexturesDescriptorSet.get())
+				.setDstBinding(i)
+				.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
+				.setImageInfo(sceneTextureImageInfoVec[i]);
+		}
+		
 		/*
 		if (sceneBuffers->_textureImages.size() > 0) {
 			
@@ -358,21 +371,25 @@ protected:
 
 		std::vector<vk::DescriptorSetLayout> descriptorSetLayouts{
 			_uniformsDescriptorSetLayout.get(),
-			_matricesDescriptorSetLayout.get(),
-			_textureDescriptorSetLayout.get()
+			_matricesDescriptorSetLayout.get()
+			// _textureDescriptorSetLayout.get()
 		};
 
 		sceneBuffers = i_scene_buffer;
 
 		// Scene textures -- Temporily only one texture:
-		vk::DescriptorSetLayoutBinding sceneTextureSamplerLayoutBinding{};
-		sceneTextureSamplerLayoutBinding.binding = 0;
-		sceneTextureSamplerLayoutBinding.descriptorCount = 1;
-		sceneTextureSamplerLayoutBinding.descriptorType = vk::DescriptorType::eCombinedImageSampler;
-		sceneTextureSamplerLayoutBinding.pImmutableSamplers = nullptr;
-		sceneTextureSamplerLayoutBinding.stageFlags = vk::ShaderStageFlagBits::eFragment;
-		std::array<vk::DescriptorSetLayoutBinding, 1> sceneTextureDescriptorBindings;
-		sceneTextureDescriptorBindings[0] = std::move(sceneTextureSamplerLayoutBinding);
+		std::vector<vk::DescriptorSetLayoutBinding> sceneTextureDescriptorBindings;
+
+		for (int i = 0; i < sceneBuffers->_textureImages.size(); ++i) {
+			vk::DescriptorSetLayoutBinding sceneTextureSamplerLayoutBinding{};
+			sceneTextureSamplerLayoutBinding.binding = i;
+			sceneTextureSamplerLayoutBinding.descriptorCount = 1;
+			sceneTextureSamplerLayoutBinding.descriptorType = vk::DescriptorType::eCombinedImageSampler;
+			sceneTextureSamplerLayoutBinding.pImmutableSamplers = nullptr;
+			sceneTextureSamplerLayoutBinding.stageFlags = vk::ShaderStageFlagBits::eFragment;
+			sceneTextureDescriptorBindings.push_back(sceneTextureSamplerLayoutBinding);
+		}
+
 		vk::DescriptorSetLayoutCreateInfo sceneTextureLayoutInfo;
 		sceneTextureLayoutInfo.setBindings(sceneTextureDescriptorBindings);
 		_sceneTexturesDescriptorSetLayout = dev.createDescriptorSetLayoutUnique(sceneTextureLayoutInfo);

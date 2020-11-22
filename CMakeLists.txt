@@ -66,3 +66,4 @@ add_shader(restir "src/shaders/gBuffer.frag")
 
 add_shader(restir "src/shaders/quad.vert")
 add_shader(restir "src/shaders/lighting.frag")
+

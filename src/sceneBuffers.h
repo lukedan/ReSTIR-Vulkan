@@ -76,6 +76,9 @@ public:
 		
 		if (scene.m_textures.size() > 0) {
 			result._textureImages.resize(scene.m_textures.size());
+			vk::CommandBufferBeginInfo cmdBeginInfo;
+			cmdBeginInfo.setFlags({ vk::CommandBufferUsageFlagBits::eOneTimeSubmit });
+
 			for (int i = 0; i < scene.m_textures.size(); ++i) {
 				auto& gltfimage = scene.m_textures[i];
 				std::cout << "Created Texture Name:" << gltfimage.uri << std::endl;
@@ -99,7 +102,7 @@ public:
 				result._textureImages[i].image.unmap();
 				result._textureImages[i].image.flush();
 
-				commandBuffer->begin(vk::CommandBufferBeginInfo());
+				commandBuffer->begin(cmdBeginInfo);
 				setImageLayout(commandBuffer, result._textureImages[i].image.get(), format, vk::ImageLayout::ePreinitialized, vk::ImageLayout::eShaderReadOnlyOptimal);
 				commandBuffer->end();
 				

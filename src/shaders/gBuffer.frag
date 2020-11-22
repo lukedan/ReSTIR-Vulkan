@@ -44,12 +44,10 @@ layout(push_constant) uniform shaderInformation
 }
 material;
 
-// sRGB to linear approximation
-// see http://chilliant.blogspot.com/2012/08/srgb-approximations-for-hlsl.html
-vec4 SRGBtoLINEAR(vec4 srgbIn, float gamma)
-{
-  return vec4(pow(srgbIn.xyz, vec3(gamma)), srgbIn.w);
-}
+#include "textures.glsl"
+#include "functions.glsl"
+#include "tonemapping.glsl"
+
 
 void main() {
     vec4  baseColor = vec4(0.0, 0.0, 0.0, 1.0);
@@ -61,13 +59,10 @@ void main() {
     // outNormal = normalize(inNormal);
     // outAlbedo = vec3(texture(texSampler[0], inUv).xyz);
 
-    
+    baseColor = material.pbrBaseColorFactor;
     if(material.pbrBaseColorTexture > -1){
-         // baseColor *= SRGBtoLINEAR(texture(texSampler[nonuniformEXT(material.pbrBaseColorTexture)], inUv), 2.2);
-         // baseColor = vec4(0.0, 0.0, 0.0, 1.0);
-         baseColor = texture(texSampler[0], inUv);
-    }else{
-         baseColor = material.pbrBaseColorFactor;
+         baseColor = texture(texSampler[nonuniformEXT(material.pbrBaseColorTexture)], inUv);
+         // baseColor = texture(texSampler[nonuniformEXT(1)], inUv);
     }
     // baseColor = vec4(0.0, 0.0, 0.0, 1.0);
     outAlbedo = vec3(baseColor.xyz);

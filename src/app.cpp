@@ -180,7 +180,8 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 		vk::CommandPoolCreateInfo poolInfo;
 		poolInfo
 			.setQueueFamilyIndex(_graphicsQueueIndex)
-			.setFlags(vk::CommandPoolCreateFlags());
+			.setFlags({vk::CommandPoolCreateFlagBits::eResetCommandBuffer});
+			// .setFlags(vk::CommandPoolCreateFlags());
 		_commandPool = _device->createCommandPoolUnique(poolInfo);
 
 		vk::CommandPoolCreateInfo transientPoolInfo;
@@ -220,12 +221,20 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 	}
 
 	// loadScene("../../../scenes/cornellBox/cornellBox.gltf", _gltfScene);
-	loadScene("../../../scenes/boxTextured/boxTextured.gltf", _gltfScene);
+	// loadScene("../../../scenes/boxTextured/boxTextured.gltf", _gltfScene);
+	// loadScene("../../../scenes/duck/Duck.gltf", _gltfScene);
+	// loadScene("../../../scenes/fish/BarramundiFish.gltf", _gltfScene);
+	loadScene("../../../scenes/Sponza/glTF/Sponza.gltf", _gltfScene);
+
+	int scene_textures_nb = 1;
+	if (_gltfScene.m_textures.size() > 0) {
+		scene_textures_nb = _gltfScene.m_textures.size();
+	}
 
 	{ // create descriptor pool
 		// unsigned int sceneTexturesNum = _gltfScene.m_textures.size();
 		std::vector<vk::DescriptorPoolSize> poolSizes{
-			vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, 4),
+			vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, 3 + scene_textures_nb),
 			vk::DescriptorPoolSize(vk::DescriptorType::eStorageBuffer, 2),
 			vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, 2),
 			vk::DescriptorPoolSize(vk::DescriptorType::eUniformBufferDynamic, 1)
@@ -243,7 +252,7 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 		poolInfo
 			.setFlags(vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet)
 			.setPoolSizes(poolSizes)
-			.setMaxSets(4);
+			.setMaxSets(3 + scene_textures_nb);
 		_staticDescriptorPool = _device->createDescriptorPoolUnique(poolInfo);
 	}
 
@@ -288,7 +297,8 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 			.setDescriptorPool(_staticDescriptorPool.get())
 			.setDescriptorSetCount(1)
 			.setSetLayouts(gSceneTexturesLayout);
-		_gBufferResources.tempTexture = std::move(_device->allocateDescriptorSetsUnique(gBufferSceneTexturesAlloc)[0]);
+		auto desc_temp_texture = _device->allocateDescriptorSetsUnique(gBufferSceneTexturesAlloc);
+		_gBufferResources.sceneTexturesDescriptorSet = std::move(_device->allocateDescriptorSetsUnique(gBufferSceneTexturesAlloc)[0]);
 		/*
 		if (_gltfScene.m_textures.size() > 0) {
 			std::array<vk::DescriptorSetLayout, 1> gSceneTexturesLayout{ _gBufferPass.getSceneTexturesDescriptorSetLayout() };
