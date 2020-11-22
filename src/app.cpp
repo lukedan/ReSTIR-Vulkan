@@ -1,5 +1,7 @@
 #include "app.h"
 
+#include <sstream>
+
 VKAPI_ATTR VkBool32 VKAPI_CALL _debugCallback(
 	VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
 	VkDebugUtilsMessageTypeFlagsEXT messageType,
@@ -262,7 +264,6 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 
 	// create g buffer pass
 	GBuffer::Formats::initialize(_physicalDevice);
-	// _gBufferPass = Pass::create<GBufferPass>(_device.get(), _swapchain.getImageExtent());
 	_gBufferPass = Pass::create<GBufferPass>(_device.get(), &_sceneBuffers, _swapchain.getImageExtent());
 
 	{
@@ -394,6 +395,14 @@ void App::mainLoop() {
 		_device->waitForFences(
 			{ _inFlightFences[currentFrame].get() }, true, std::numeric_limits<std::uint64_t>::max()
 		);
+
+		_fpsCounter.tick();
+		std::stringstream ss;
+		ss <<
+			"ReSTIR | FPS: " <<
+			std::fixed << std::setprecision(2) << _fpsCounter.getFpsAverageWindow() << " (Window: " << _fpsCounter.timeWindow << "s)  " <<
+			std::fixed << std::setprecision(2) << _fpsCounter.getFpsRunningAverage() << " (RA: " << _fpsCounter.alpha << ")";
+		_window.setTitle(ss.str());
 
 		auto [result, imageIndex] = _device->acquireNextImageKHR(
 			_swapchain.getSwapchain().get(), std::numeric_limits<std::uint64_t>::max(),

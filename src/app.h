@@ -9,6 +9,7 @@
 #include "passes/gBufferPass.h"
 #include "passes/lightingPass.h"
 #include "camera.h"
+#include "fpsCounter.h"
 
 class App {
 public:
@@ -67,6 +68,7 @@ protected:
 	glfw::Window _window;
 
 	Camera _camera;
+	FpsCounter _fpsCounter;
 
 	uint32_t _graphicsQueueIndex = 0;
 	uint32_t _presentQueueIndex = 0;

@@ -31,6 +31,7 @@ target_sources(restir
 		"src/app.cpp"
 		"src/app.h"
 		"src/camera.h"
+		"src/fpsCounter.h"
 		"src/glfwWindow.cpp"
 		"src/glfwWindow.h"
 		"src/main.cpp"

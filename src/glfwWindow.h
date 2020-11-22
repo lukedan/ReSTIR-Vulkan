@@ -47,6 +47,10 @@ namespace glfw {
 			_setEventHandler<&Window::_scrollCallback>(std::move(cb), glfwSetScrollCallback);
 		}
 
+		void setTitle(const std::string &title) {
+			glfwSetWindowTitle(_window, title.c_str());
+		}
+
 		[[nodiscard]] vk::UniqueSurfaceKHR createSurface(vk::Instance);
 
 		[[nodiscard]] vk::Extent2D getFramebufferSize() const;
