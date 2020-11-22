@@ -160,6 +160,8 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 
 		// vk::PhysicalDeviceFeatures deviceFeatures;
 		vk::PhysicalDeviceFeatures2 deviceFeatures;
+		deviceFeatures.features
+			.setSamplerAnisotropy(true);
 		vk::PhysicalDeviceDescriptorIndexingFeatures idxFeature;
 		idxFeature
 			.setRuntimeDescriptorArray(VkBool32(true))
@@ -181,16 +183,10 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 	{ // create command pool
 		vk::CommandPoolCreateInfo poolInfo;
 		poolInfo
-			.setQueueFamilyIndex(_graphicsQueueIndex)
-			.setFlags(vk::CommandPoolCreateFlagBits::eResetCommandBuffer);
+			.setQueueFamilyIndex(_graphicsQueueIndex);
 		_commandPool = _device->createCommandPoolUnique(poolInfo);
-
-		vk::CommandPoolCreateInfo transientPoolInfo;
-		transientPoolInfo
-			.setQueueFamilyIndex(_graphicsQueueIndex)
-			.setFlags(vk::CommandPoolCreateFlagBits::eTransient);
-		_transientCommandPool = _device->createCommandPoolUnique(transientPoolInfo);
 	}
+	_transientCommandBufferPool = TransientCommandBufferPool(_device.get(), _graphicsQueueIndex);
 
 	{
 		_swapchainSharedQueues = { _graphicsQueueIndex, _presentQueueIndex };
@@ -256,7 +252,11 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 	_graphicsQueue = _device->getQueue(_graphicsQueueIndex, 0);
 	_presentQueue = _device->getQueue(_presentQueueIndex, 0);
 
-	_sceneBuffers = SceneBuffers::create(_gltfScene, _allocator, _physicalDevice, _device.get(), _graphicsQueue, _commandPool.get());
+	_sceneBuffers = SceneBuffers::create(
+		_gltfScene,
+		_allocator, _transientCommandBufferPool,
+		_physicalDevice, _device.get(), _graphicsQueue, _commandPool.get()
+	);
 	std::cout << "Building AABB tree...";
 	_aabbTree = AabbTree::build(_gltfScene);
 	std::cout << " done\n";

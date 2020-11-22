@@ -7,7 +7,15 @@
 #include <optional>
 
 #include <vulkan/vulkan.hpp>
+
 #include "../gltf/gltfscene.h"
+#include "transientCommandBuffer.h"
+
+
+namespace vma {
+	class Allocator;
+	struct UniqueImage;
+}
 
 
 [[nodiscard]] std::vector<char> readFile(const std::filesystem::path&);
@@ -57,9 +65,9 @@ template <auto MPtr, typename T> bool checkSupport(
 [[nodiscard]] inline vk::UniqueSampler createSampler(
 	vk::Device device, vk::Filter magFilter = vk::Filter::eLinear, vk::Filter minFilter = vk::Filter::eLinear,
 	vk::SamplerMipmapMode mipmapMode = vk::SamplerMipmapMode::eLinear,
+	std::optional<float> anisotropy = std::nullopt,
 	float minMipLod = 0.0f, float maxMipLod = std::numeric_limits<float>::max(), float mipLodBias = 0.0f,
 	vk::SamplerAddressMode addressMode = vk::SamplerAddressMode::eRepeat,
-	std::optional<float> anisotropy = std::nullopt,
 	std::optional<vk::CompareOp> compare = std::nullopt,
 	bool unnormalizedCoordinates = false
 ) {
@@ -85,6 +93,21 @@ template <auto MPtr, typename T> bool checkSupport(
 	}
 	return device.createSamplerUnique(samplerInfo);
 }
+
+void transitionImageLayout(
+	vk::CommandBuffer commandBuffer,
+	vk::Image image,
+	vk::Format format,
+	vk::ImageLayout oldImageLayout,
+	vk::ImageLayout newImageLayout,
+	uint32_t baseMipLevel = 0,
+	uint32_t numMipLevels = 1
+);
+
+vma::UniqueImage loadTexture(
+	const tinygltf::Image&, vk::Format, uint32_t mipLevels,
+	vma::Allocator&, TransientCommandBufferPool&, vk::Queue
+);
 
 
 // Load a gltf scene

@@ -1,9 +1,10 @@
 #pragma once
 
-#include "glfwWindow.h"
 #include "misc.h"
-#include "swapchain.h"
 #include "vma.h"
+#include "glfwWindow.h"
+#include "swapchain.h"
+#include "transientCommandBuffer.h"
 #include "sceneBuffers.h"
 #include "passes/demoPass.h"
 #include "passes/gBufferPass.h"
@@ -85,9 +86,9 @@ protected:
 
 	vma::Allocator _allocator;
 	vk::UniqueCommandPool _commandPool;
-	vk::UniqueCommandPool _transientCommandPool;
 	vk::UniqueDescriptorPool _staticDescriptorPool;
 	vk::UniqueDescriptorPool _textureDescriptorPool;
+	TransientCommandBufferPool _transientCommandBufferPool;
 
 	std::vector<uint32_t> _swapchainSharedQueues;
 	vk::SwapchainCreateInfoKHR _swapchainInfo;
@@ -173,27 +174,5 @@ protected:
 		_lightingPassResources.descriptorSet = std::move(_device->allocateDescriptorSetsUnique(lightingPassDescAlloc)[0]);
 
 		_lightingPass.initializeDescriptorSetFor(_lightingPassResources, _device.get());
-	}
-
-
-	void _executeOneTimeCommandBuffer(const std::function<void(vk::CommandBuffer)> &fillBuffer) {
-		vk::CommandBufferAllocateInfo bufferInfo;
-		bufferInfo
-			.setCommandPool(_transientCommandPool.get())
-			.setLevel(vk::CommandBufferLevel::ePrimary)
-			.setCommandBufferCount(1);
-		vk::UniqueCommandBuffer buffer = std::move(_device->allocateCommandBuffersUnique(bufferInfo)[0]);
-
-		vk::CommandBufferBeginInfo beginInfo;
-		beginInfo.setFlags(vk::CommandBufferUsageFlagBits::eOneTimeSubmit);
-		buffer->begin(beginInfo);
-		fillBuffer(buffer.get());
-		buffer->end();
-
-		std::array<vk::CommandBuffer, 1> buffers{ buffer.get() };
-		vk::SubmitInfo submitInfo;
-		submitInfo.setCommandBuffers(buffers);
-		_graphicsQueue.submit(submitInfo, nullptr);
-		_graphicsQueue.waitIdle();
 	}
 };

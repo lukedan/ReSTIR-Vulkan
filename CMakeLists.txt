@@ -41,6 +41,7 @@ target_sources(restir
 		"src/shaderIncludes.h"
 		"src/swapchain.cpp"
 		"src/swapchain.h"
+		"src/transientCommandBuffer.h"
 		# "gltf/gltfscene.h"
 		"gltf/gltfscene.cpp"
 		"src/shader.h"
