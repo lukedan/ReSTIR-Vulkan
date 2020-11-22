@@ -34,8 +34,12 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 
 	std::vector<const char*> requiredExtensions = glfw::getRequiredInstanceExtensions();
 	requiredExtensions.emplace_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+	requiredExtensions.push_back(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME);
 	std::vector<const char*> requiredDeviceExtensions{
-		VK_KHR_SWAPCHAIN_EXTENSION_NAME
+		VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+		// VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME,
+		VK_KHR_MAINTENANCE3_EXTENSION_NAME,
+		VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME
 	};
 	std::vector<const char*> requiredLayers{
 		"VK_LAYER_KHRONOS_validation"
@@ -152,13 +156,20 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 			.setQueueCount(1)
 			.setQueuePriorities(queuePriorities);
 
-		vk::PhysicalDeviceFeatures deviceFeatures;
+		// vk::PhysicalDeviceFeatures deviceFeatures;
+		vk::PhysicalDeviceFeatures2 deviceFeatures;
+		vk::PhysicalDeviceDescriptorIndexingFeatures idxFeature;
+		idxFeature
+			.setRuntimeDescriptorArray(VkBool32(true))
+			.setShaderSampledImageArrayNonUniformIndexing(VkBool32(true));
+		deviceFeatures.setPNext(&idxFeature);
 
 		vk::DeviceCreateInfo deviceInfo;
 		deviceInfo
 			.setQueueCreateInfos(queueInfos)
-			.setPEnabledFeatures(&deviceFeatures)
-			.setPEnabledExtensionNames(requiredDeviceExtensions);
+			.setPEnabledFeatures(&deviceFeatures.features)
+			.setPEnabledExtensionNames(requiredDeviceExtensions)
+			.setPNext(&idxFeature);
 		_device = _physicalDevice.createDeviceUnique(deviceInfo);
 	}
 
@@ -169,7 +180,8 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 		vk::CommandPoolCreateInfo poolInfo;
 		poolInfo
 			.setQueueFamilyIndex(_graphicsQueueIndex)
-			.setFlags(vk::CommandPoolCreateFlags());
+			.setFlags({vk::CommandPoolCreateFlagBits::eResetCommandBuffer});
+			// .setFlags(vk::CommandPoolCreateFlags());
 		_commandPool = _device->createCommandPoolUnique(poolInfo);
 
 		vk::CommandPoolCreateInfo transientPoolInfo;
@@ -208,13 +220,21 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 		_swapchain = Swapchain::create(_device.get(), _swapchainInfo);
 	}
 
-	loadScene("../../../scenes/cornellBox/cornellBox.gltf", _gltfScene);
+	// loadScene("../../../scenes/cornellBox/cornellBox.gltf", _gltfScene);
 	// loadScene("../../../scenes/boxTextured/boxTextured.gltf", _gltfScene);
+	// loadScene("../../../scenes/duck/Duck.gltf", _gltfScene);
+	// loadScene("../../../scenes/fish/BarramundiFish.gltf", _gltfScene);
+	loadScene("../../../scenes/Sponza/glTF/Sponza.gltf", _gltfScene);
+
+	int scene_textures_nb = 1;
+	if (_gltfScene.m_textures.size() > 0) {
+		scene_textures_nb = _gltfScene.m_textures.size();
+	}
 
 	{ // create descriptor pool
-		unsigned int sceneTexturesNum = _gltfScene.m_textures.size();
+		// unsigned int sceneTexturesNum = _gltfScene.m_textures.size();
 		std::vector<vk::DescriptorPoolSize> poolSizes{
-			vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, 3 + sceneTexturesNum),
+			vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, 3 + scene_textures_nb),
 			vk::DescriptorPoolSize(vk::DescriptorType::eStorageBuffer, 2),
 			vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, 2),
 			vk::DescriptorPoolSize(vk::DescriptorType::eUniformBufferDynamic, 1)
@@ -232,7 +252,7 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 		poolInfo
 			.setFlags(vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet)
 			.setPoolSizes(poolSizes)
-			.setMaxSets(3 + sceneTexturesNum);
+			.setMaxSets(3 + scene_textures_nb);
 		_staticDescriptorPool = _device->createDescriptorPoolUnique(poolInfo);
 	}
 
@@ -271,6 +291,15 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 		_gBufferResources.matrixDescriptor = std::move(_device->allocateDescriptorSetsUnique(gBufferMatricesAlloc)[0]);
 
 		// Scene textures
+		std::array<vk::DescriptorSetLayout, 1> gSceneTexturesLayout{ _gBufferPass.getSceneTexturesDescriptorSetLayout() };
+		vk::DescriptorSetAllocateInfo gBufferSceneTexturesAlloc;
+		gBufferSceneTexturesAlloc
+			.setDescriptorPool(_staticDescriptorPool.get())
+			.setDescriptorSetCount(1)
+			.setSetLayouts(gSceneTexturesLayout);
+		auto desc_temp_texture = _device->allocateDescriptorSetsUnique(gBufferSceneTexturesAlloc);
+		_gBufferResources.sceneTexturesDescriptorSet = std::move(_device->allocateDescriptorSetsUnique(gBufferSceneTexturesAlloc)[0]);
+		/*
 		if (_gltfScene.m_textures.size() > 0) {
 			std::array<vk::DescriptorSetLayout, 1> gSceneTexturesLayout{ _gBufferPass.getSceneTexturesDescriptorSetLayout() };
 			vk::DescriptorSetAllocateInfo gBufferSceneTexturesAlloc;
@@ -280,6 +309,7 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 				.setSetLayouts(gSceneTexturesLayout);
 			_gBufferResources.tempTexture = std::move(_device->allocateDescriptorSetsUnique(gBufferSceneTexturesAlloc)[0]);
 		}
+		*/
 	}
 	
 	_gBufferPass.initializeResourcesFor(_gltfScene, _sceneBuffers, _device, _allocator, _gBufferResources);

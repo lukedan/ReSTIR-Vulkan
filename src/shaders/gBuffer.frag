@@ -1,5 +1,8 @@
 #version 450
 #extension GL_ARB_separate_shader_objects: enable
+#extension GL_GOOGLE_include_directive : enable
+#extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_EXT_scalar_block_layout : enable
 
 layout (set = 2, binding = 0) uniform sampler2D texSampler[];
 
@@ -41,12 +44,26 @@ layout(push_constant) uniform shaderInformation
 }
 material;
 
+#include "textures.glsl"
+#include "functions.glsl"
+#include "tonemapping.glsl"
+
+
 void main() {
+    vec4  baseColor = vec4(0.0, 0.0, 0.0, 1.0);
     // outAlbedo = inColor.xyz;
-    vec2 tempUV = inUv;
+    // vec2 tempUV = inUv;
     outNormal = normalize(vec3(inUv, 0.0));
     // outAlbedo = vec3(in, 1.0);
-    outAlbedo = vec3(inUv, 0.0);
+    // outAlbedo = vec3(material.pbrBaseColorFactor.xyz);
     // outNormal = normalize(inNormal);
     // outAlbedo = vec3(texture(texSampler[0], inUv).xyz);
+
+    baseColor = material.pbrBaseColorFactor;
+    if(material.pbrBaseColorTexture > -1){
+         baseColor = texture(texSampler[nonuniformEXT(material.pbrBaseColorTexture)], inUv);
+         // baseColor = texture(texSampler[nonuniformEXT(1)], inUv);
+    }
+    // baseColor = vec4(0.0, 0.0, 0.0, 1.0);
+    outAlbedo = vec3(baseColor.xyz);
 }
