@@ -17,9 +17,13 @@ public:
 		vk::UniqueImageView imageView;
 		vk::UniqueSampler sampler;
 		vma::UniqueImage image;
-	};
 
-	std::vector<SceneTexture> _textureImages;
+		[[nodiscard]] vk::DescriptorImageInfo getDescriptorInfo(
+			vk::ImageLayout layout = vk::ImageLayout::eShaderReadOnlyOptimal
+		) const {
+			return vk::DescriptorImageInfo(sampler.get(), imageView.get(), layout);
+		}
+	};
 
 	[[nodiscard]] vk::Buffer getVertices() const {
 		return _vertices.get();
@@ -39,7 +43,9 @@ public:
 	[[nodiscard]] vk::Buffer getGeoTangents() const {
 		return _geoTangent.get();
 	}
-	
+	[[nodiscard]] const std::vector<SceneTexture> &getTextures() const {
+		return _textureImages;
+	}
 
 	[[nodiscard]] static SceneBuffers create(const nvh::GltfScene &scene, 
 		vma::Allocator &allocator, 
@@ -254,8 +260,7 @@ private:
 	vma::UniqueBuffer _uvCoords;
 	vma::UniqueBuffer _geoNormal;
 	vma::UniqueBuffer _geoTangent;
-	// std::vector<vma::UniqueImage> _textureImages;
-	
+	std::vector<SceneTexture> _textureImages;
 
 	void static setImageLayout(vk::UniqueCommandBuffer const& commandBuffer,
 		vk::Image                       image,

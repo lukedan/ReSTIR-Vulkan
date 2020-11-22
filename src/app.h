@@ -85,6 +85,7 @@ protected:
 	vk::UniqueCommandPool _commandPool;
 	vk::UniqueCommandPool _transientCommandPool;
 	vk::UniqueDescriptorPool _staticDescriptorPool;
+	vk::UniqueDescriptorPool _textureDescriptorPool;
 
 	std::vector<uint32_t> _swapchainSharedQueues;
 	vk::SwapchainCreateInfoKHR _swapchainInfo;
@@ -126,10 +127,8 @@ protected:
 	void _onScrollEvent(double x, double y);
 
 
-	void _createAndRecordSwapchainBuffers(
-		const Swapchain &swapchain, vk::Device device, vk::CommandPool commandPool, Pass &pass
-	) {
-		_swapchainBuffers = swapchain.getBuffers(device, pass.getPass(), commandPool);
+	void _createAndRecordSwapchainBuffers(Pass &pass) {
+		_swapchainBuffers = _swapchain.getBuffers(_device.get(), pass.getPass(), _commandPool.get());
 
 		// record command buffers
 		for (const Swapchain::BufferSet &bufferSet : _swapchainBuffers) {
@@ -139,6 +138,41 @@ protected:
 			bufferSet.commandBuffer->end();
 		}
 	}
+
+	void _createAndRecordGBufferCommandBuffer() {
+		vk::CommandBufferAllocateInfo bufferInfo;
+		bufferInfo
+			.setCommandPool(_commandPool.get())
+			.setCommandBufferCount(1)
+			.setLevel(vk::CommandBufferLevel::ePrimary);
+		_gBufferCommandBuffer = std::move(_device->allocateCommandBuffersUnique(bufferInfo)[0]);
+
+		vk::CommandBufferBeginInfo beginInfo;
+		_gBufferCommandBuffer->begin(beginInfo);
+		_gBufferPass.issueCommands(_gBufferCommandBuffer.get(), _gBuffer.getFramebuffer());
+		_gBufferCommandBuffer->end();
+	}
+
+
+	void _initializeLightingPassResources() {
+		_lightingPassResources.gBuffer = &_gBuffer;
+		_lightingPassResources.aabbTreeBuffers = &_aabbTreeBuffers;
+
+		_lightingPassResources.uniformBuffer = _allocator.createTypedBuffer<LightingPass::Uniforms>(
+			1, vk::BufferUsageFlagBits::eUniformBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU
+			);
+
+		std::array<vk::DescriptorSetLayout, 1> lightingPassDescLayout{ _lightingPass.getDescriptorSetLayout() };
+		vk::DescriptorSetAllocateInfo lightingPassDescAlloc;
+		lightingPassDescAlloc
+			.setDescriptorPool(_staticDescriptorPool.get())
+			.setDescriptorSetCount(1)
+			.setSetLayouts(lightingPassDescLayout);
+		_lightingPassResources.descriptorSet = std::move(_device->allocateDescriptorSetsUnique(lightingPassDescAlloc)[0]);
+
+		_lightingPass.initializeDescriptorSetFor(_lightingPassResources, _device.get());
+	}
+
 
 	void _executeOneTimeCommandBuffer(const std::function<void(vk::CommandBuffer)> &fillBuffer) {
 		vk::CommandBufferAllocateInfo bufferInfo;
