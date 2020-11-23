@@ -23,6 +23,7 @@ layout (binding = 3) buffer AabbTreeNodes {
 	int root;
 	AabbTreeNode data[];
 } nodes;
+
 layout (binding = 4) buffer Triangles {
 	Triangle data[];
 } triangles;

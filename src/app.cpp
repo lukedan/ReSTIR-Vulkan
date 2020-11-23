@@ -339,8 +339,8 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 	_graphicsQueue = _device->getQueue(_graphicsQueueIndex, 0);
 	_presentQueue = _device->getQueue(_presentQueueIndex, 0);
 
-	//loadScene("../../../scenes/cornellBox.gltf", _gltfScene);
-	loadScene("../../../scenes/boxTextured/boxTextured.gltf", _gltfScene);
+	loadScene("../../../scenes/cornellBox.gltf", _gltfScene);
+	//loadScene("../../../scenes/boxTextured/boxTextured.gltf", _gltfScene);
 	_sceneBuffers = SceneBuffers::create(_gltfScene, _allocator, _physicalDevice, _device, _graphicsQueue, _commandPool);
 	_aabbTree = AabbTree::build(_gltfScene);
 	_aabbTreeBuffers = AabbTreeBuffers::create(_aabbTree, _allocator);
@@ -526,9 +526,10 @@ void App::mainLoop() {
 		
 
 		{
+#if defined(SOFTWARE_RT)
 			_device->waitForFences(_gBufferFence.get(), true, std::numeric_limits<uint64_t>::max());
 			_device->resetFences(_gBufferFence.get());
-
+#endif
 			if (_cameraUpdated) {
 				_graphicsQueue.waitIdle();
 
@@ -552,6 +553,7 @@ void App::mainLoop() {
 #endif
 				_cameraUpdated = false;
 			}
+
 #if defined(SOFTWARE_RT)
 			std::array<vk::CommandBuffer, 1> gBufferCommandBuffers{ _gBufferCommandBuffer.get() };
 			vk::SubmitInfo submitInfo;
@@ -566,10 +568,6 @@ void App::mainLoop() {
 			std::vector<vk::CommandBuffer> cmdBuffers{ _swapchainBuffers[imageIndex].commandBuffer.get() };
 			std::vector<vk::PipelineStageFlags> waitStages{ vk::PipelineStageFlagBits::eColorAttachmentOutput };
 
-#if defined(HARDWARE_RT)
-			//# Rtpass
-			_device->resetFences({ _inFlightFences[currentFrame].get() });
-#endif
 			vk::SubmitInfo submitInfo;
 			submitInfo
 				.setWaitSemaphores(waitSemaphores)
