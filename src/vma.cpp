@@ -68,11 +68,11 @@ namespace vma {
 	) {
 		Allocator result;
 		VmaAllocatorCreateInfo allocatorInfo{};
+		allocatorInfo.flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
 		allocatorInfo.vulkanApiVersion = version;
 		allocatorInfo.instance = inst;
 		allocatorInfo.physicalDevice = physDev;
 		allocatorInfo.device = dev;
-		allocatorInfo.flags = 0;
 		vkCheck(vmaCreateAllocator(&allocatorInfo, &result._allocator));
 		return result;
 	}

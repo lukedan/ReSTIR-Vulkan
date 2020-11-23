@@ -1,4 +1,5 @@
 #include "app.h"
+#define HARDWARE_RT
 
 VKAPI_ATTR VkBool32 VKAPI_CALL _debugCallback(
 	VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
@@ -321,7 +322,7 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 		std::array<vk::DescriptorPoolSize, 6> poolSizes{
 			vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, 3),
 			vk::DescriptorPoolSize(vk::DescriptorType::eStorageBuffer, 2),
-			vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, 2),
+			vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, 3),
 			vk::DescriptorPoolSize(vk::DescriptorType::eUniformBufferDynamic, 1),
 			vk::DescriptorPoolSize(vk::DescriptorType::eAccelerationStructureKHR, 1),
 			vk::DescriptorPoolSize(vk::DescriptorType::eStorageImage, 1)
@@ -338,12 +339,13 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 	_graphicsQueue = _device->getQueue(_graphicsQueueIndex, 0);
 	_presentQueue = _device->getQueue(_presentQueueIndex, 0);
 
-	// loadScene("../../../scenes/cornellBox.gltf", _gltfScene);
+	//loadScene("../../../scenes/cornellBox.gltf", _gltfScene);
 	loadScene("../../../scenes/boxTextured/boxTextured.gltf", _gltfScene);
 	_sceneBuffers = SceneBuffers::create(_gltfScene, _allocator, _physicalDevice, _device, _graphicsQueue, _commandPool);
 	_aabbTree = AabbTree::build(_gltfScene);
 	_aabbTreeBuffers = AabbTreeBuffers::create(_aabbTree, _allocator);
 
+#if defined(SOFTWARE_RT)
 	// create g buffer pass
 	GBuffer::Formats::initialize(_physicalDevice);
 	_gBufferPass = Pass::create<GBufferPass>(_device.get(), _swapchain.getImageExtent());
@@ -425,15 +427,16 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 		_gBufferPass.issueCommands(_gBufferCommandBuffer.get(), _gBuffer.getFramebuffer());
 		_gBufferCommandBuffer->end();
 	}
-
+#elif defined(HARDWARE_RT) 
 	// Rt pass initialization
-	/*_rtPass = RtPass::create(_device.get(), _dynamicDispatcher);
-	_rtPass.createAccelerationStructure(_device.get(), _physicalDevice, _allocator, _dynamicDispatcher, _commandPool.get(), _graphicsQueue);
+	_rtPass = RtPass::create(_device.get(), _dynamicDispatcher);
+	_rtPass.createAccelerationStructure(_device.get(), _physicalDevice, _allocator, _dynamicDispatcher, 
+		                                _commandPool.get(), _graphicsQueue, _sceneBuffers, _gltfScene);
 	_rtPass.createOffscreenBuffer(_device.get(), _allocator, _swapchain.getImageExtent());
 	_rtPass.createDescriptorSetForRayTracing(_device.get(), _staticDescriptorPool.get(), _dynamicDispatcher);
 	_rtPass.createShaderBindingTable(_device.get(), _allocator, _physicalDevice, _dynamicDispatcher);
-	createAndRecordRTSwapchainBuffers(_swapchain, _device.get(), _commandPool.get(), _rtPass, _dynamicDispatcher);*/
-
+	createAndRecordRTSwapchainBuffers(_swapchain, _device.get(), _commandPool.get(), _rtPass, _dynamicDispatcher);
+#endif
 
 
 	// semaphores & fences
@@ -529,6 +532,7 @@ void App::mainLoop() {
 			if (_cameraUpdated) {
 				_graphicsQueue.waitIdle();
 
+#if defined(SOFTWARE_RT)
 				auto *gBufferUniforms = _gBufferResources.uniformBuffer.mapAs<GBufferPass::Uniforms>();
 				gBufferUniforms->projectionViewMatrix = _camera.projectionViewMatrix;
 				_gBufferResources.uniformBuffer.unmap();
@@ -543,15 +547,18 @@ void App::mainLoop() {
 				lightingPassUniforms->aspectRatio = _camera.aspectRatio;
 				_lightingPassResources.uniformBuffer.unmap();
 				_lightingPassResources.uniformBuffer.flush();
-
+#elif defined(HARDWARE_RT)
+				_rtPass.updateCameraUniform(_camera.inverseViewMatrix, nvmath::invert(_camera.projectionMatrix));
+#endif
 				_cameraUpdated = false;
 			}
-
+#if defined(SOFTWARE_RT)
 			std::array<vk::CommandBuffer, 1> gBufferCommandBuffers{ _gBufferCommandBuffer.get() };
 			vk::SubmitInfo submitInfo;
 			submitInfo
 				.setCommandBuffers(gBufferCommandBuffers);
 			_graphicsQueue.submit(submitInfo, _gBufferFence.get());
+#endif
 		}
 
 		{
@@ -559,9 +566,10 @@ void App::mainLoop() {
 			std::vector<vk::CommandBuffer> cmdBuffers{ _swapchainBuffers[imageIndex].commandBuffer.get() };
 			std::vector<vk::PipelineStageFlags> waitStages{ vk::PipelineStageFlagBits::eColorAttachmentOutput };
 
+#if defined(HARDWARE_RT)
 			//# Rtpass
-			//_device->resetFences({ _inFlightFences[currentFrame].get() });
-
+			_device->resetFences({ _inFlightFences[currentFrame].get() });
+#endif
 			vk::SubmitInfo submitInfo;
 			submitInfo
 				.setWaitSemaphores(waitSemaphores)

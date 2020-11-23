@@ -102,6 +102,7 @@ protected:
 	vk::UniqueCommandPool _commandPool;
 	vk::UniqueCommandPool _transientCommandPool;
 	vk::UniqueDescriptorPool _staticDescriptorPool;
+	vk::UniqueDescriptorPool _rtDescriptorPool;
 
 	std::vector<uint32_t> _swapchainSharedQueues;
 	vk::SwapchainCreateInfoKHR _swapchainInfo;
