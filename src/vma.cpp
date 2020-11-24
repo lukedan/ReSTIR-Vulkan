@@ -34,9 +34,10 @@ namespace vma {
 	UniqueImage Allocator::createImage2D(
 		vk::Extent2D size, vk::Format format, vk::ImageUsageFlags usage,
 		VmaMemoryUsage memoryUsage, vk::ImageTiling tiling,
-		uint32_t mipLevels, vk::SampleCountFlagBits sampleCount,
+		vk::ImageLayout initialLayout, uint32_t mipLevels,
+		vk::SampleCountFlagBits sampleCount,
 		const std::vector<uint32_t> *sharedQueues,
-		vk::ImageLayout initialLayout, uint32_t arrayLayers
+		uint32_t arrayLayers
 	) {
 		vk::ImageCreateInfo imageInfo;
 		imageInfo

@@ -1,14 +1,16 @@
 #pragma once
 
-#include "glfwWindow.h"
 #include "misc.h"
-#include "swapchain.h"
 #include "vma.h"
+#include "glfwWindow.h"
+#include "swapchain.h"
+#include "transientCommandBuffer.h"
 #include "sceneBuffers.h"
 #include "passes/demoPass.h"
 #include "passes/gBufferPass.h"
 #include "passes/lightingPass.h"
 #include "camera.h"
+#include "fpsCounter.h"
 
 class App {
 public:
@@ -67,6 +69,7 @@ protected:
 	glfw::Window _window;
 
 	Camera _camera;
+	FpsCounter _fpsCounter;
 
 	uint32_t _graphicsQueueIndex = 0;
 	uint32_t _presentQueueIndex = 0;
@@ -83,8 +86,9 @@ protected:
 
 	vma::Allocator _allocator;
 	vk::UniqueCommandPool _commandPool;
-	vk::UniqueCommandPool _transientCommandPool;
 	vk::UniqueDescriptorPool _staticDescriptorPool;
+	vk::UniqueDescriptorPool _textureDescriptorPool;
+	TransientCommandBufferPool _transientCommandBufferPool;
 
 	std::vector<uint32_t> _swapchainSharedQueues;
 	vk::SwapchainCreateInfoKHR _swapchainInfo;
@@ -126,10 +130,8 @@ protected:
 	void _onScrollEvent(double x, double y);
 
 
-	void _createAndRecordSwapchainBuffers(
-		const Swapchain &swapchain, vk::Device device, vk::CommandPool commandPool, Pass &pass
-	) {
-		_swapchainBuffers = swapchain.getBuffers(device, pass.getPass(), commandPool);
+	void _createAndRecordSwapchainBuffers(Pass &pass) {
+		_swapchainBuffers = _swapchain.getBuffers(_device.get(), pass.getPass(), _commandPool.get());
 
 		// record command buffers
 		for (const Swapchain::BufferSet &bufferSet : _swapchainBuffers) {
@@ -140,24 +142,37 @@ protected:
 		}
 	}
 
-	void _executeOneTimeCommandBuffer(const std::function<void(vk::CommandBuffer)> &fillBuffer) {
+	void _createAndRecordGBufferCommandBuffer() {
 		vk::CommandBufferAllocateInfo bufferInfo;
 		bufferInfo
-			.setCommandPool(_transientCommandPool.get())
-			.setLevel(vk::CommandBufferLevel::ePrimary)
-			.setCommandBufferCount(1);
-		vk::UniqueCommandBuffer buffer = std::move(_device->allocateCommandBuffersUnique(bufferInfo)[0]);
+			.setCommandPool(_commandPool.get())
+			.setCommandBufferCount(1)
+			.setLevel(vk::CommandBufferLevel::ePrimary);
+		_gBufferCommandBuffer = std::move(_device->allocateCommandBuffersUnique(bufferInfo)[0]);
 
 		vk::CommandBufferBeginInfo beginInfo;
-		beginInfo.setFlags(vk::CommandBufferUsageFlagBits::eOneTimeSubmit);
-		buffer->begin(beginInfo);
-		fillBuffer(buffer.get());
-		buffer->end();
+		_gBufferCommandBuffer->begin(beginInfo);
+		_gBufferPass.issueCommands(_gBufferCommandBuffer.get(), _gBuffer.getFramebuffer());
+		_gBufferCommandBuffer->end();
+	}
 
-		std::array<vk::CommandBuffer, 1> buffers{ buffer.get() };
-		vk::SubmitInfo submitInfo;
-		submitInfo.setCommandBuffers(buffers);
-		_graphicsQueue.submit(submitInfo, nullptr);
-		_graphicsQueue.waitIdle();
+
+	void _initializeLightingPassResources() {
+		_lightingPassResources.gBuffer = &_gBuffer;
+		_lightingPassResources.aabbTreeBuffers = &_aabbTreeBuffers;
+
+		_lightingPassResources.uniformBuffer = _allocator.createTypedBuffer<LightingPass::Uniforms>(
+			1, vk::BufferUsageFlagBits::eUniformBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU
+			);
+
+		std::array<vk::DescriptorSetLayout, 1> lightingPassDescLayout{ _lightingPass.getDescriptorSetLayout() };
+		vk::DescriptorSetAllocateInfo lightingPassDescAlloc;
+		lightingPassDescAlloc
+			.setDescriptorPool(_staticDescriptorPool.get())
+			.setDescriptorSetCount(1)
+			.setSetLayouts(lightingPassDescLayout);
+		_lightingPassResources.descriptorSet = std::move(_device->allocateDescriptorSetsUnique(lightingPassDescAlloc)[0]);
+
+		_lightingPass.initializeDescriptorSetFor(_lightingPassResources, _device.get());
 	}
 };

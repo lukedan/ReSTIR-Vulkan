@@ -1,5 +1,7 @@
 #include "app.h"
 
+#include <sstream>
+
 VKAPI_ATTR VkBool32 VKAPI_CALL _debugCallback(
 	VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
 	VkDebugUtilsMessageTypeFlagsEXT messageType,
@@ -59,7 +61,7 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 			std::abort();
 		}
 	}
-	
+
 	{ // create instance
 		vk::ApplicationInfo appInfo;
 		appInfo
@@ -158,6 +160,8 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 
 		// vk::PhysicalDeviceFeatures deviceFeatures;
 		vk::PhysicalDeviceFeatures2 deviceFeatures;
+		deviceFeatures.features
+			.setSamplerAnisotropy(true);
 		vk::PhysicalDeviceDescriptorIndexingFeatures idxFeature;
 		idxFeature
 			.setRuntimeDescriptorArray(VkBool32(true))
@@ -179,17 +183,10 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 	{ // create command pool
 		vk::CommandPoolCreateInfo poolInfo;
 		poolInfo
-			.setQueueFamilyIndex(_graphicsQueueIndex)
-			.setFlags({vk::CommandPoolCreateFlagBits::eResetCommandBuffer});
-			// .setFlags(vk::CommandPoolCreateFlags());
+			.setQueueFamilyIndex(_graphicsQueueIndex);
 		_commandPool = _device->createCommandPoolUnique(poolInfo);
-
-		vk::CommandPoolCreateInfo transientPoolInfo;
-		transientPoolInfo
-			.setQueueFamilyIndex(_graphicsQueueIndex)
-			.setFlags(vk::CommandPoolCreateFlagBits::eTransient);
-		_transientCommandPool = _device->createCommandPoolUnique(transientPoolInfo);
 	}
+	_transientCommandBufferPool = TransientCommandBufferPool(_device.get(), _graphicsQueueIndex);
 
 	{
 		_swapchainSharedQueues = { _graphicsQueueIndex, _presentQueueIndex };
@@ -226,47 +223,47 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 	// loadScene("../../../scenes/fish/BarramundiFish.gltf", _gltfScene);
 	loadScene("../../../scenes/Sponza/glTF/Sponza.gltf", _gltfScene);
 
-	int scene_textures_nb = 1;
-	if (_gltfScene.m_textures.size() > 0) {
-		scene_textures_nb = _gltfScene.m_textures.size();
-	}
-
-	{ // create descriptor pool
-		// unsigned int sceneTexturesNum = _gltfScene.m_textures.size();
-		std::vector<vk::DescriptorPoolSize> poolSizes{
-			vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, 3 + scene_textures_nb),
+	{ // create descriptor pools
+		std::array<vk::DescriptorPoolSize, 4> staticPoolSizes{
+			vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, 3),
 			vk::DescriptorPoolSize(vk::DescriptorType::eStorageBuffer, 2),
 			vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, 2),
 			vk::DescriptorPoolSize(vk::DescriptorType::eUniformBufferDynamic, 1)
 		};
-		/*
-		std::array<vk::DescriptorPoolSize, 3 + sceneTexturesNum> poolSizes{
-			vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, 3 + sceneTexturesNum),
-			vk::DescriptorPoolSize(vk::DescriptorType::eStorageBuffer, 2),
-			vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, 2),
-			vk::DescriptorPoolSize(vk::DescriptorType::eUniformBufferDynamic, 1)
-			// vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, 1) // SceneTextures
-		};
-		*/
-		vk::DescriptorPoolCreateInfo poolInfo;
-		poolInfo
+		vk::DescriptorPoolCreateInfo staticPoolInfo;
+		staticPoolInfo
 			.setFlags(vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet)
-			.setPoolSizes(poolSizes)
-			.setMaxSets(3 + scene_textures_nb);
-		_staticDescriptorPool = _device->createDescriptorPoolUnique(poolInfo);
+			.setPoolSizes(staticPoolSizes)
+			.setMaxSets(3);
+		_staticDescriptorPool = _device->createDescriptorPoolUnique(staticPoolInfo);
+
+		std::array<vk::DescriptorPoolSize, 1> texturePoolSizes{
+			vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, _gltfScene.m_textures.size())
+		};
+		vk::DescriptorPoolCreateInfo texturePoolInfo;
+		texturePoolInfo
+			.setFlags(vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet)
+			.setPoolSizes(texturePoolSizes)
+			.setMaxSets(_gltfScene.m_materials.size());
+		_textureDescriptorPool = _device->createDescriptorPoolUnique(texturePoolInfo);
 	}
 
 
 	_graphicsQueue = _device->getQueue(_graphicsQueueIndex, 0);
 	_presentQueue = _device->getQueue(_presentQueueIndex, 0);
-	
-	_sceneBuffers = SceneBuffers::create(_gltfScene, _allocator, _physicalDevice, _device.get(), _graphicsQueue, _commandPool.get());
+
+	_sceneBuffers = SceneBuffers::create(
+		_gltfScene,
+		_allocator, _transientCommandBufferPool,
+		_physicalDevice, _device.get(), _graphicsQueue, _commandPool.get()
+	);
+	std::cout << "Building AABB tree...";
 	_aabbTree = AabbTree::build(_gltfScene);
+	std::cout << " done\n";
 	_aabbTreeBuffers = AabbTreeBuffers::create(_aabbTree, _allocator);
 
 	// create g buffer pass
 	GBuffer::Formats::initialize(_physicalDevice);
-	// _gBufferPass = Pass::create<GBufferPass>(_device.get(), _swapchain.getImageExtent());
 	_gBufferPass = Pass::create<GBufferPass>(_device.get(), &_sceneBuffers, _swapchain.getImageExtent());
 
 	{
@@ -278,7 +275,6 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 		vk::DescriptorSetAllocateInfo gBufferUniformAlloc;
 		gBufferUniformAlloc
 			.setDescriptorPool(_staticDescriptorPool.get())
-			.setDescriptorSetCount(1)
 			.setSetLayouts(gBufferUniformLayout);
 		_gBufferResources.uniformDescriptor = std::move(_device->allocateDescriptorSetsUnique(gBufferUniformAlloc)[0]);
 
@@ -286,47 +282,25 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 		vk::DescriptorSetAllocateInfo gBufferMatricesAlloc;
 		gBufferMatricesAlloc
 			.setDescriptorPool(_staticDescriptorPool.get())
-			.setDescriptorSetCount(1)
 			.setSetLayouts(gBufferMatricesLayout);
 		_gBufferResources.matrixDescriptor = std::move(_device->allocateDescriptorSetsUnique(gBufferMatricesAlloc)[0]);
 
 		// Scene textures
-		std::array<vk::DescriptorSetLayout, 1> gSceneTexturesLayout{ _gBufferPass.getSceneTexturesDescriptorSetLayout() };
+		std::vector<vk::DescriptorSetLayout> gBufferTexturesLayout(_gltfScene.m_materials.size());
+		std::fill(gBufferTexturesLayout.begin(), gBufferTexturesLayout.end(), _gBufferPass.getTexturesDescriptorSetLayout());
 		vk::DescriptorSetAllocateInfo gBufferSceneTexturesAlloc;
 		gBufferSceneTexturesAlloc
-			.setDescriptorPool(_staticDescriptorPool.get())
-			.setDescriptorSetCount(1)
-			.setSetLayouts(gSceneTexturesLayout);
-		auto desc_temp_texture = _device->allocateDescriptorSetsUnique(gBufferSceneTexturesAlloc);
-		_gBufferResources.sceneTexturesDescriptorSet = std::move(_device->allocateDescriptorSetsUnique(gBufferSceneTexturesAlloc)[0]);
-		/*
-		if (_gltfScene.m_textures.size() > 0) {
-			std::array<vk::DescriptorSetLayout, 1> gSceneTexturesLayout{ _gBufferPass.getSceneTexturesDescriptorSetLayout() };
-			vk::DescriptorSetAllocateInfo gBufferSceneTexturesAlloc;
-			gBufferSceneTexturesAlloc
-				.setDescriptorPool(_staticDescriptorPool.get())
-				.setDescriptorSetCount(1)
-				.setSetLayouts(gSceneTexturesLayout);
-			_gBufferResources.tempTexture = std::move(_device->allocateDescriptorSetsUnique(gBufferSceneTexturesAlloc)[0]);
-		}
-		*/
+			.setDescriptorPool(_textureDescriptorPool.get())
+			.setSetLayouts(gBufferTexturesLayout);
+		_gBufferResources.materialTexturesDescriptors = _device->allocateDescriptorSetsUnique(gBufferSceneTexturesAlloc);
 	}
-	
+
 	_gBufferPass.initializeResourcesFor(_gltfScene, _sceneBuffers, _device, _allocator, _gBufferResources);
 	_gBufferPass.descriptorSets = &_gBufferResources;
 	_gBufferPass.scene = &_gltfScene;
-	// _gBufferPass.sceneBuffers = &_sceneBuffers;
+	_gBufferPass.sceneBuffers = &_sceneBuffers;
 
 	_gBuffer = GBuffer::create(_allocator, _device.get(), _swapchain.getImageExtent(), _gBufferPass);
-	{
-		vk::CommandBufferAllocateInfo bufferInfo;
-		bufferInfo
-			.setCommandPool(_commandPool.get())
-			.setCommandBufferCount(1)
-			.setLevel(vk::CommandBufferLevel::ePrimary);
-		_gBufferCommandBuffer = std::move(_device->allocateCommandBuffersUnique(bufferInfo)[0]);
-	}
-
 
 	/*_demoPass = Pass::create<DemoPass>(_device.get(), _swapchain.getImageFormat());
 	_demoPass.imageExtent = _swapchain.getImageExtent();*/
@@ -335,38 +309,14 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 	// create lighting pass
 	_lightingPass = Pass::create<LightingPass>(_device.get(), _swapchain.getImageFormat());
 
-	{
-		_lightingPassResources.gBuffer = &_gBuffer;
-		_lightingPassResources.aabbTreeBuffers = &_aabbTreeBuffers;
-
-		_lightingPassResources.uniformBuffer = _allocator.createTypedBuffer<LightingPass::Uniforms>(
-			1, vk::BufferUsageFlagBits::eUniformBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU
-			);
-
-		std::array<vk::DescriptorSetLayout, 1> lightingPassDescLayout{ _lightingPass.getDescriptorSetLayout() };
-		vk::DescriptorSetAllocateInfo lightingPassDescAlloc;
-		lightingPassDescAlloc
-			.setDescriptorPool(_staticDescriptorPool.get())
-			.setDescriptorSetCount(1)
-			.setSetLayouts(lightingPassDescLayout);
-		_lightingPassResources.descriptorSet = std::move(_device->allocateDescriptorSetsUnique(lightingPassDescAlloc)[0]);
-	}
-	_lightingPass.initializeDescriptorSetFor(_lightingPassResources, _device.get());
+	_initializeLightingPassResources();
 
 	_lightingPass.imageExtent = _swapchain.getImageExtent();
 	_lightingPass.descriptorSet = _lightingPassResources.descriptorSet.get();
 
 
-	_createAndRecordSwapchainBuffers(
-		_swapchain, _device.get(), _commandPool.get(), _lightingPass
-	);
-
-	{
-		vk::CommandBufferBeginInfo beginInfo;
-		_gBufferCommandBuffer->begin(beginInfo);
-		_gBufferPass.issueCommands(_gBufferCommandBuffer.get(), _gBuffer.getFramebuffer());
-		_gBufferCommandBuffer->end();
-	}
+	_createAndRecordGBufferCommandBuffer();
+	_createAndRecordSwapchainBuffers(_lightingPass);
 
 
 	// semaphores & fences
@@ -409,6 +359,8 @@ void App::mainLoop() {
 				glfwWaitEvents();
 				newWindowSize = _window.getFramebufferSize();
 			}
+			windowSize = newWindowSize;
+
 			_swapchainInfo.setImageExtent(chooseSwapExtent(
 				_physicalDevice.getSurfaceCapabilitiesKHR(_surface.get()), _window
 			));
@@ -425,13 +377,32 @@ void App::mainLoop() {
 			/*_demoPass.imageExtent = _swapchain.getImageExtent();*/
 
 			_lightingPass.imageExtent = _swapchain.getImageExtent();
+			_lightingPassResources = LightingPass::Resources();
+			_initializeLightingPassResources();
+			_lightingPass.descriptorSet = _lightingPassResources.descriptorSet.get();
 
-			_createAndRecordSwapchainBuffers(_swapchain, _device.get(), _commandPool.get(), _lightingPass);
+			_gBufferCommandBuffer.reset();
+			_createAndRecordGBufferCommandBuffer();
+
+			_swapchainBuffers.clear();
+			_createAndRecordSwapchainBuffers(_lightingPass);
+
+			_camera.aspectRatio = _swapchain.getImageExtent().width / static_cast<float>(_swapchain.getImageExtent().height);
+			_camera.recomputeAttributes();
+			_cameraUpdated = true;
 		}
 
 		_device->waitForFences(
 			{ _inFlightFences[currentFrame].get() }, true, std::numeric_limits<std::uint64_t>::max()
 		);
+
+		_fpsCounter.tick();
+		std::stringstream ss;
+		ss <<
+			"ReSTIR | FPS: " <<
+			std::fixed << std::setprecision(2) << _fpsCounter.getFpsAverageWindow() << " (Window: " << _fpsCounter.timeWindow << "s)  " <<
+			std::fixed << std::setprecision(2) << _fpsCounter.getFpsRunningAverage() << " (RA: " << _fpsCounter.alpha << ")";
+		_window.setTitle(ss.str());
 
 		auto [result, imageIndex] = _device->acquireNextImageKHR(
 			_swapchain.getSwapchain().get(), std::numeric_limits<std::uint64_t>::max(),
