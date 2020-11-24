@@ -83,3 +83,78 @@ bool raytrace(vec3 origin, vec3 dir) {
 	}
 	return true;
 }
+
+bool rayTriangleIntersectionPointLight(Triangle tri, vec3 origin, vec3 dir, out vec3 intersection) {
+	vec3 e1 = tri.p2.xyz - tri.p1.xyz;
+	vec3 e2 = tri.p3.xyz - tri.p1.xyz;
+	intersection = vec3(0.0, 0.0, 0.0);
+
+	vec3 p = cross(dir, e2);
+
+	float f = 1.0f / dot(e1, p);
+
+	vec3 s = origin - tri.p1.xyz;
+	float baryX = f * dot(s, p);
+	if (baryX < 0.0f || baryX > 1.0f) {
+		return false;
+	}
+
+	vec3 q = cross(s, e1);
+	float baryY = f * dot(dir, q);
+	if (baryY < 0.0f || baryY + baryX > 1.0f) {
+		return false;
+	}
+
+	f *= dot(e2, q);
+	intersection = baryX * tri.p1.xyz + baryY * tri.p2.xyz + (1.0 - baryX - baryY) * tri.p3.xyz;
+	return f > 0.0 && f < 1.0f;
+}
+
+
+bool raytracePointLight(vec3 origin, vec3 dir, out vec3 intersection) {
+	int stack[aabbTreeStackSize], top = 1;
+	stack[0] = NODE_BUFFER.root;
+	int candidates[geomTestInterval * 2], numCandidates = 0;
+	int counter = 0;
+	intersection = vec3(0.0, 0.0, 0.0);
+	while (top > 0) {
+		AabbTreeNode node = NODE_BUFFER.data[stack[--top]];
+		bool
+			leftIsect = rayAabIntersection(origin, dir, node.leftAabbMin.xyz, node.leftAabbMax.xyz),
+			rightIsect = rayAabIntersection(origin, dir, node.rightAabbMin.xyz, node.rightAabbMax.xyz);
+		if (leftIsect) {
+			if (node.leftChild < 0) {
+				candidates[numCandidates++] = ~node.leftChild;
+			}
+			else {
+				stack[top++] = node.leftChild;
+			}
+		}
+		if (rightIsect) {
+			if (node.rightChild < 0) {
+				candidates[numCandidates++] = ~node.rightChild;
+			}
+			else {
+				stack[top++] = node.rightChild;
+			}
+		}
+
+		if (++counter == geomTestInterval) {
+			for (int i = 0; i < numCandidates; ++i) {
+				int geomId = candidates[i];
+				if (rayTriangleIntersectionPointLight(TRIANGLE_BUFFER.data[geomId], origin, dir, intersection)) {
+					return false;
+				}
+			}
+			numCandidates = 0;
+			counter = 0;
+		}
+	}
+	for (int i = 0; i < numCandidates; ++i) {
+		int geomId = candidates[i];
+		if (rayTriangleIntersectionPointLight(TRIANGLE_BUFFER.data[geomId], origin, dir, intersection)) {
+			return false;
+		}
+	}
+	return true;
+}
