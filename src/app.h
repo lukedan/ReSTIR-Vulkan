@@ -9,6 +9,7 @@
 #include "passes/demoPass.h"
 #include "passes/gBufferPass.h"
 #include "passes/lightingPass.h"
+#include "passes/imguiPass.h"
 #include "camera.h"
 #include "fpsCounter.h"
 
@@ -18,11 +19,10 @@ public:
 	constexpr static std::size_t maxFramesInFlight = 2;
 
 	App();
-	~App() {
-		_device->waitIdle();
-	}
+	~App();
 
 	void mainLoop();
+	void updateGui();
 
 	[[nodiscard]] inline static vk::SurfaceFormatKHR chooseSurfaceFormat(
 		const vk::PhysicalDevice &dev, const vk::SurfaceKHR &surface
@@ -86,8 +86,10 @@ protected:
 
 	vma::Allocator _allocator;
 	vk::UniqueCommandPool _commandPool;
+	vk::UniqueCommandPool _imguiCommandPool;
 	vk::UniqueDescriptorPool _staticDescriptorPool;
 	vk::UniqueDescriptorPool _textureDescriptorPool;
+	vk::UniqueDescriptorPool _imguiDescriptorPool;
 	TransientCommandBufferPool _transientCommandBufferPool;
 
 	std::vector<uint32_t> _swapchainSharedQueues;
@@ -104,7 +106,10 @@ protected:
 	LightingPass _lightingPass;
 	LightingPass::Resources _lightingPassResources;
 
-	DemoPass _demoPass;
+	/*DemoPass _demoPass;*/
+
+	ImGuiPass _imguiPass;
+	std::vector<vk::UniqueCommandBuffer> _imguiCommandBuffers;
 
 	nvh::GltfScene _gltfScene;
 	SceneBuffers _sceneBuffers;
@@ -120,6 +125,10 @@ protected:
 
 	vk::UniqueFence _gBufferFence;
 
+	// ui
+	int _debugMode = GBUFFER_DEBUG_NONE;
+	bool _debugModeChanged = false;
+
 
 	nvmath::vec2f _lastMouse;
 	int _pressedMouseButton = -1;
@@ -130,19 +139,40 @@ protected:
 	void _onScrollEvent(double x, double y);
 
 
-	void _createAndRecordSwapchainBuffers(Pass &pass) {
-		_swapchainBuffers = _swapchain.getBuffers(_device.get(), pass.getPass(), _commandPool.get());
+	void _createAndRecordSwapchainBuffers() {
+		_swapchainBuffers.clear();
+		_swapchainBuffers = _swapchain.getBuffers(_device.get(), _lightingPass.getPass(), _commandPool.get());
 
 		// record command buffers
-		for (const Swapchain::BufferSet &bufferSet : _swapchainBuffers) {
+		for (std::size_t i = 0; i < _swapchainBuffers.size(); ++i) {
+			const Swapchain::BufferSet &bufferSet = _swapchainBuffers[i];
+
 			vk::CommandBufferBeginInfo beginInfo;
 			bufferSet.commandBuffer->begin(beginInfo);
-			pass.issueCommands(bufferSet.commandBuffer.get(), bufferSet.framebuffer.get());
+
+			transitionImageLayout(
+				bufferSet.commandBuffer.get(), _swapchain.getImages()[i], _swapchain.getImageFormat(),
+				vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal
+			);
+
+			_lightingPass.issueCommands(bufferSet.commandBuffer.get(), bufferSet.framebuffer.get());
+
 			bufferSet.commandBuffer->end();
 		}
+
+		// create imgui command buffers, but don't record them
+		_imguiCommandBuffers.clear();
+		vk::CommandBufferAllocateInfo cmdBufInfo;
+		cmdBufInfo
+			.setCommandPool(_imguiCommandPool.get())
+			.setCommandBufferCount(_swapchainBuffers.size())
+			.setLevel(vk::CommandBufferLevel::ePrimary);
+		_imguiCommandBuffers = _device->allocateCommandBuffersUnique(cmdBufInfo);
 	}
 
 	void _createAndRecordGBufferCommandBuffer() {
+		_gBufferCommandBuffer.reset();
+
 		vk::CommandBufferAllocateInfo bufferInfo;
 		bufferInfo
 			.setCommandPool(_commandPool.get())
@@ -158,10 +188,12 @@ protected:
 
 
 	void _initializeLightingPassResources() {
+		_lightingPassResources = LightingPass::Resources();
+
 		_lightingPassResources.gBuffer = &_gBuffer;
 		_lightingPassResources.aabbTreeBuffers = &_aabbTreeBuffers;
 
-		_lightingPassResources.uniformBuffer = _allocator.createTypedBuffer<LightingPass::Uniforms>(
+		_lightingPassResources.uniformBuffer = _allocator.createTypedBuffer<shader::LightingPassUniforms>(
 			1, vk::BufferUsageFlagBits::eUniformBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU
 			);
 

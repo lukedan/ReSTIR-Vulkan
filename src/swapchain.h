@@ -33,6 +33,9 @@ public:
 	[[nodiscard]] vk::Extent2D getImageExtent() const {
 		return _imageExtent;
 	}
+	[[nodiscard]] const std::vector<vk::Image> &getImages() const {
+		return _swapchainImages;
+	}
 
 	[[nodiscard]] static Swapchain create(vk::Device, const vk::SwapchainCreateInfoKHR&);
 private:

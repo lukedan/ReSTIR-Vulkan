@@ -105,6 +105,11 @@ void transitionImageLayout(
 );
 
 vma::UniqueImage loadTexture(
+	const unsigned char *data, uint32_t width, uint32_t height, vk::Format, uint32_t mipLevels,
+	vma::Allocator&, TransientCommandBufferPool&, vk::Queue
+);
+
+vma::UniqueImage loadTexture(
 	const tinygltf::Image&, vk::Format, uint32_t mipLevels,
 	vma::Allocator&, TransientCommandBufferPool&, vk::Queue
 );

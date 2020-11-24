@@ -66,6 +66,10 @@ namespace glfw {
 				_window = nullptr;
 			}
 		}
+
+		[[nodiscard]] GLFWwindow *getRawHandle() const {
+			return _window;
+		}
 	protected:
 		CursorPosCallback _cursorPosCallback;
 		MouseButtonCallback _mouseButtonCallback;

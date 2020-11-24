@@ -45,7 +45,7 @@ bool raytrace(vec3 origin, vec3 dir) {
 	int candidates[geomTestInterval * 2], numCandidates = 0;
 	int counter = 0;
 	while (top > 0) {
-		AabbTreeNode node = NODE_BUFFER.data[stack[--top]];
+		AabbTreeNode node = NODE_BUFFER.nodes[stack[--top]];
 		bool
 			leftIsect = rayAabIntersection(origin, dir, node.leftAabbMin.xyz, node.leftAabbMax.xyz),
 			rightIsect = rayAabIntersection(origin, dir, node.rightAabbMin.xyz, node.rightAabbMax.xyz);
@@ -67,7 +67,7 @@ bool raytrace(vec3 origin, vec3 dir) {
 		if (++counter == geomTestInterval) {
 			for (int i = 0; i < numCandidates; ++i) {
 				int geomId = candidates[i];
-				if (rayTriangleIntersection(TRIANGLE_BUFFER.data[geomId], origin, dir)) {
+				if (rayTriangleIntersection(TRIANGLE_BUFFER[geomId], origin, dir)) {
 					return false;
 				}
 			}
@@ -77,7 +77,7 @@ bool raytrace(vec3 origin, vec3 dir) {
 	}
 	for (int i = 0; i < numCandidates; ++i) {
 		int geomId = candidates[i];
-		if (rayTriangleIntersection(TRIANGLE_BUFFER.data[geomId], origin, dir)) {
+		if (rayTriangleIntersection(TRIANGLE_BUFFER[geomId], origin, dir)) {
 			return false;
 		}
 	}

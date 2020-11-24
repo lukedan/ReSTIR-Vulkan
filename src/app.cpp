@@ -2,6 +2,10 @@
 
 #include <sstream>
 
+#include <imgui.h>
+#include <imgui_impl_glfw.h>
+#include <imgui_impl_vulkan.h>
+
 VKAPI_ATTR VkBool32 VKAPI_CALL _debugCallback(
 	VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
 	VkDebugUtilsMessageTypeFlagsEXT messageType,
@@ -18,6 +22,13 @@ VKAPI_ATTR VkBool32 VKAPI_CALL _debugCallback(
 }
 
 App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
+	IMGUI_CHECKVERSION();
+	ImGui::CreateContext();
+	// the callbacks are installed here but they're overriden below, so we still need to manually call those
+	// functions in the handlers
+	ImGui_ImplGlfw_InitForVulkan(_window.getRawHandle(), true);
+	// imgui-vulkan is initialized later with the queue & render pass
+
 	_window.setMouseButtonHandler([this](int button, int action, int mods) {
 		_onMouseButtonEvent(button, action, mods);
 		});
@@ -180,11 +191,18 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 
 	_allocator = vma::Allocator::create(vulkanApiVersion, _instance.get(), _physicalDevice, _device.get());
 
-	{ // create command pool
+	// create command pools
+	{
 		vk::CommandPoolCreateInfo poolInfo;
 		poolInfo
 			.setQueueFamilyIndex(_graphicsQueueIndex);
 		_commandPool = _device->createCommandPoolUnique(poolInfo);
+
+		vk::CommandPoolCreateInfo imguiPoolInfo;
+		imguiPoolInfo
+			.setQueueFamilyIndex(_graphicsQueueIndex)
+			.setFlags(vk::CommandPoolCreateFlagBits::eResetCommandBuffer);
+		_imguiCommandPool = _device->createCommandPoolUnique(imguiPoolInfo);
 	}
 	_transientCommandBufferPool = TransientCommandBufferPool(_device.get(), _graphicsQueueIndex);
 
@@ -246,11 +264,36 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 			.setPoolSizes(texturePoolSizes)
 			.setMaxSets(_gltfScene.m_materials.size());
 		_textureDescriptorPool = _device->createDescriptorPoolUnique(texturePoolInfo);
+
+		// initialize imgui descriptor pool
+		// this is taken from official imgui example at https://github.com/ocornut/imgui/blob/master/examples/example_glfw_vulkan/main.cpp
+		// which is wayyyy overkill, but fuck it - we're not low on memory here
+		constexpr uint32_t imguiDescriptorCount = 1000;
+		std::array<vk::DescriptorPoolSize, 11> imguiPoolSizes{
+			vk::DescriptorPoolSize(vk::DescriptorType::eSampler, imguiDescriptorCount),
+			vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, imguiDescriptorCount),
+			vk::DescriptorPoolSize(vk::DescriptorType::eSampledImage, imguiDescriptorCount),
+			vk::DescriptorPoolSize(vk::DescriptorType::eStorageImage, imguiDescriptorCount),
+			vk::DescriptorPoolSize(vk::DescriptorType::eUniformTexelBuffer, imguiDescriptorCount),
+			vk::DescriptorPoolSize(vk::DescriptorType::eStorageTexelBuffer, imguiDescriptorCount),
+			vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, imguiDescriptorCount),
+			vk::DescriptorPoolSize(vk::DescriptorType::eStorageBuffer, imguiDescriptorCount),
+			vk::DescriptorPoolSize(vk::DescriptorType::eUniformBufferDynamic, imguiDescriptorCount),
+			vk::DescriptorPoolSize(vk::DescriptorType::eStorageBufferDynamic, imguiDescriptorCount),
+			vk::DescriptorPoolSize(vk::DescriptorType::eInputAttachment, imguiDescriptorCount)
+		};
+		vk::DescriptorPoolCreateInfo imguiPoolInfo;
+		imguiPoolInfo
+			.setFlags(vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet)
+			.setMaxSets(imguiPoolSizes.size() * imguiDescriptorCount)
+			.setPoolSizes(imguiPoolSizes);
+		_imguiDescriptorPool = _device->createDescriptorPoolUnique(imguiPoolInfo);
 	}
 
 
 	_graphicsQueue = _device->getQueue(_graphicsQueueIndex, 0);
 	_presentQueue = _device->getQueue(_presentQueueIndex, 0);
+
 
 	_sceneBuffers = SceneBuffers::create(
 		_gltfScene,
@@ -261,6 +304,7 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 	_aabbTree = AabbTree::build(_gltfScene);
 	std::cout << " done\n";
 	_aabbTreeBuffers = AabbTreeBuffers::create(_aabbTree, _allocator);
+
 
 	// create g buffer pass
 	GBuffer::Formats::initialize(_physicalDevice);
@@ -315,8 +359,30 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 	_lightingPass.descriptorSet = _lightingPassResources.descriptorSet.get();
 
 
+	_imguiPass = Pass::create<ImGuiPass>(_device.get(), _swapchain.getImageFormat());
+	_imguiPass.imageExtent = _swapchain.getImageExtent();
+
+	// finish initializing imgui
+	{
+		ImGui_ImplVulkan_InitInfo imguiInit{};
+		imguiInit.Instance = _instance.get();
+		imguiInit.PhysicalDevice = _physicalDevice;
+		imguiInit.Device = _device.get();
+		imguiInit.QueueFamily = _graphicsQueueIndex;
+		imguiInit.Queue = _graphicsQueue;
+		imguiInit.DescriptorPool = _imguiDescriptorPool.get();
+		imguiInit.MinImageCount = _swapchainInfo.minImageCount;
+		imguiInit.ImageCount = _swapchain.getImages().size();
+		ImGui_ImplVulkan_Init(&imguiInit, _imguiPass.getPass());
+	}
+	{
+		TransientCommandBuffer cmdBuffer = _transientCommandBufferPool.begin(_graphicsQueue);
+		ImGui_ImplVulkan_CreateFontsTexture(cmdBuffer.get());
+	}
+
+
 	_createAndRecordGBufferCommandBuffer();
-	_createAndRecordSwapchainBuffers(_lightingPass);
+	_createAndRecordSwapchainBuffers();
 
 
 	// semaphores & fences
@@ -342,6 +408,29 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 			.setFlags(vk::FenceCreateFlagBits::eSignaled);
 		_gBufferFence = _device->createFenceUnique(fenceInfo);
 	}
+}
+
+App::~App() {
+	_device->waitIdle();
+
+	ImGui_ImplVulkan_Shutdown();
+	ImGui_ImplGlfw_Shutdown();
+	ImGui::DestroyContext();
+}
+
+void App::updateGui() {
+	ImGui_ImplVulkan_NewFrame();
+	ImGui_ImplGlfw_NewFrame();
+	ImGui::NewFrame();
+
+	const char *items[]{
+		"None",
+		"Albedo",
+		"Normal"
+	};
+	_debugModeChanged = ImGui::Combo("Debug Mode", &_debugMode, items, IM_ARRAYSIZE(items));
+
+	ImGui::Render();
 }
 
 void App::mainLoop() {
@@ -376,16 +465,15 @@ void App::mainLoop() {
 
 			/*_demoPass.imageExtent = _swapchain.getImageExtent();*/
 
-			_lightingPass.imageExtent = _swapchain.getImageExtent();
-			_lightingPassResources = LightingPass::Resources();
 			_initializeLightingPassResources();
+
+			_lightingPass.imageExtent = _swapchain.getImageExtent();
 			_lightingPass.descriptorSet = _lightingPassResources.descriptorSet.get();
 
-			_gBufferCommandBuffer.reset();
-			_createAndRecordGBufferCommandBuffer();
+			_imguiPass.imageExtent = _swapchain.getImageExtent();
 
-			_swapchainBuffers.clear();
-			_createAndRecordSwapchainBuffers(_lightingPass);
+			_createAndRecordGBufferCommandBuffer();
+			_createAndRecordSwapchainBuffers();
 
 			_camera.aspectRatio = _swapchain.getImageExtent().width / static_cast<float>(_swapchain.getImageExtent().height);
 			_camera.recomputeAttributes();
@@ -428,7 +516,7 @@ void App::mainLoop() {
 			_device->waitForFences(_gBufferFence.get(), true, std::numeric_limits<uint64_t>::max());
 			_device->resetFences(_gBufferFence.get());
 
-			if (_cameraUpdated) {
+			if (_cameraUpdated || _debugModeChanged) {
 				_graphicsQueue.waitIdle();
 
 				auto *gBufferUniforms = _gBufferResources.uniformBuffer.mapAs<GBufferPass::Uniforms>();
@@ -436,17 +524,19 @@ void App::mainLoop() {
 				_gBufferResources.uniformBuffer.unmap();
 				_gBufferResources.uniformBuffer.flush();
 
-				auto *lightingPassUniforms = _lightingPassResources.uniformBuffer.mapAs<LightingPass::Uniforms>();
+				auto *lightingPassUniforms = _lightingPassResources.uniformBuffer.mapAs<shader::LightingPassUniforms>();
 				lightingPassUniforms->inverseViewMatrix = _camera.inverseViewMatrix;
 				lightingPassUniforms->tempLightPoint = _camera.lookAt;
 				lightingPassUniforms->cameraNear = _camera.zNear;
 				lightingPassUniforms->cameraFar = _camera.zFar;
 				lightingPassUniforms->tanHalfFovY = std::tan(0.5f * _camera.fovYRadians);
 				lightingPassUniforms->aspectRatio = _camera.aspectRatio;
+				lightingPassUniforms->debugMode = _debugMode;
 				_lightingPassResources.uniformBuffer.unmap();
 				_lightingPassResources.uniformBuffer.flush();
 
 				_cameraUpdated = false;
+				_debugModeChanged = false;
 			}
 
 			std::array<vk::CommandBuffer, 1> gBufferCommandBuffers{ _gBufferCommandBuffer.get() };
@@ -456,10 +546,22 @@ void App::mainLoop() {
 			_graphicsQueue.submit(submitInfo, _gBufferFence.get());
 		}
 
+		updateGui();
+		{ // re-record imgui command buffer
+			vk::CommandBuffer buffer = _imguiCommandBuffers[imageIndex].get();
+			vk::CommandBufferBeginInfo beginInfo;
+			buffer.begin(beginInfo);
+			_imguiPass.issueCommands(buffer, _swapchainBuffers[imageIndex].framebuffer.get());
+			buffer.end();
+		}
+
 		{
-			std::vector<vk::Semaphore> waitSemaphores{ _imageAvailableSemaphore[currentFrame].get() };
-			std::vector<vk::CommandBuffer> cmdBuffers{ _swapchainBuffers[imageIndex].commandBuffer.get() };
-			std::vector<vk::PipelineStageFlags> waitStages{ vk::PipelineStageFlagBits::eColorAttachmentOutput };
+			std::array<vk::Semaphore, 1> waitSemaphores{ _imageAvailableSemaphore[currentFrame].get() };
+			std::array<vk::PipelineStageFlags, 1> waitStages{ vk::PipelineStageFlagBits::eColorAttachmentOutput };
+			std::array<vk::CommandBuffer, 2> cmdBuffers{
+				_swapchainBuffers[imageIndex].commandBuffer.get(),
+				_imguiCommandBuffers[imageIndex].get()
+			};
 			vk::SubmitInfo submitInfo;
 			submitInfo
 				.setWaitSemaphores(waitSemaphores)
@@ -488,6 +590,11 @@ void App::mainLoop() {
 }
 
 void App::_onMouseButtonEvent(int button, int action, int mods) {
+	if (ImGui::GetIO().WantCaptureMouse) {
+		ImGui_ImplGlfw_MouseButtonCallback(_window.getRawHandle(), button, action, mods);
+		return;
+	}
+
 	if (action == GLFW_PRESS) {
 		if (_pressedMouseButton == -1) {
 			_pressedMouseButton = button;
@@ -549,6 +656,11 @@ void App::_onMouseMoveEvent(double x, double y) {
 }
 
 void App::_onScrollEvent(double x, double y) {
+	if (ImGui::GetIO().WantCaptureMouse) {
+		ImGui_ImplGlfw_ScrollCallback(_window.getRawHandle(), x, y);
+		return;
+	}
+
 	_camera.position += _camera.unitForward * static_cast<float>(y) * 1.0f;
 	_camera.recomputeAttributes();
 	_cameraUpdated = true;
