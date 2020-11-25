@@ -14,6 +14,9 @@ public:
 		float cameraFar;
 		float tanHalfFovY;
 		float aspectRatio;
+		shader::pointLight lightsArray[10];
+		int lightNum;
+		int sample_num;
 	};
 	struct Resources {
 		vma::UniqueBuffer uniformBuffer;
@@ -105,6 +108,8 @@ public:
 
 	vk::Extent2D imageExtent;
 	vk::DescriptorSet descriptorSet;
+	shader::pointLight lightsArray[10];
+	int lightNum;
 protected:
 	explicit LightingPass(vk::Format format) : Pass(), _swapchainFormat(format) {
 	}
@@ -198,6 +203,14 @@ protected:
 		pipelineInfo
 			.setSetLayouts(descriptorLayouts);
 		_pipelineLayout = dev.createPipelineLayoutUnique(pipelineInfo);
+
+		// Init lights info
+		lightNum = 8;
+		for (int i = 0; i < lightNum; ++i) {
+			lightsArray[i].pos = vec3(-10.0 + i * 2, 5.0, 0.0);
+			lightsArray[i].intensity = 50.0;
+			lightsArray[i].color = vec3(i * 0.1, 1.0 - i * 0.1, 1.0);
+		}
 
 		Pass::_initialize(dev);
 	}

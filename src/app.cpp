@@ -41,7 +41,8 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 		VK_KHR_SWAPCHAIN_EXTENSION_NAME,
 		// VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME,
 		VK_KHR_MAINTENANCE3_EXTENSION_NAME,
-		VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME
+		VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME,
+		VK_KHR_SHADER_CLOCK_EXTENSION_NAME
 	};
 	std::vector<const char*> requiredLayers{
 		"VK_LAYER_KHRONOS_validation"
@@ -161,7 +162,8 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 		// vk::PhysicalDeviceFeatures deviceFeatures;
 		vk::PhysicalDeviceFeatures2 deviceFeatures;
 		deviceFeatures.features
-			.setSamplerAnisotropy(true);
+			.setSamplerAnisotropy(true)
+			.setShaderInt64(true);
 		vk::PhysicalDeviceDescriptorIndexingFeatures idxFeature;
 		idxFeature
 			.setRuntimeDescriptorArray(VkBool32(true))
@@ -443,6 +445,13 @@ void App::mainLoop() {
 				lightingPassUniforms->cameraFar = _camera.zFar;
 				lightingPassUniforms->tanHalfFovY = std::tan(0.5f * _camera.fovYRadians);
 				lightingPassUniforms->aspectRatio = _camera.aspectRatio;
+				lightingPassUniforms->lightNum = _lightingPass.lightNum;
+				for (int i = 0; i < _lightingPass.lightNum; ++i) {
+					lightingPassUniforms->lightsArray[i].color = _lightingPass.lightsArray[i].color;
+					lightingPassUniforms->lightsArray[i].intensity = _lightingPass.lightsArray[i].intensity;
+					lightingPassUniforms->lightsArray[i].pos = _lightingPass.lightsArray[i].pos;
+				}
+				lightingPassUniforms->sample_num = 5;
 				_lightingPassResources.uniformBuffer.unmap();
 				_lightingPassResources.uniformBuffer.flush();
 
