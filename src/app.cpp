@@ -1,5 +1,5 @@
 #include "app.h"
-#define SOFTWARE_RT
+//#define SOFTWARE_RT
 
 #include <sstream>
 
@@ -661,7 +661,7 @@ void App::mainLoop() {
 			vk::CommandBuffer buffer = _imguiCommandBuffers[imageIndex].get();
 			vk::CommandBufferBeginInfo beginInfo;
 			buffer.begin(beginInfo);
-			_imguiPass.issueCommands(buffer, _swapchainBuffers[imageIndex].framebuffer.get());
+			//_imguiPass.issueCommands(buffer, _swapchainBuffers[imageIndex].framebuffer.get());
 			buffer.end();
 		}
 
