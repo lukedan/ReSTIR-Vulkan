@@ -180,15 +180,6 @@ protected:
 
 			bufferSet.commandBuffer->end();
 		}
-
-		// create imgui command buffers, but don't record them
-		_imguiCommandBuffers.clear();
-		vk::CommandBufferAllocateInfo cmdBufInfo;
-		cmdBufInfo
-			.setCommandPool(_imguiCommandPool.get())
-			.setCommandBufferCount(_swapchainBuffers.size())
-			.setLevel(vk::CommandBufferLevel::ePrimary);
-		_imguiCommandBuffers = _device->allocateCommandBuffersUnique(cmdBufInfo);
 	}
 
 	void _createAndRecordGBufferCommandBuffer() {
@@ -205,6 +196,16 @@ protected:
 		_gBufferCommandBuffer->begin(beginInfo);
 		_gBufferPass.issueCommands(_gBufferCommandBuffer.get(), _gBuffer.getFramebuffer());
 		_gBufferCommandBuffer->end();
+	}
+
+	void _createImguiCommandBuffers() {
+		_imguiCommandBuffers.clear();
+		vk::CommandBufferAllocateInfo cmdBufInfo;
+		cmdBufInfo
+			.setCommandPool(_imguiCommandPool.get())
+			.setCommandBufferCount(_swapchainBuffers.size())
+			.setLevel(vk::CommandBufferLevel::ePrimary);
+		_imguiCommandBuffers = _device->allocateCommandBuffersUnique(cmdBufInfo);
 	}
 
 
