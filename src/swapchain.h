@@ -37,6 +37,11 @@ public:
 		return _swapchainImages;
 	}
 
+	[[nodiscard]] vk::Image& getImageAtIndexs(uint32_t i)
+	{
+		return _swapchainImages[i];
+	}
+
 	[[nodiscard]] static Swapchain create(vk::Device, const vk::SwapchainCreateInfoKHR&);
 private:
 	std::vector<vk::Image> _swapchainImages;

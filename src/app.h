@@ -1,5 +1,6 @@
 #pragma once
 
+#define VK_ENABLE_BETA_EXTENSIONS
 #include "misc.h"
 #include "vma.h"
 #include "glfwWindow.h"
@@ -9,9 +10,25 @@
 #include "passes/demoPass.h"
 #include "passes/gBufferPass.h"
 #include "passes/lightingPass.h"
+#include "passes/rtPass.h"
 #include "passes/imguiPass.h"
 #include "camera.h"
 #include "fpsCounter.h"
+
+struct PhysicalDeviceInfo
+{
+	vk::PhysicalDeviceMemoryProperties     memoryProperties{};
+	std::vector<vk::QueueFamilyProperties> queueProperties;
+
+	vk::PhysicalDeviceFeatures         features10{};
+	vk::PhysicalDeviceVulkan11Features features11;
+	vk::PhysicalDeviceVulkan12Features features12;
+
+	vk::PhysicalDeviceProperties         properties10{};
+	vk::PhysicalDeviceVulkan11Properties properties11;
+	vk::PhysicalDeviceVulkan12Properties properties12;
+};
+
 
 class App {
 public:
@@ -90,6 +107,7 @@ protected:
 	vk::UniqueDescriptorPool _staticDescriptorPool;
 	vk::UniqueDescriptorPool _textureDescriptorPool;
 	vk::UniqueDescriptorPool _imguiDescriptorPool;
+	vk::UniqueDescriptorPool _rtDescriptorPool;
 	TransientCommandBufferPool _transientCommandBufferPool;
 
 	std::vector<uint32_t> _swapchainSharedQueues;
@@ -107,6 +125,8 @@ protected:
 	LightingPass::Resources _lightingPassResources;
 
 	/*DemoPass _demoPass;*/
+
+	RtPass _rtPass;
 
 	ImGuiPass _imguiPass;
 	std::vector<vk::UniqueCommandBuffer> _imguiCommandBuffers;
@@ -138,6 +158,7 @@ protected:
 	void _onMouseButtonEvent(int button, int action, int mods);
 	void _onScrollEvent(double x, double y);
 
+	void initPhysicalInfo(PhysicalDeviceInfo& info, vk::PhysicalDevice physicalDevice);
 
 	void _createAndRecordSwapchainBuffers() {
 		_swapchainBuffers.clear();
@@ -206,5 +227,30 @@ protected:
 		_lightingPassResources.descriptorSet = std::move(_device->allocateDescriptorSetsUnique(lightingPassDescAlloc)[0]);
 
 		_lightingPass.initializeDescriptorSetFor(_lightingPassResources, _device.get());
+	}
+
+	void createAndRecordRTSwapchainBuffers(
+		const Swapchain& swapchain, vk::Device device, vk::CommandPool commandPool, RtPass& rtPass, vk::DispatchLoaderDynamic dld
+	) {
+		int imageSize = swapchain.getNumImages();
+		vk::CommandBufferAllocateInfo allocInfo;
+		allocInfo
+			.setCommandPool(commandPool)
+			.setLevel(vk::CommandBufferLevel::ePrimary)
+			.setCommandBufferCount(static_cast<uint32_t>(imageSize));
+		std::vector<vk::UniqueCommandBuffer> commandBuffers = device.allocateCommandBuffersUnique(allocInfo);
+		_swapchainBuffers.resize(imageSize);
+
+		for (int i = 0; i < imageSize; i++)
+		{
+			_swapchainBuffers[i].commandBuffer = std::move(commandBuffers[i]);
+			vk::CommandBufferBeginInfo beginInfo;
+			_swapchainBuffers[i].commandBuffer->begin(beginInfo);
+			rtPass.issueCommands(_swapchainBuffers[i].commandBuffer.get(),
+				_swapchainBuffers[i].framebuffer.get(),
+				swapchain.getImageExtent(),
+				_swapchain.getImageAtIndexs(i), dld);
+			_swapchainBuffers[i].commandBuffer->end();
+		}
 	}
 };
