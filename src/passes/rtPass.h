@@ -42,7 +42,14 @@ public:
 	{
 		nvmath::mat4 viewInverse;
 		nvmath::mat4 projInverse;
+		nvmath::vec4 tempLightPoint;
+		float cameraNear;
+		float cameraFar;
+		float tanHalfFovY;
+		float aspectRatio;
 	};
+
+	GBuffer* _gBuffer = nullptr;
 
 	void issueCommands(vk::CommandBuffer commandBuffer, vk::Framebuffer framebuffer, vk::Extent2D extent, vk::Image swapchainImage, vk::DispatchLoaderDynamic dld) {
 		vk::ImageSubresourceRange subresourceRange;
@@ -82,7 +89,7 @@ public:
 			subresourceRange);
 
 		commandBuffer.bindPipeline(vk::PipelineBindPoint::eRayTracingKHR, _pipelines[0].get());
-		commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eRayTracingKHR, _pipelineLayout.get(), 0, {_descriptorSet.get(), _cameraDescriptorSet.get()}, {});
+		commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eRayTracingKHR, _pipelineLayout.get(), 0, {_descriptorSet.get()}, {});
 		commandBuffer.traceRaysKHR(rayGenSBT, rayMissSBT, rayHitSBT, rayCallSBT, extent.width, extent.height, 1, dld);
 
 		// Swapchain image -> Copy destination state
@@ -149,6 +156,20 @@ public:
 			return info;
 		}
 
+		[[nodiscard]] inline static vk::RayTracingShaderGroupCreateInfoKHR
+			getRtShadowMissShaderGroupCreate()
+		{
+			vk::RayTracingShaderGroupCreateInfoKHR info;
+			info.type = vk::RayTracingShaderGroupTypeKHR::eGeneral;
+			info.generalShader = 3;
+			info.closestHitShader = VK_SHADER_UNUSED_KHR;
+			info.anyHitShader = VK_SHADER_UNUSED_KHR;
+			info.intersectionShader = VK_SHADER_UNUSED_KHR;
+			info.pShaderGroupCaptureReplayHandle = nullptr;
+
+			return info;
+		}
+
 		std::vector<vk::PipelineShaderStageCreateInfo> shaderStages;
 		std::vector<vk::RayTracingShaderGroupCreateInfoKHR> shaderGroups;
 	};
@@ -157,6 +178,8 @@ public:
 		vk::DescriptorPool& pool,
 		vk::DispatchLoaderDynamic& dld)
 	{
+		std::array<vk::WriteDescriptorSet, 6> descriptorWrite;
+
 		vk::DescriptorSetAllocateInfo setInfo;
 		setInfo
 			.setDescriptorPool(pool)
@@ -164,13 +187,7 @@ public:
 			.setSetLayouts(_descriptorSetLayout.get());
 
 		_descriptorSet = std::move(dev.allocateDescriptorSetsUnique(setInfo)[0]);
-
-		vk::DescriptorSetAllocateInfo cameraSetInfo;
-		cameraSetInfo
-			.setDescriptorPool(pool)
-			.setDescriptorSetCount(1)
-			.setSetLayouts(_cameraDescriptorSetLayout.get());
-		_cameraDescriptorSet = std::move(dev.allocateDescriptorSetsUnique(cameraSetInfo)[0]);
+		
 
 		vk::WriteDescriptorSetAccelerationStructureKHR descriptorAccelerationStructureInfo;
 		descriptorAccelerationStructureInfo.
@@ -185,6 +202,7 @@ public:
 			.setDstArrayElement(0)
 			.setDescriptorType(vk::DescriptorType::eAccelerationStructureKHR)
 			.setDescriptorCount(1);
+		descriptorWrite[0] = accelerationStructureWrite;
 
 		vk::DescriptorImageInfo storageImageInfo;
 		storageImageInfo.imageView = _offscreenBufferView.get();
@@ -198,19 +216,39 @@ public:
 			.setDescriptorCount(1)
 			.setDstArrayElement(0)
 			.setImageInfo(storageImageInfo);
+		descriptorWrite[1] = outputImageWrite;
+
+		// GBuffer Data
+		std::array<vk::DescriptorImageInfo, 3> imageInfo{
+			vk::DescriptorImageInfo(_sampler.get(), _gBuffer->getAlbedoView(), vk::ImageLayout::eShaderReadOnlyOptimal),
+			vk::DescriptorImageInfo(_sampler.get(), _gBuffer->getNormalView(), vk::ImageLayout::eShaderReadOnlyOptimal),
+			vk::DescriptorImageInfo(_sampler.get(), _gBuffer->getDepthView(), vk::ImageLayout::eShaderReadOnlyOptimal)
+		};
+
+		for (std::size_t i = 2; i < 5; ++i) {
+			descriptorWrite[i]
+				.setDstSet(_descriptorSet.get())
+				.setDstBinding(i)
+				.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
+				.setPImageInfo(&imageInfo[i - 2])
+				.setDescriptorCount(1);
+		}
+
 
 		std::array<vk::DescriptorBufferInfo, 1> cameraBufferInfo
 		{
 			vk::DescriptorBufferInfo(cameraUniformBuffer.get(), 0, sizeof(cameraUniforms))
 		};
+
 		vk::WriteDescriptorSet cameraWrite;
 		cameraWrite
-			.setDstSet(_cameraDescriptorSet.get())
-			.setDstBinding(0)
+			.setDstSet(_descriptorSet.get())
+			.setDstBinding(5)
 			.setDescriptorType(vk::DescriptorType::eUniformBuffer)
 			.setBufferInfo(cameraBufferInfo);
+		descriptorWrite[5] = cameraWrite;
 
-		dev.updateDescriptorSets({ accelerationStructureWrite, outputImageWrite, cameraWrite }, {}, dld);
+		dev.updateDescriptorSets(descriptorWrite, {}, dld);
 	}
 
 	void createShaderBindingTable(vk::Device& dev, vma::Allocator& allocator, vk::PhysicalDevice& physicalDev, vk::DispatchLoaderDynamic dld)
@@ -589,11 +627,16 @@ public:
 		cameraUniformBuffer = allocator.createTypedBuffer<cameraUniforms>(1, vk::BufferUsageFlagBits::eUniformBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU);
 	}
 
-	void updateCameraUniform(nvmath::mat4 invView, nvmath::mat4 invProj) 
+	void updateCameraUniform(Camera& _camera) 
 	{
 		auto* cameraUniformBegin = cameraUniformBuffer.mapAs<cameraUniforms>();
-		cameraUniformBegin->projInverse = invProj;
-		cameraUniformBegin->viewInverse = invView;
+		cameraUniformBegin->projInverse = nvmath::invert(_camera.projectionMatrix);
+		cameraUniformBegin->viewInverse = _camera.inverseViewMatrix;
+		cameraUniformBegin->aspectRatio = _camera.aspectRatio;
+		cameraUniformBegin->cameraFar = _camera.zFar;
+		cameraUniformBegin->cameraNear = _camera.zNear;
+		cameraUniformBegin->tempLightPoint = _camera.lookAt;
+		cameraUniformBegin->tanHalfFovY = std::tan(0.5f * _camera.fovYRadians);
 		cameraUniformBuffer.unmap();
 		cameraUniformBuffer.flush();
 	}
@@ -618,15 +661,12 @@ public:
 	vk::StridedBufferRegionKHR rayCallSBT;
 
 protected:
-
-	Shader _rayGen, _rayChit, _rayMiss;
+	Shader _rayGen, _rayChit, _rayMiss, _rayShadowMiss;
 	vk::Format _swapchainFormat;
 	vk::UniqueSampler _sampler;
 	vk::UniquePipelineLayout _pipelineLayout;
 	vk::UniqueDescriptorSetLayout _descriptorSetLayout;
 	vk::UniqueDescriptorSet _descriptorSet;
-	vk::UniqueDescriptorSetLayout _cameraDescriptorSetLayout;
-	vk::UniqueDescriptorSet _cameraDescriptorSet;
 
 	[[nodiscard]] vk::UniqueRenderPass _createPass(vk::Device);
 
@@ -637,9 +677,11 @@ protected:
 		info.shaderGroups.emplace_back(PipelineCreationInfo::getRtGenShaderGroupCreate());
 		info.shaderGroups.emplace_back(PipelineCreationInfo::getRtHitShaderGroupCreate());
 		info.shaderGroups.emplace_back(PipelineCreationInfo::getRtMissShaderGroupCreate());
+		info.shaderGroups.emplace_back(PipelineCreationInfo::getRtShadowMissShaderGroupCreate());
 		info.shaderStages.emplace_back(_rayGen.getStageInfo());
 		info.shaderStages.emplace_back(_rayChit.getStageInfo());
 		info.shaderStages.emplace_back(_rayMiss.getStageInfo());
+		info.shaderStages.emplace_back(_rayShadowMiss.getStageInfo());
 
 		return result;
 	}
@@ -665,10 +707,12 @@ protected:
 	}
 
 	void _initialize(vk::Device dev, vk::DispatchLoaderDynamic& dld) {
+		_sampler = createSampler(dev, vk::Filter::eNearest, vk::Filter::eNearest, vk::SamplerMipmapMode::eNearest);
 
 		_rayGen = Shader::load(dev, "shaders/raytrace.rgen.spv", "main", vk::ShaderStageFlagBits::eRaygenKHR);
 		_rayChit = Shader::load(dev, "shaders/raytrace.rchit.spv", "main", vk::ShaderStageFlagBits::eClosestHitKHR);
 		_rayMiss = Shader::load(dev, "shaders/raytrace.rmiss.spv", "main", vk::ShaderStageFlagBits::eMissKHR);
+		_rayShadowMiss = Shader::load(dev, "shaders/raytraceShadow.rmiss.spv", "main", vk::ShaderStageFlagBits::eMissKHR);
 
 		// Acceleration structure descriptor binding
 		vk::DescriptorSetLayoutBinding accelerationStructureLayoutBinding;
@@ -684,21 +728,22 @@ protected:
 		storageImageLayoutBinding.descriptorCount = 1;
 		storageImageLayoutBinding.stageFlags = vk::ShaderStageFlagBits::eRaygenKHR;
 
-		std::array<vk::DescriptorSetLayoutBinding, 2> bindings{ accelerationStructureLayoutBinding, storageImageLayoutBinding };
+		
+
+		std::array<vk::DescriptorSetLayoutBinding, 6> bindings{ 
+			accelerationStructureLayoutBinding,
+			storageImageLayoutBinding,
+			vk::DescriptorSetLayoutBinding(2, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eRaygenKHR),
+			vk::DescriptorSetLayoutBinding(3, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eRaygenKHR),
+			vk::DescriptorSetLayoutBinding(4, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eRaygenKHR),
+			vk::DescriptorSetLayoutBinding(5, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eRaygenKHR) 
+		};
 
 		vk::DescriptorSetLayoutCreateInfo layoutInfo;
 		layoutInfo.setBindings(bindings);
 		_descriptorSetLayout = dev.createDescriptorSetLayoutUnique(layoutInfo);
 
-		// Camera data binding
-		std::array<vk::DescriptorSetLayoutBinding, 1> cameraDescriptorBindings{
-			vk::DescriptorSetLayoutBinding(0, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eRaygenKHR)
-		};
-		vk::DescriptorSetLayoutCreateInfo cameraDescriptorSetInfo;
-		cameraDescriptorSetInfo.setBindings(cameraDescriptorBindings);
-		_cameraDescriptorSetLayout = dev.createDescriptorSetLayoutUnique(cameraDescriptorSetInfo);
-
-		std::array<vk::DescriptorSetLayout, 2> descriptorLayouts{ _descriptorSetLayout.get(), _cameraDescriptorSetLayout.get() };
+		std::array<vk::DescriptorSetLayout, 1> descriptorLayouts{ _descriptorSetLayout.get()};
 
 		vk::PipelineLayoutCreateInfo pipelineLayoutInfo;
 		pipelineLayoutInfo.setSetLayouts(descriptorLayouts);

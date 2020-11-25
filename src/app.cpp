@@ -428,14 +428,63 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 		_gBufferCommandBuffer->end();
 	}
 #elif defined(HARDWARE_RT) 
+	GBuffer::Formats::initialize(_physicalDevice);
+	_gBufferPass = Pass::create<GBufferPass>(_device.get(), _swapchain.getImageExtent());
+
+	{
+		_gBufferResources.uniformBuffer = _allocator.createTypedBuffer<GBufferPass::Uniforms>(
+			1, vk::BufferUsageFlagBits::eUniformBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU
+			);
+
+		std::array<vk::DescriptorSetLayout, 1> gBufferUniformLayout{ _gBufferPass.getUniformsDescriptorSetLayout() };
+		vk::DescriptorSetAllocateInfo gBufferUniformAlloc;
+		gBufferUniformAlloc
+			.setDescriptorPool(_staticDescriptorPool.get())
+			.setDescriptorSetCount(1)
+			.setSetLayouts(gBufferUniformLayout);
+		_gBufferResources.uniformDescriptor = std::move(_device->allocateDescriptorSetsUnique(gBufferUniformAlloc)[0]);
+
+		std::array<vk::DescriptorSetLayout, 1> gBufferMatricesLayout{ _gBufferPass.getMatricesDescriptorSetLayout() };
+		vk::DescriptorSetAllocateInfo gBufferMatricesAlloc;
+		gBufferMatricesAlloc
+			.setDescriptorPool(_staticDescriptorPool.get())
+			.setDescriptorSetCount(1)
+			.setSetLayouts(gBufferMatricesLayout);
+		_gBufferResources.matrixDescriptor = std::move(_device->allocateDescriptorSetsUnique(gBufferMatricesAlloc)[0]);
+	}
+
+	_gBufferPass.initializeResourcesFor(_gltfScene, _sceneBuffers, _device, _allocator, _gBufferResources);
+	_gBufferPass.descriptorSets = &_gBufferResources;
+	_gBufferPass.scene = &_gltfScene;
+	_gBufferPass.sceneBuffers = &_sceneBuffers;
+
+	_gBuffer = GBuffer::create(_allocator, _device.get(), _swapchain.getImageExtent(), _gBufferPass);
+	{
+		vk::CommandBufferAllocateInfo bufferInfo;
+		bufferInfo
+			.setCommandPool(_commandPool.get())
+			.setCommandBufferCount(1)
+			.setLevel(vk::CommandBufferLevel::ePrimary);
+		_gBufferCommandBuffer = std::move(_device->allocateCommandBuffersUnique(bufferInfo)[0]);
+	}
+
 	// Rt pass initialization
 	_rtPass = RtPass::create(_device.get(), _dynamicDispatcher);
+	_rtPass._gBuffer = &_gBuffer;
 	_rtPass.createAccelerationStructure(_device.get(), _physicalDevice, _allocator, _dynamicDispatcher, 
 		                                _commandPool.get(), _graphicsQueue, _sceneBuffers, _gltfScene);
 	_rtPass.createOffscreenBuffer(_device.get(), _allocator, _swapchain.getImageExtent());
 	_rtPass.createDescriptorSetForRayTracing(_device.get(), _staticDescriptorPool.get(), _dynamicDispatcher);
 	_rtPass.createShaderBindingTable(_device.get(), _allocator, _physicalDevice, _dynamicDispatcher);
 	createAndRecordRTSwapchainBuffers(_swapchain, _device.get(), _commandPool.get(), _rtPass, _dynamicDispatcher);
+
+	{
+		vk::CommandBufferBeginInfo beginInfo;
+		_gBufferCommandBuffer->begin(beginInfo);
+		_gBufferPass.issueCommands(_gBufferCommandBuffer.get(), _gBuffer.getFramebuffer());
+		_gBufferCommandBuffer->end();
+	}
+
 #endif
 
 
@@ -526,19 +575,19 @@ void App::mainLoop() {
 		
 
 		{
-#if defined(SOFTWARE_RT)
 			_device->waitForFences(_gBufferFence.get(), true, std::numeric_limits<uint64_t>::max());
 			_device->resetFences(_gBufferFence.get());
-#endif
+
 			if (_cameraUpdated) {
 				_graphicsQueue.waitIdle();
 
-#if defined(SOFTWARE_RT)
+
 				auto *gBufferUniforms = _gBufferResources.uniformBuffer.mapAs<GBufferPass::Uniforms>();
 				gBufferUniforms->projectionViewMatrix = _camera.projectionViewMatrix;
 				_gBufferResources.uniformBuffer.unmap();
 				_gBufferResources.uniformBuffer.flush();
 
+#if defined(SOFTWARE_RT)
 				auto *lightingPassUniforms = _lightingPassResources.uniformBuffer.mapAs<LightingPass::Uniforms>();
 				lightingPassUniforms->inverseViewMatrix = _camera.inverseViewMatrix;
 				lightingPassUniforms->tempLightPoint = _camera.lookAt;
@@ -549,18 +598,16 @@ void App::mainLoop() {
 				_lightingPassResources.uniformBuffer.unmap();
 				_lightingPassResources.uniformBuffer.flush();
 #elif defined(HARDWARE_RT)
-				_rtPass.updateCameraUniform(_camera.inverseViewMatrix, nvmath::invert(_camera.projectionMatrix));
+				_rtPass.updateCameraUniform(_camera);
 #endif
 				_cameraUpdated = false;
 			}
 
-#if defined(SOFTWARE_RT)
 			std::array<vk::CommandBuffer, 1> gBufferCommandBuffers{ _gBufferCommandBuffer.get() };
 			vk::SubmitInfo submitInfo;
 			submitInfo
 				.setCommandBuffers(gBufferCommandBuffers);
 			_graphicsQueue.submit(submitInfo, _gBufferFence.get());
-#endif
 		}
 
 		{

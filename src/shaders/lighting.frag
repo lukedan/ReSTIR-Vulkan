@@ -9,6 +9,7 @@ struct AabbTreeNode {
 	int leftChild;
 	int rightChild;
 };
+
 struct Triangle {
 	vec4 p1;
 	vec4 p2;
@@ -158,4 +159,5 @@ void main() {
 	if (!visible) {
 		outColor.xyz *= 0.5f;
 	}
+	outColor.xyz = vec3(uniforms.cameraNear);
 }

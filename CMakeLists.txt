@@ -71,4 +71,4 @@ add_shader(restir "src/shaders/lighting.frag")
 add_shader(restir "src/shaders/raytrace.rgen")
 add_shader(restir "src/shaders/raytrace.rchit")
 add_shader(restir "src/shaders/raytrace.rmiss")
-
+add_shader(restir "src/shaders/raytraceShadow.rmiss")

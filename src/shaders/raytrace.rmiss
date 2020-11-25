@@ -1,8 +1,8 @@
 #version 460 core
 #extension GL_EXT_ray_tracing : enable
 
-layout(location = 0) rayPayloadInEXT vec4 payload;
+layout(location = 0) rayPayloadInEXT bool isShadowed;
 
 void main() {
-  payload = vec4(0.3);
+  isShadowed = false;
 }
