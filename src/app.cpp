@@ -308,7 +308,7 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 
 	// create g buffer pass
 	GBuffer::Formats::initialize(_physicalDevice);
-	_gBufferPass = Pass::create<GBufferPass>(_device.get(), &_sceneBuffers, _swapchain.getImageExtent());
+	_gBufferPass = Pass::create<GBufferPass>(_device.get(), _swapchain.getImageExtent());
 
 	{
 		_gBufferResources.uniformBuffer = _allocator.createTypedBuffer<GBufferPass::Uniforms>(
