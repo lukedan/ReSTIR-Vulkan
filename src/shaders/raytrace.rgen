@@ -89,12 +89,14 @@ void main() {
 	vec3 viewPos = fragCoordDepthToViewPos(inUV, worldDepth, cam.tanHalfFovY, cam.aspectRatio);
 	vec3 worldPos = (cam.viewInverse * vec4(viewPos, 1.0f)).xyz;
 
-    vec4 origin    = vec4(worldPos, 1.0f);
+    
     vec4 direction = vec4(vec3(cam.tempLightPoint) - worldPos, 0.0f);
-
+    
     float lightDistance = length(direction);
 
     direction = normalize(direction);
+
+    vec4 origin    = vec4(worldPos, 1.0f) + 0.001 * direction;
 
     uint  rayFlags = gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsOpaqueEXT | gl_RayFlagsSkipClosestHitShaderEXT;
     float tMin     = 0.001;
