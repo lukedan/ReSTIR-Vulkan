@@ -41,6 +41,9 @@ public:
 	[[nodiscard]] const SceneTexture &getDefaultNormal() const {
 		return _defaultNormal;
 	}
+	[[nodiscard]] const SceneTexture &getDefaultAlbedo() const {
+		return _defaultAlbedo;
+	}
 
 	[[nodiscard]] static SceneBuffers create(
 		const nvh::GltfScene &scene,
@@ -92,36 +95,24 @@ public:
 			);
 		}
 
-		{// Generate default textures
-			result._defaultNormal.image = allocator.createImage2D(
-				vk::Extent2D(1, 1),
-				format,
-				vk::ImageUsageFlagBits::eSampled,
-				VMA_MEMORY_USAGE_CPU_TO_GPU,
-				vk::ImageTiling::eLinear,
-				vk::ImageLayout::ePreinitialized
+		// generate default textures
+		{
+			unsigned char defaultNormal[4]{ 127, 127, 255, 255 };
+			result._defaultNormal.image = loadTexture(
+				defaultNormal, 1, 1, vk::Format::eR8G8B8A8Unorm, 1, allocator, oneTimeBufferPool, graphicsQueue
 			);
-			// Map GPU memory to RAM and put data from RAM to GPU
-			unsigned char* image_device = result._defaultNormal.image.mapAs<unsigned char>();
-			image_device[0] = 127;
-			image_device[1] = 127;
-			image_device[2] = 255;
-			image_device[3] = 255;
-			// Unmap and flush
-			result._defaultNormal.image.unmap();
-			result._defaultNormal.image.flush();
-
-			{
-				TransientCommandBuffer cmdBuffer = oneTimeBufferPool.begin(graphicsQueue);
-				transitionImageLayout(
-					cmdBuffer.get(), result._defaultNormal.image.get(), format,
-					vk::ImageLayout::ePreinitialized, vk::ImageLayout::eShaderReadOnlyOptimal
-				);
-			}
-
 			result._defaultNormal.sampler = createSampler(l_device);
 			result._defaultNormal.imageView = createImageView2D(
 				l_device, result._defaultNormal.image.get(), format, vk::ImageAspectFlagBits::eColor
+			);
+
+			unsigned char defaultAlbedo[4]{ 255, 255, 255, 255 };
+			result._defaultAlbedo.image = loadTexture(
+				defaultAlbedo, 1, 1, vk::Format::eR8G8B8A8Unorm, 1, allocator, oneTimeBufferPool, graphicsQueue
+			);
+			result._defaultAlbedo.sampler = createSampler(l_device);
+			result._defaultAlbedo.imageView = createImageView2D(
+				l_device, result._defaultAlbedo.image.get(), format, vk::ImageAspectFlagBits::eColor
 			);
 		}
 
@@ -183,4 +174,5 @@ private:
 	vma::UniqueBuffer _materials;
 	std::vector<SceneTexture> _textureImages;
 	SceneTexture _defaultNormal;
+	SceneTexture _defaultAlbedo;
 };

@@ -163,6 +163,7 @@ public:
 
 		std::vector<vk::DescriptorImageInfo> materialTextureInfo(buffers.getTextures().size());
 		vk::DescriptorImageInfo defaultNormalInfo = buffers.getDefaultNormal().getDescriptorInfo();
+		vk::DescriptorImageInfo defaultAlbedoInfo = buffers.getDefaultAlbedo().getDescriptorInfo();
 		for (std::size_t i = 0; i < buffers.getTextures().size(); ++i) {
 			materialTextureInfo[i] = buffers.getTextures()[i].getDescriptorInfo();
 		}
@@ -170,13 +171,11 @@ public:
 			vk::DescriptorSet set = sets.materialTexturesDescriptors[i].get();
 			const nvh::GltfMaterial &mat = scene.m_materials[i];
 
-			if (mat.pbrBaseColorTexture >= 0) {
-				bufferWrite.emplace_back()
-					.setDstSet(set)
-					.setDstBinding(0)
-					.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
-					.setImageInfo(materialTextureInfo[mat.pbrBaseColorTexture]);
-			}
+			bufferWrite.emplace_back()
+				.setDstSet(set)
+				.setDstBinding(0)
+				.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
+				.setImageInfo(mat.pbrBaseColorTexture >= 0 ? materialTextureInfo[mat.pbrBaseColorTexture] : defaultAlbedoInfo);
 			bufferWrite.emplace_back()
 				.setDstSet(set)
 				.setDstBinding(1)
