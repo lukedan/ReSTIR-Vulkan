@@ -19,6 +19,9 @@ public:
 	[[nodiscard]] vk::Image getNormalBuffer() const {
 		return _normalBuffer.get();
 	}
+	[[nodiscard]] vk::Image getMaterialPropertiesBuffer() const {
+		return _materialPropertiesBuffer.get();
+	}
 	[[nodiscard]] vk::Image getDepthBuffer() const {
 		return _depthBuffer.get();
 	}
@@ -28,6 +31,9 @@ public:
 	}
 	[[nodiscard]] vk::ImageView getNormalView() const {
 		return _normalView.get();
+	}
+	[[nodiscard]] vk::ImageView getMaterialPropertiesView() const {
+		return _materialPropertiesView.get();
 	}
 	[[nodiscard]] vk::ImageView getDepthView() const {
 		return _depthView.get();
@@ -51,6 +57,7 @@ public:
 		vk::Format albedo;
 		vk::Format normal;
 		vk::Format depth;
+		vk::Format materialProperties;
 		vk::ImageAspectFlags depthAspect;
 
 		[[nodiscard]] static void initialize(vk::PhysicalDevice);
@@ -59,10 +66,12 @@ public:
 private:
 	vma::UniqueImage _albedoBuffer;
 	vma::UniqueImage _normalBuffer;
+	vma::UniqueImage _materialPropertiesBuffer;
 	vma::UniqueImage _depthBuffer;
 
 	vk::UniqueImageView _albedoView;
 	vk::UniqueImageView _normalView;
+	vk::UniqueImageView _materialPropertiesView;
 	vk::UniqueImageView _depthView;
 
 	vk::UniqueFramebuffer _framebuffer;
@@ -79,13 +88,15 @@ public:
 		vma::UniqueBuffer uniformBuffer;
 		vk::UniqueDescriptorSet uniformDescriptor;
 		vk::UniqueDescriptorSet matrixDescriptor;
+		vk::UniqueDescriptorSet materialDescriptor;
 		std::vector<vk::UniqueDescriptorSet> materialTexturesDescriptors;
 	};
 
 	GBufferPass() = default;
 
 	void issueCommands(vk::CommandBuffer commandBuffer, vk::Framebuffer framebuffer) const override {
-		std::array<vk::ClearValue, 3> clearValues{
+		std::array<vk::ClearValue, 4> clearValues{
+			vk::ClearColorValue(std::array<float, 4>{ 0.0f, 0.0f, 0.0f, 1.0f }),
 			vk::ClearColorValue(std::array<float, 4>{ 0.0f, 0.0f, 0.0f, 1.0f }),
 			vk::ClearColorValue(std::array<float, 4>{ 0.0f, 0.0f, 0.0f, 1.0f }),
 			vk::ClearDepthStencilValue(1.0f)
@@ -111,10 +122,14 @@ public:
 				{
 					descriptorSets->uniformDescriptor.get(),
 					descriptorSets->matrixDescriptor.get(),
+					descriptorSets->materialDescriptor.get(),
 					descriptorSets->materialTexturesDescriptors[mesh.materialIndex].get()
 				},
-				{ static_cast<uint32_t>(i * sizeof(SceneBuffers::ModelMatrices)) }
-			);
+				{
+					static_cast<uint32_t>(i * sizeof(shader::ModelMatrices)),
+					static_cast<uint32_t>(mesh.materialIndex * sizeof(shader::MaterialUniforms))
+				}
+				);
 			commandBuffer.drawIndexed(mesh.indexCount, 1, mesh.firstIndex, mesh.vertexOffset, 0);
 		}
 
@@ -135,10 +150,12 @@ public:
 	[[nodiscard]] vk::DescriptorSetLayout getTexturesDescriptorSetLayout() const {
 		return _textureDescriptorSetLayout.get();
 	}
+	[[nodiscard]] vk::DescriptorSetLayout getMaterialDescriptorSetLayout() const {
+		return _materialDescriptorSetLayout.get();
+	}
 
 	void initializeResourcesFor(
-		const nvh::GltfScene &scene, const SceneBuffers &buffers,
-		vk::UniqueDevice& device, vma::Allocator &alloc, Resources &sets
+		const nvh::GltfScene &scene, const SceneBuffers &buffers, vk::UniqueDevice& device, Resources &sets
 	) {
 		std::vector<vk::WriteDescriptorSet> bufferWrite;
 		bufferWrite.reserve(2 + 3 * scene.m_materials.size());
@@ -153,7 +170,7 @@ public:
 			.setBufferInfo(uniformBufferInfo);
 
 		std::array<vk::DescriptorBufferInfo, 1> matricesBufferInfo{
-			vk::DescriptorBufferInfo(buffers.getMatrices(), 0, sizeof(SceneBuffers::ModelMatrices))
+			vk::DescriptorBufferInfo(buffers.getMatrices(), 0, sizeof(shader::ModelMatrices))
 		};
 		bufferWrite.emplace_back()
 			.setDstSet(sets.matrixDescriptor.get())
@@ -161,9 +178,18 @@ public:
 			.setDescriptorType(vk::DescriptorType::eUniformBufferDynamic)
 			.setBufferInfo(matricesBufferInfo);
 
+		std::array<vk::DescriptorBufferInfo, 1> materialsBufferInfo{
+			vk::DescriptorBufferInfo(buffers.getMaterials(), 0, sizeof(shader::MaterialUniforms))
+		};
+		bufferWrite.emplace_back()
+			.setDstSet(sets.materialDescriptor.get())
+			.setDstBinding(0)
+			.setDescriptorType(vk::DescriptorType::eUniformBufferDynamic)
+			.setBufferInfo(materialsBufferInfo);
+
 		std::vector<vk::DescriptorImageInfo> materialTextureInfo(buffers.getTextures().size());
 		vk::DescriptorImageInfo defaultNormalInfo = buffers.getDefaultNormal().getDescriptorInfo();
-		vk::DescriptorImageInfo defaultAlbedoInfo = buffers.getDefaultAlbedo().getDescriptorInfo();
+		vk::DescriptorImageInfo defaultWhiteInfo = buffers.getDefaultWhite().getDescriptorInfo();
 		for (std::size_t i = 0; i < buffers.getTextures().size(); ++i) {
 			materialTextureInfo[i] = buffers.getTextures()[i].getDescriptorInfo();
 		}
@@ -175,18 +201,27 @@ public:
 				.setDstSet(set)
 				.setDstBinding(0)
 				.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
-				.setImageInfo(mat.pbrBaseColorTexture >= 0 ? materialTextureInfo[mat.pbrBaseColorTexture] : defaultAlbedoInfo);
+				.setImageInfo(mat.pbrBaseColorTexture >= 0 ? materialTextureInfo[mat.pbrBaseColorTexture] : defaultWhiteInfo);
 			bufferWrite.emplace_back()
 				.setDstSet(set)
 				.setDstBinding(1)
 				.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
 				.setImageInfo(mat.normalTexture >= 0 ? materialTextureInfo[mat.normalTexture] : defaultNormalInfo);
-			if (mat.pbrMetallicRoughnessTexture >= 0) {
+			switch (mat.shadingModel) {
+			case SHADING_MODEL_METALLIC_ROUGHNESS:
 				bufferWrite.emplace_back()
 					.setDstSet(set)
 					.setDstBinding(2)
 					.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
-					.setImageInfo(materialTextureInfo[mat.pbrMetallicRoughnessTexture]);
+					.setImageInfo(mat.pbrMetallicRoughnessTexture >= 0 ? materialTextureInfo[mat.pbrMetallicRoughnessTexture] : defaultWhiteInfo);
+				break;
+			case SHADING_MODEL_SPECULAR_GLOSSINESS:
+				bufferWrite.emplace_back()
+					.setDstSet(set)
+					.setDstBinding(2)
+					.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
+					.setImageInfo(mat.khrSpecularGlossinessTexture >= 0 ? materialTextureInfo[mat.khrSpecularGlossinessTexture] : defaultWhiteInfo);
+				break;
 			}
 		}
 
@@ -204,6 +239,7 @@ protected:
 	Shader _vert, _frag;
 	vk::UniqueDescriptorSetLayout _uniformsDescriptorSetLayout;
 	vk::UniqueDescriptorSetLayout _matricesDescriptorSetLayout;
+	vk::UniqueDescriptorSetLayout _materialDescriptorSetLayout;
 	vk::UniqueDescriptorSetLayout _textureDescriptorSetLayout;
 	vk::UniquePipelineLayout _pipelineLayout;
 
@@ -230,6 +266,15 @@ protected:
 			.setInitialLayout(vk::ImageLayout::eUndefined)
 			.setFinalLayout(vk::ImageLayout::eShaderReadOnlyOptimal);
 		attachments.emplace_back()
+			.setFormat(formats.materialProperties)
+			.setSamples(vk::SampleCountFlagBits::e1)
+			.setLoadOp(vk::AttachmentLoadOp::eClear)
+			.setStoreOp(vk::AttachmentStoreOp::eStore)
+			.setStencilLoadOp(vk::AttachmentLoadOp::eDontCare)
+			.setStencilStoreOp(vk::AttachmentStoreOp::eDontCare)
+			.setInitialLayout(vk::ImageLayout::eUndefined)
+			.setFinalLayout(vk::ImageLayout::eShaderReadOnlyOptimal);
+		attachments.emplace_back()
 			.setFormat(formats.depth)
 			.setSamples(vk::SampleCountFlagBits::e1)
 			.setLoadOp(vk::AttachmentLoadOp::eClear)
@@ -239,17 +284,15 @@ protected:
 			.setInitialLayout(vk::ImageLayout::eUndefined)
 			.setFinalLayout(vk::ImageLayout::eShaderReadOnlyOptimal);
 
-		std::vector<vk::AttachmentReference> colorAttachmentReferences;
-		colorAttachmentReferences.emplace_back()
-			.setAttachment(0)
-			.setLayout(vk::ImageLayout::eColorAttachmentOptimal);
-		colorAttachmentReferences.emplace_back()
-			.setAttachment(1)
-			.setLayout(vk::ImageLayout::eColorAttachmentOptimal);
+		std::array<vk::AttachmentReference, 3> colorAttachmentReferences{
+			vk::AttachmentReference(0, vk::ImageLayout::eColorAttachmentOptimal),
+			vk::AttachmentReference(1, vk::ImageLayout::eColorAttachmentOptimal),
+			vk::AttachmentReference(2, vk::ImageLayout::eColorAttachmentOptimal)
+		};
 
 		vk::AttachmentReference depthAttachmentReference;
 		depthAttachmentReference
-			.setAttachment(2)
+			.setAttachment(3)
 			.setLayout(vk::ImageLayout::eDepthStencilAttachmentOptimal);
 
 		std::vector<vk::SubpassDescription> subpasses;
@@ -307,6 +350,7 @@ protected:
 
 		info.attachmentColorBlendStorage.emplace_back(PipelineCreationInfo::getNoBlendAttachment());
 		info.attachmentColorBlendStorage.emplace_back(PipelineCreationInfo::getNoBlendAttachment());
+		info.attachmentColorBlendStorage.emplace_back(PipelineCreationInfo::getNoBlendAttachment());
 		info.colorBlendState.setAttachments(info.attachmentColorBlendStorage);
 
 		info.shaderStages.emplace_back(_frag.getStageInfo());
@@ -336,6 +380,13 @@ protected:
 		matricesDescriptorSetInfo.setBindings(matricesDescriptorBindings);
 		_matricesDescriptorSetLayout = dev.createDescriptorSetLayoutUnique(matricesDescriptorSetInfo);
 
+		std::array<vk::DescriptorSetLayoutBinding, 1> materialDescriptorBindings{
+			vk::DescriptorSetLayoutBinding(0, vk::DescriptorType::eUniformBufferDynamic, 1, vk::ShaderStageFlagBits::eFragment)
+		};
+		vk::DescriptorSetLayoutCreateInfo materialDescriptorSetInfo;
+		materialDescriptorSetInfo.setBindings(materialDescriptorBindings);
+		_materialDescriptorSetLayout = dev.createDescriptorSetLayoutUnique(materialDescriptorSetInfo);
+
 		std::array<vk::DescriptorSetLayoutBinding, 3> textureDescriptorBindings{
 			vk::DescriptorSetLayoutBinding(0, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment),
 			vk::DescriptorSetLayoutBinding(1, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment),
@@ -345,9 +396,10 @@ protected:
 		textureDescriptorSetInfo.setBindings(textureDescriptorBindings);
 		_textureDescriptorSetLayout = dev.createDescriptorSetLayoutUnique(textureDescriptorSetInfo);
 
-		std::vector<vk::DescriptorSetLayout> descriptorSetLayouts{
+		std::array<vk::DescriptorSetLayout, 4> descriptorSetLayouts{
 			_uniformsDescriptorSetLayout.get(),
 			_matricesDescriptorSetLayout.get(),
+			_materialDescriptorSetLayout.get(),
 			_textureDescriptorSetLayout.get()
 		};
 

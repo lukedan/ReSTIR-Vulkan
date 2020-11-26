@@ -6,14 +6,10 @@
 #include "vma.h"
 #include "../gltf/gltfscene.h"
 #include "transientCommandBuffer.h"
+#include "shaderIncludes.h"
 
 class SceneBuffers {
 public:
-	struct ModelMatrices {
-		nvmath::mat4 transform;
-		nvmath::mat4 inverseTransposed;
-	};
-
 	struct SceneTexture {
 		vk::UniqueImageView imageView;
 		vk::UniqueSampler sampler;
@@ -35,14 +31,17 @@ public:
 	[[nodiscard]] vk::Buffer getMatrices() const {
 		return _matrices.get();
 	}
+	[[nodiscard]] vk::Buffer getMaterials() const {
+		return _materials.get();
+	}
 	[[nodiscard]] const std::vector<SceneTexture> &getTextures() const {
 		return _textureImages;
 	}
 	[[nodiscard]] const SceneTexture &getDefaultNormal() const {
 		return _defaultNormal;
 	}
-	[[nodiscard]] const SceneTexture &getDefaultAlbedo() const {
-		return _defaultAlbedo;
+	[[nodiscard]] const SceneTexture &getDefaultWhite() const {
+		return _defaultWhite;
 	}
 
 	[[nodiscard]] static SceneBuffers create(
@@ -62,11 +61,11 @@ public:
 		result._indices = allocator.createTypedBuffer<int32_t>(
 			scene.m_indices.size(), vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eShaderDeviceAddress, VMA_MEMORY_USAGE_CPU_TO_GPU
 			);
-		result._matrices = allocator.createTypedBuffer<ModelMatrices>(
+		result._matrices = allocator.createTypedBuffer<shader::ModelMatrices>(
 			scene.m_nodes.size(), vk::BufferUsageFlagBits::eUniformBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU
 			);
-		result._materials = allocator.createTypedBuffer<nvh::GltfMaterial>(
-			scene.m_materials.size(), vk::BufferUsageFlagBits::eStorageBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU
+		result._materials = allocator.createTypedBuffer<shader::MaterialUniforms>(
+			scene.m_materials.size(), vk::BufferUsageFlagBits::eUniformBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU
 			);
 
 		vk::Format format = vk::Format::eR8G8B8A8Unorm;
@@ -106,13 +105,13 @@ public:
 				l_device, result._defaultNormal.image.get(), format, vk::ImageAspectFlagBits::eColor
 			);
 
-			unsigned char defaultAlbedo[4]{ 255, 255, 255, 255 };
-			result._defaultAlbedo.image = loadTexture(
-				defaultAlbedo, 1, 1, vk::Format::eR8G8B8A8Unorm, 1, allocator, oneTimeBufferPool, graphicsQueue
+			unsigned char defaultWhite[4]{ 255, 255, 255, 255 };
+			result._defaultWhite.image = loadTexture(
+				defaultWhite, 1, 1, vk::Format::eR8G8B8A8Unorm, 1, allocator, oneTimeBufferPool, graphicsQueue
 			);
-			result._defaultAlbedo.sampler = createSampler(l_device);
-			result._defaultAlbedo.imageView = createImageView2D(
-				l_device, result._defaultAlbedo.image.get(), format, vk::ImageAspectFlagBits::eColor
+			result._defaultWhite.sampler = createSampler(l_device);
+			result._defaultWhite.imageView = createImageView2D(
+				l_device, result._defaultWhite.image.get(), format, vk::ImageAspectFlagBits::eColor
 			);
 		}
 
@@ -148,18 +147,38 @@ public:
 		result._indices.flush();
 
 
-		nvh::GltfMaterial* mat_device = result._materials.mapAs<nvh::GltfMaterial>();
+		auto *mat_device = result._materials.mapAs<shader::MaterialUniforms>();
 		for (std::size_t i = 0; i < scene.m_materials.size(); ++i) {
-			mat_device[i] = scene.m_materials[i];
+			const nvh::GltfMaterial &mat = scene.m_materials[i];
+			shader::MaterialUniforms &outMat = mat_device[i];
+
+			outMat.emissiveFactor = mat.emissiveFactor;
+			outMat.shadingModel = mat.shadingModel;
+			outMat.alphaMode = mat.alphaMode;
+			outMat.alphaCutoff = mat.alphaCutoff;
+			outMat.normalTextureScale = mat.normalTextureScale;
+
+			switch (outMat.shadingModel) {
+			case SHADING_MODEL_METALLIC_ROUGHNESS:
+				outMat.colorParam = mat.pbrBaseColorFactor;
+				outMat.materialParam.y = mat.pbrRoughnessFactor;
+				outMat.materialParam.z = mat.pbrMetallicFactor;
+				break;
+			case SHADING_MODEL_SPECULAR_GLOSSINESS:
+				outMat.colorParam = mat.khrDiffuseFactor;
+				outMat.materialParam = mat.khrSpecularFactor;
+				outMat.materialParam.w = mat.khrGlossinessFactor;
+				break;
+			}
 		}
 		result._materials.unmap();
 		result._materials.flush();
 
 
-		ModelMatrices *matrices = result._matrices.mapAs<ModelMatrices>();
+		auto *matrices = result._matrices.mapAs<shader::ModelMatrices>();
 		for (std::size_t i = 0; i < scene.m_nodes.size(); ++i) {
 			matrices[i].transform = scene.m_nodes[i].worldMatrix;
-			matrices[i].inverseTransposed = nvmath::transpose(nvmath::invert(matrices[i].transform));
+			matrices[i].transformInverseTransposed = nvmath::transpose(nvmath::invert(matrices[i].transform));
 		}
 		result._matrices.unmap();
 		result._matrices.flush();
@@ -174,5 +193,5 @@ private:
 	vma::UniqueBuffer _materials;
 	std::vector<SceneTexture> _textureImages;
 	SceneTexture _defaultNormal;
-	SceneTexture _defaultAlbedo;
+	SceneTexture _defaultWhite;
 };

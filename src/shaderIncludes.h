@@ -13,6 +13,7 @@ namespace shader {
 	);
 #endif
 #define vec2 ::nvmath::vec2
+	// do NOT define or use vec3 or mat3 - they may lead to alignment issues
 #define vec4 ::nvmath::vec4
 #define ivec2 ::nvmath::ivec2
 #define ivec4 ::nvmath::ivec4
@@ -20,6 +21,7 @@ namespace shader {
 
 #include "shaders/include/structs/aabbTree.glsl"
 #include "shaders/include/structs/lightingPassStructs.glsl"
+#include "shaders/include/structs/sceneStructs.glsl"
 
 #ifdef SHADER_DEFINE_INT_UB
 #	undef int
