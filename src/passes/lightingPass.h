@@ -54,15 +54,16 @@ public:
 	}
 
 	void initializeDescriptorSetFor(Resources &rsrc, vk::Device device) {
-		std::array<vk::WriteDescriptorSet, 6> descriptorWrite;
+		std::vector<vk::WriteDescriptorSet> descriptorWrite;
 
-		std::array<vk::DescriptorImageInfo, 3> imageInfo{
+		std::array<vk::DescriptorImageInfo, 4> imageInfo{
 			vk::DescriptorImageInfo(_sampler.get(), rsrc.gBuffer->getAlbedoView(), vk::ImageLayout::eShaderReadOnlyOptimal),
 			vk::DescriptorImageInfo(_sampler.get(), rsrc.gBuffer->getNormalView(), vk::ImageLayout::eShaderReadOnlyOptimal),
-			vk::DescriptorImageInfo(_sampler.get(), rsrc.gBuffer->getDepthView(), vk::ImageLayout::eShaderReadOnlyOptimal)
+			vk::DescriptorImageInfo(_sampler.get(), rsrc.gBuffer->getMaterialPropertiesView(), vk::ImageLayout::eShaderReadOnlyOptimal),
+			vk::DescriptorImageInfo(_sampler.get(), rsrc.gBuffer->getDepthView(), vk::ImageLayout::eShaderReadOnlyOptimal),
 		};
-		for (std::size_t i = 0; i < 3; ++i) {
-			descriptorWrite[i]
+		for (std::size_t i = 0; i < imageInfo.size(); ++i) {
+			descriptorWrite.emplace_back()
 				.setDstSet(rsrc.descriptorSet.get())
 				.setDstBinding(i)
 				.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
@@ -75,21 +76,21 @@ public:
 			vk::DescriptorBufferInfo(rsrc.aabbTreeBuffers->triangleBuffer.get(), 0, rsrc.aabbTreeBuffers->triangleBufferSize),
 			vk::DescriptorBufferInfo(rsrc.uniformBuffer.get(), 0, sizeof(shader::LightingPassUniforms))
 		};
-		descriptorWrite[3]
-			.setDstSet(rsrc.descriptorSet.get())
-			.setDstBinding(3)
-			.setDescriptorType(vk::DescriptorType::eStorageBuffer)
-			.setDescriptorCount(1)
-			.setPBufferInfo(&bufferInfo[0]);
-		descriptorWrite[4]
+		descriptorWrite.emplace_back()
 			.setDstSet(rsrc.descriptorSet.get())
 			.setDstBinding(4)
 			.setDescriptorType(vk::DescriptorType::eStorageBuffer)
 			.setDescriptorCount(1)
-			.setPBufferInfo(&bufferInfo[1]);
-		descriptorWrite[5]
+			.setPBufferInfo(&bufferInfo[0]);
+		descriptorWrite.emplace_back()
 			.setDstSet(rsrc.descriptorSet.get())
 			.setDstBinding(5)
+			.setDescriptorType(vk::DescriptorType::eStorageBuffer)
+			.setDescriptorCount(1)
+			.setPBufferInfo(&bufferInfo[1]);
+		descriptorWrite.emplace_back()
+			.setDstSet(rsrc.descriptorSet.get())
+			.setDstBinding(6)
 			.setDescriptorType(vk::DescriptorType::eUniformBuffer)
 			.setDescriptorCount(1)
 			.setPBufferInfo(&bufferInfo[2]);
@@ -173,13 +174,14 @@ protected:
 
 		_sampler = createSampler(dev, vk::Filter::eNearest, vk::Filter::eNearest, vk::SamplerMipmapMode::eNearest);
 
-		std::array<vk::DescriptorSetLayoutBinding, 6> descriptorBindings{
+		std::array<vk::DescriptorSetLayoutBinding, 7> descriptorBindings{
 			vk::DescriptorSetLayoutBinding(0, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment),
 			vk::DescriptorSetLayoutBinding(1, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment),
 			vk::DescriptorSetLayoutBinding(2, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment),
-			vk::DescriptorSetLayoutBinding(3, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eFragment),
+			vk::DescriptorSetLayoutBinding(3, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment),
 			vk::DescriptorSetLayoutBinding(4, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eFragment),
-			vk::DescriptorSetLayoutBinding(5, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eFragment)
+			vk::DescriptorSetLayoutBinding(5, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eFragment),
+			vk::DescriptorSetLayoutBinding(6, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eFragment)
 		};
 		vk::DescriptorSetLayoutCreateInfo descriptorInfo;
 		descriptorInfo

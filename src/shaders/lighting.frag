@@ -7,17 +7,18 @@
 
 layout (binding = 0) uniform sampler2D uniAlbedo;
 layout (binding = 1) uniform sampler2D uniNormal;
-layout (binding = 2) uniform sampler2D uniDepth;
+layout (binding = 2) uniform sampler2D uniMaterialProperties;
+layout (binding = 3) uniform sampler2D uniDepth;
 
-layout (binding = 3) buffer AabbTreeNodes {
+layout (binding = 4) buffer AabbTreeNodes {
 	int root;
 	AabbTreeNode nodes[];
 } aabbTree;
-layout (binding = 4) buffer Triangles {
+layout (binding = 5) buffer Triangles {
 	Triangle triangles[];
 };
 
-layout (binding = 5) uniform Uniforms {
+layout (binding = 6) uniform Uniforms {
 	LightingPassUniforms uniforms;
 };
 
@@ -37,6 +38,7 @@ void main() {
 	vec3 albedo = texture(uniAlbedo, inUv).xyz;
 	vec3 normal = texture(uniNormal, inUv).xyz;
 	float depth = texture(uniDepth, inUv).x;
+	vec2 materialProps = texture(uniMaterialProperties, inUv).xy;
 
 	float worldDepth = sceneDepthToWorldDepth(depth, uniforms.cameraNear, uniforms.cameraFar);
 	vec3 viewPos = fragCoordDepthToViewPos(inUv, worldDepth, uniforms.tanHalfFovY, uniforms.aspectRatio);
@@ -48,6 +50,8 @@ void main() {
 		outColor = vec4(albedo, 1.0f);
 	} else if (uniforms.debugMode == GBUFFER_DEBUG_NORMAL) {
 		outColor = vec4((vec3(normal) + 1.0f) * 0.5f, 1.0f);
+	} else if (uniforms.debugMode == GBUFFER_DEBUG_MATERIAL_PROPERTIES) {
+		outColor = vec4(materialProps, 1.0f, 1.0f);
 	}
 
 	vec3 rayDir = uniforms.tempLightPoint.xyz - worldPos;

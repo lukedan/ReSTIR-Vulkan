@@ -87,8 +87,7 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 		VK_KHR_SHADER_CLOCK_EXTENSION_NAME
 	};
 	std::vector<const char*> requiredLayers{
-		"VK_LAYER_KHRONOS_validation",
-		"VK_LAYER_LUNARG_monitor"
+		"VK_LAYER_KHRONOS_validation"
 	};
 
 	vk::PhysicalDeviceRayTracingFeaturesKHR raytracingFeature;
@@ -172,8 +171,11 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 				"device extensions", "    "
 				);
 			if (supportsRTExtensions) {
-				featureStructs.push_back(&raytracingFeature);
-				requiredDeviceExtensions.push_back(requiredDeviceRayTracingExtensions[0]);
+				featureStructs.emplace_back(&raytracingFeature);
+				requiredDeviceExtensions.insert(
+					requiredDeviceExtensions.end(),
+					requiredDeviceRayTracingExtensions.begin(), requiredDeviceRayTracingExtensions.end()
+				);
 			}
 
 			_physicalDevice = dev;
@@ -331,18 +333,18 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 		_swapchain = Swapchain::create(_device.get(), _swapchainInfo);
 	}
 
-	loadScene("../../../scenes/cornellBox/cornellBox.gltf", _gltfScene);
+	/*loadScene("../../../scenes/cornellBox/cornellBox.gltf", _gltfScene);*/
 	// loadScene("../../../scenes/boxTextured/boxTextured.gltf", _gltfScene);
 	// loadScene("../../../scenes/duck/Duck.gltf", _gltfScene);
 	// loadScene("../../../scenes/fish/BarramundiFish.gltf", _gltfScene);
-	/*loadScene("../../../scenes/Sponza/glTF/Sponza.gltf", _gltfScene);*/
+	loadScene("../../../scenes/Sponza/glTF/Sponza.gltf", _gltfScene);
 
 	{ // create descriptor pools
 		std::array<vk::DescriptorPoolSize, 6> staticPoolSizes{
 			vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, 3),
 			vk::DescriptorPoolSize(vk::DescriptorType::eStorageBuffer, 2),
 			vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, 3),
-			vk::DescriptorPoolSize(vk::DescriptorType::eUniformBufferDynamic, 1),
+			vk::DescriptorPoolSize(vk::DescriptorType::eUniformBufferDynamic, 2),
 			vk::DescriptorPoolSize(vk::DescriptorType::eAccelerationStructureKHR, 1),
 			vk::DescriptorPoolSize(vk::DescriptorType::eStorageImage, 1)
 		};
@@ -350,7 +352,7 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 		staticPoolInfo
 			.setFlags(vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet)
 			.setPoolSizes(staticPoolSizes)
-			.setMaxSets(3);
+			.setMaxSets(4);
 		_staticDescriptorPool = _device->createDescriptorPoolUnique(staticPoolInfo);
 
 		std::array<vk::DescriptorPoolSize, 1> texturePoolSizes{
@@ -427,6 +429,13 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 			.setSetLayouts(gBufferMatricesLayout);
 		_gBufferResources.matrixDescriptor = std::move(_device->allocateDescriptorSetsUnique(gBufferMatricesAlloc)[0]);
 
+		std::array<vk::DescriptorSetLayout, 1> gBufferMaterialsLayout{ _gBufferPass.getMaterialDescriptorSetLayout() };
+		vk::DescriptorSetAllocateInfo gBufferMaterialsAlloc;
+		gBufferMaterialsAlloc
+			.setDescriptorPool(_staticDescriptorPool.get())
+			.setSetLayouts(gBufferMaterialsLayout);
+		_gBufferResources.materialDescriptor = std::move(_device->allocateDescriptorSetsUnique(gBufferMaterialsAlloc)[0]);
+
 		// Scene textures
 		std::vector<vk::DescriptorSetLayout> gBufferTexturesLayout(_gltfScene.m_materials.size());
 		std::fill(gBufferTexturesLayout.begin(), gBufferTexturesLayout.end(), _gBufferPass.getTexturesDescriptorSetLayout());
@@ -436,7 +445,7 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 			.setSetLayouts(gBufferTexturesLayout);
 		_gBufferResources.materialTexturesDescriptors = _device->allocateDescriptorSetsUnique(gBufferSceneTexturesAlloc);
 	}
-	_gBufferPass.initializeResourcesFor(_gltfScene, _sceneBuffers, _device, _allocator, _gBufferResources);
+	_gBufferPass.initializeResourcesFor(_gltfScene, _sceneBuffers, _device, _gBufferResources);
 
 	_gBufferPass.descriptorSets = &_gBufferResources;
 	_gBufferPass.scene = &_gltfScene;
@@ -531,7 +540,8 @@ void App::updateGui() {
 	const char *items[]{
 		"None",
 		"Albedo",
-		"Normal"
+		"Normal",
+		"MaterialProperties"
 	};
 	_debugModeChanged = ImGui::Combo("Debug Mode", &_debugMode, items, IM_ARRAYSIZE(items));
 

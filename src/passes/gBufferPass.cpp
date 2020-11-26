@@ -26,6 +26,10 @@ void GBuffer::resize(vma::Allocator &allocator, vk::Device device, vk::Extent2D 
 		extent, formats.normal,
 		vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled
 	);
+	_materialPropertiesBuffer = allocator.createImage2D(
+		extent, formats.materialProperties,
+		vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled
+	);
 	_depthBuffer = allocator.createImage2D(
 		extent, formats.depth,
 		vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eSampled
@@ -37,12 +41,15 @@ void GBuffer::resize(vma::Allocator &allocator, vk::Device device, vk::Extent2D 
 	_normalView = createImageView2D(
 		device, _normalBuffer.get(), formats.normal, vk::ImageAspectFlagBits::eColor
 	);
+	_materialPropertiesView = createImageView2D(
+		device, _materialPropertiesBuffer.get(), formats.materialProperties, vk::ImageAspectFlagBits::eColor
+	);
 	_depthView = createImageView2D(
 		device, _depthBuffer.get(), formats.depth, formats.depthAspect
 	);
 
-	std::array<vk::ImageView, 3> attachments{
-		_albedoView.get(), _normalView.get(), _depthView.get()
+	std::array<vk::ImageView, 4> attachments{
+		_albedoView.get(), _normalView.get(), _materialPropertiesView.get(), _depthView.get()
 	};
 	vk::FramebufferCreateInfo framebufferInfo;
 	framebufferInfo
@@ -57,8 +64,8 @@ void GBuffer::resize(vma::Allocator &allocator, vk::Device device, vk::Extent2D 
 void GBuffer::Formats::initialize(vk::PhysicalDevice physicalDevice) {
 	assert(!_formatsInitialized);
 	_gBufferFormats.albedo = findSupportedFormat(
-		{ vk::Format::eR8G8B8A8Srgb }, physicalDevice, vk::ImageTiling::eOptimal,
-		vk::FormatFeatureFlagBits::eColorAttachment
+		{ vk::Format::eR8G8B8A8Srgb },
+		physicalDevice, vk::ImageTiling::eOptimal, vk::FormatFeatureFlagBits::eColorAttachment
 	);
 	_gBufferFormats.normal = findSupportedFormat(
 		{
@@ -67,12 +74,16 @@ void GBuffer::Formats::initialize(vk::PhysicalDevice physicalDevice) {
 			vk::Format::eR16G16B16A16Snorm,
 			vk::Format::eR16G16B16A16Sfloat,
 			vk::Format::eR32G32B32Sfloat
-		}, physicalDevice, vk::ImageTiling::eOptimal,
-		vk::FormatFeatureFlagBits::eColorAttachment
+		},
+		physicalDevice, vk::ImageTiling::eOptimal, vk::FormatFeatureFlagBits::eColorAttachment
 	);
 	_gBufferFormats.depth = findSupportedFormat(
 		{ vk::Format::eD32Sfloat, vk::Format::eD32SfloatS8Uint, vk::Format::eD24UnormS8Uint },
 		physicalDevice, vk::ImageTiling::eOptimal, vk::FormatFeatureFlagBits::eDepthStencilAttachment
+	);
+	_gBufferFormats.materialProperties = findSupportedFormat(
+		{ vk::Format::eR16G16Unorm },
+		physicalDevice, vk::ImageTiling::eOptimal, vk::FormatFeatureFlagBits::eColorAttachment
 	);
 	_gBufferFormats.depthAspect = vk::ImageAspectFlagBits::eDepth;
 	if (_gBufferFormats.depth != vk::Format::eD32Sfloat) {
