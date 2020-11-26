@@ -641,11 +641,13 @@ void App::mainLoop() {
 				lightingPassUniforms->aspectRatio = _camera.aspectRatio;
 				lightingPassUniforms->debugMode = _debugMode;
 				lightingPassUniforms->lightNum = _lightingPass.lightNum;
+				/*
 				for (int i = 0; i < _lightingPass.lightNum; ++i) {
 					lightingPassUniforms->lightsArray[i].color = _lightingPass.lightsArray[i].color;
 					lightingPassUniforms->lightsArray[i].intensity = _lightingPass.lightsArray[i].intensity;
 					lightingPassUniforms->lightsArray[i].pos = _lightingPass.lightsArray[i].pos;
 				}
+				*/
 				lightingPassUniforms->sample_num = 5;
 				_lightingPassResources.uniformBuffer.unmap();
 				_lightingPassResources.uniformBuffer.flush();
