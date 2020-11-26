@@ -4,6 +4,9 @@
 
 #include "vma.h"
 
+#include <cstdlib>
+#include <ctime>
+
 std::vector<char> readFile(const std::filesystem::path &path) {
 	std::ifstream fin(path, std::ios::ate | std::ios::binary);
 	std::streampos size = fin.tellg();
@@ -291,6 +294,16 @@ vma::UniqueImage loadTexture(
 	);
 }
 
+bool hasEmissiveMaterial(const nvh::GltfScene& m_gltfScene) {
+	
+	for (auto tmp_mat : m_gltfScene.m_materials) {
+		if (tmp_mat.emissiveFactor.norm() != 0.0 || tmp_mat.emissiveTexture != -1) {
+			return true;
+		}
+	}
+	return false;
+}
+
 
 void loadScene(const std::string& filename, nvh::GltfScene& m_gltfScene) {
 	tinygltf::Model    tmodel;
@@ -302,7 +315,6 @@ void loadScene(const std::string& filename, nvh::GltfScene& m_gltfScene) {
 	m_gltfScene.importDrawableNodes(tmodel, nvh::GltfAttributes::Normal | nvh::GltfAttributes::Texcoord_0 | nvh::GltfAttributes::Color_0 | nvh::GltfAttributes::Tangent);
 	m_gltfScene.importMaterials(tmodel);
 	m_gltfScene.importTexutureImages(tmodel);
-
 
 	// Show gltf scene info
 	std::cout << "Show gltf scene info" << std::endl;
@@ -325,4 +337,25 @@ void loadScene(const std::string& filename, nvh::GltfScene& m_gltfScene) {
 		<< m_gltfScene.m_dimensions.size.z << "]" << std::endl;
 
 	std::cout << "vertex num:" << m_gltfScene.m_positions.size() << std::endl;
+
+	if (!hasEmissiveMaterial(m_gltfScene)) {
+		std::cout << "This model/gltf scene doesn't have emissive material." << std::endl;
+		// Init point lights
+		srand((unsigned int)time(NULL));
+		for (int i = 0; i < 18; ++i) {
+			float r = float(rand()) / float((RAND_MAX));
+			float g = float(rand()) / float((RAND_MAX));
+			float b = float(rand()) / float((RAND_MAX));
+			float rand_x = float(rand()) / float((RAND_MAX));
+			float rand_z = float(rand()) / float((RAND_MAX));
+			float tempRadius = m_gltfScene.m_dimensions.radius;
+			m_gltfScene.m_pointLights.push_back(shader::pointLight{ m_gltfScene.m_dimensions.center + vec3((rand_x-0.5) * tempRadius, 0.0, (rand_z-0.5) * tempRadius), 50, vec3(r, g, b) });
+		}
+		m_gltfScene.m_ptLightsNum = 18;
+	}
+	else {
+		// Push a default point light
+		m_gltfScene.m_pointLights.push_back(shader::pointLight{ vec3(0.0, 0.0, 0.0), 0.0, vec3(0.0, 0.0, 0.0) });
+		m_gltfScene.m_ptLightsNum = 0;
+	}
 }

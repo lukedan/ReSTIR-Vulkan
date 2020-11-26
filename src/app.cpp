@@ -334,16 +334,18 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 		_swapchain = Swapchain::create(_device.get(), _swapchainInfo);
 	}
 
-	loadScene("../../../scenes/cornellBox/cornellBox.gltf", _gltfScene);
-	// loadScene("../../../scenes/boxTextured/boxTextured.gltf", _gltfScene);
+	/** NOTE: A scene without emissive materials will be given 8 point lights and scenes with lightning material won't have point lights **/
+	/** cornellBox has emissive materials and others don't have **/
+	// loadScene("../../../scenes/cornellBox/cornellBox.gltf", _gltfScene);
+	loadScene("../../../scenes/boxTextured/boxTextured.gltf", _gltfScene);
 	// loadScene("../../../scenes/duck/Duck.gltf", _gltfScene);
 	// loadScene("../../../scenes/fish/BarramundiFish.gltf", _gltfScene);
-	/*loadScene("../../../scenes/Sponza/glTF/Sponza.gltf", _gltfScene);*/
+	// loadScene("../../../scenes/Sponza/glTF/Sponza.gltf", _gltfScene);
 
 	{ // create descriptor pools
 		std::array<vk::DescriptorPoolSize, 6> staticPoolSizes{
 			vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, 3),
-			vk::DescriptorPoolSize(vk::DescriptorType::eStorageBuffer, 2),
+			vk::DescriptorPoolSize(vk::DescriptorType::eStorageBuffer, 3),
 			vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, 3),
 			vk::DescriptorPoolSize(vk::DescriptorType::eUniformBufferDynamic, 1),
 			vk::DescriptorPoolSize(vk::DescriptorType::eAccelerationStructureKHR, 1),
@@ -450,6 +452,8 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 #if defined(SOFTWARE_RT)
 	// create lighting pass
 	_lightingPass = Pass::create<LightingPass>(_device.get(), _swapchain.getImageFormat());
+	_lightingPass.scene = &_gltfScene;
+	_lightingPass.sceneBuffers = &_sceneBuffers;
 
 	_initializeLightingPassResources();
 
@@ -643,7 +647,6 @@ void App::mainLoop() {
 				lightingPassUniforms->tanHalfFovY = std::tan(0.5f * _camera.fovYRadians);
 				lightingPassUniforms->aspectRatio = _camera.aspectRatio;
 				lightingPassUniforms->debugMode = _debugMode;
-				lightingPassUniforms->lightNum = _lightingPass.lightNum;
 				/*
 				for (int i = 0; i < _lightingPass.lightNum; ++i) {
 					lightingPassUniforms->lightsArray[i].color = _lightingPass.lightsArray[i].color;
@@ -651,7 +654,7 @@ void App::mainLoop() {
 					lightingPassUniforms->lightsArray[i].pos = _lightingPass.lightsArray[i].pos;
 				}
 				*/
-				lightingPassUniforms->sample_num = 5;
+				lightingPassUniforms->sampleNum = this->sampleNum;
 				_lightingPassResources.uniformBuffer.unmap();
 				_lightingPassResources.uniformBuffer.flush();
 #else

@@ -35,6 +35,9 @@ public:
 	[[nodiscard]] vk::Buffer getMatrices() const {
 		return _matrices.get();
 	}
+	[[nodiscard]] const vk::Buffer getPtLights() const {
+		return _ptLightsBuffer.get();
+	}
 	[[nodiscard]] const std::vector<SceneTexture> &getTextures() const {
 		return _textureImages;
 	}
@@ -44,6 +47,10 @@ public:
 	[[nodiscard]] const SceneTexture &getDefaultAlbedo() const {
 		return _defaultAlbedo;
 	}
+	[[nodiscard]] const vk::DeviceSize getPtLightsBufferSize() const {
+		return _ptLightsBufferSize;
+	}
+	
 
 	[[nodiscard]] static SceneBuffers create(
 		const nvh::GltfScene &scene,
@@ -68,6 +75,12 @@ public:
 		result._materials = allocator.createTypedBuffer<nvh::GltfMaterial>(
 			scene.m_materials.size(), vk::BufferUsageFlagBits::eStorageBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU
 			);
+		// Lights
+		// Point lights
+		result._ptLightsBufferSize = 16 + sizeof(shader::pointLight) * scene.m_pointLights.size();
+		result._ptLightsBuffer = allocator.createBuffer(
+			result._ptLightsBufferSize, vk::BufferUsageFlagBits::eStorageBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU
+		);
 
 		vk::Format format = vk::Format::eR8G8B8A8Unorm;
 
@@ -116,7 +129,6 @@ public:
 			);
 		}
 
-
 		// collect vertices
 		Vertex *vertices = result._vertices.mapAs<Vertex>();
 		for (std::size_t i = 0; i < scene.m_positions.size(); ++i) {
@@ -164,6 +176,17 @@ public:
 		result._matrices.unmap();
 		result._matrices.flush();
 
+		// Lights
+		// Point lights
+		int32_t* ptr = result._ptLightsBuffer.mapAs<int32_t>();
+		*ptr = scene.m_ptLightsNum;
+		auto* ptLights = reinterpret_cast<shader::pointLight*>(reinterpret_cast<uintptr_t>(ptr) + 16);
+		std::memcpy(ptLights, scene.m_pointLights.data(), sizeof(shader::pointLight) * scene.m_pointLights.size());
+		result._ptLightsBuffer.unmap();
+		result._ptLightsBuffer.flush();
+		
+		// TODO: Tri lights
+		
 
 		return result;
 	}
@@ -172,7 +195,9 @@ private:
 	vma::UniqueBuffer _indices;
 	vma::UniqueBuffer _matrices;
 	vma::UniqueBuffer _materials;
+	vma::UniqueBuffer _ptLightsBuffer;
 	std::vector<SceneTexture> _textureImages;
 	SceneTexture _defaultNormal;
 	SceneTexture _defaultAlbedo;
+	vk::DeviceSize _ptLightsBufferSize;
 };

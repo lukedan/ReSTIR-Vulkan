@@ -54,7 +54,7 @@ public:
 	}
 
 	void initializeDescriptorSetFor(Resources &rsrc, vk::Device device) {
-		std::array<vk::WriteDescriptorSet, 6> descriptorWrite;
+		std::array<vk::WriteDescriptorSet, 7> descriptorWrite;
 
 		std::array<vk::DescriptorImageInfo, 3> imageInfo{
 			vk::DescriptorImageInfo(_sampler.get(), rsrc.gBuffer->getAlbedoView(), vk::ImageLayout::eShaderReadOnlyOptimal),
@@ -70,10 +70,11 @@ public:
 				.setDescriptorCount(1);
 		}
 
-		std::array<vk::DescriptorBufferInfo, 3> bufferInfo{
+		std::array<vk::DescriptorBufferInfo, 4> bufferInfo{
 			vk::DescriptorBufferInfo(rsrc.aabbTreeBuffers->nodeBuffer.get(), 0, rsrc.aabbTreeBuffers->nodeBufferSize),
 			vk::DescriptorBufferInfo(rsrc.aabbTreeBuffers->triangleBuffer.get(), 0, rsrc.aabbTreeBuffers->triangleBufferSize),
-			vk::DescriptorBufferInfo(rsrc.uniformBuffer.get(), 0, sizeof(shader::LightingPassUniforms))
+			vk::DescriptorBufferInfo(rsrc.uniformBuffer.get(), 0, sizeof(shader::LightingPassUniforms)),
+			vk::DescriptorBufferInfo(sceneBuffers->getPtLights(), 0, sceneBuffers->getPtLightsBufferSize())
 		};
 		descriptorWrite[3]
 			.setDstSet(rsrc.descriptorSet.get())
@@ -93,14 +94,20 @@ public:
 			.setDescriptorType(vk::DescriptorType::eUniformBuffer)
 			.setDescriptorCount(1)
 			.setPBufferInfo(&bufferInfo[2]);
+		descriptorWrite[6]
+			.setDstSet(rsrc.descriptorSet.get())
+			.setDstBinding(6)
+			.setDescriptorType(vk::DescriptorType::eStorageBuffer)
+			.setDescriptorCount(1)
+			.setPBufferInfo(&bufferInfo[3]);
 
 		device.updateDescriptorSets(descriptorWrite, {});
 	}
 
 	vk::Extent2D imageExtent;
 	vk::DescriptorSet descriptorSet;
-	shader::pointLight lightsArray[10];
-	int lightNum;
+	const nvh::GltfScene* scene = nullptr;
+	const SceneBuffers* sceneBuffers = nullptr;
 protected:
 	explicit LightingPass(vk::Format format) : Pass(), _swapchainFormat(format) {
 	}
@@ -175,13 +182,14 @@ protected:
 
 		_sampler = createSampler(dev, vk::Filter::eNearest, vk::Filter::eNearest, vk::SamplerMipmapMode::eNearest);
 
-		std::array<vk::DescriptorSetLayoutBinding, 6> descriptorBindings{
+		std::array<vk::DescriptorSetLayoutBinding, 7> descriptorBindings{
 			vk::DescriptorSetLayoutBinding(0, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment),
 			vk::DescriptorSetLayoutBinding(1, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment),
 			vk::DescriptorSetLayoutBinding(2, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment),
 			vk::DescriptorSetLayoutBinding(3, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eFragment),
 			vk::DescriptorSetLayoutBinding(4, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eFragment),
-			vk::DescriptorSetLayoutBinding(5, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eFragment)
+			vk::DescriptorSetLayoutBinding(5, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eFragment),
+			vk::DescriptorSetLayoutBinding(6, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eFragment)
 		};
 		vk::DescriptorSetLayoutCreateInfo descriptorInfo;
 		descriptorInfo
@@ -193,14 +201,6 @@ protected:
 		vk::PipelineLayoutCreateInfo pipelineInfo;
 		pipelineInfo.setSetLayouts(descriptorLayouts);
 		_pipelineLayout = dev.createPipelineLayoutUnique(pipelineInfo);
-
-		// Init lights info
-		lightNum = 8;
-		for (int i = 0; i < lightNum; ++i) {
-			lightsArray[i].pos = vec3(-10.0 + i * 2, 5.0, 0.0);
-			lightsArray[i].intensity = 50.0;
-			lightsArray[i].color = vec3(i * 0.1, 1.0 - i * 0.1, 1.0);
-		}
 
 		Pass::_initialize(dev);
 	}

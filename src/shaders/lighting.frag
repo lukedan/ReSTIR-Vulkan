@@ -24,6 +24,11 @@ layout (binding = 5) uniform Uniforms {
 	LightingPassUniforms uniforms;
 };
 
+layout (binding = 6) buffer PtLights {
+	int lightsNum;
+	pointLight lights[];
+} ptLights;
+
 layout (location = 0) in vec2 inUv;
 
 layout (location = 0) out vec4 outColor;
@@ -46,8 +51,7 @@ void main() {
 	vec3 viewPos = fragCoordDepthToViewPos(inUv, worldDepth, uniforms.tanHalfFovY, uniforms.aspectRatio);
 	vec3 worldPos = (uniforms.inverseViewMatrix * vec4(viewPos, 1.0f)).xyz;
 
-	vec3 tempColor = vec3(0.0, 0.0, 0.0);
-	int sample_num = uniforms.sample_num;
+	/* No Monte-Carlo rendering 
 	if (uniforms.debugMode == GBUFFER_DEBUG_NONE) {
 		outColor = vec4(albedo, 1.0f); // TODO
 	} else if (uniforms.debugMode == GBUFFER_DEBUG_ALBEDO) {
@@ -56,16 +60,26 @@ void main() {
 		outColor = vec4((vec3(normal) + 1.0f) * 0.5f, 1.0f);
 	}
 
-	/*
+	vec3 rayDir = uniforms.tempLightPoint.xyz - worldPos;
+	bool visible = raytrace(worldPos + 0.01 * rayDir, rayDir * 0.98);
+	if(!visible){
+		outColor.xyz *= 0.5f;
+	}
+	*/
+
+
+	/* Monte-Carlo rendering -- point lights */
+	vec3 tempColor = vec3(0.0, 0.0, 0.0);
+	int sample_num = uniforms.sampleNum;
+	int lightNum = ptLights.lightsNum;
 	for(int i = 0; i < sample_num; ++i){
 		// Lights parameters and init
-		int lightNum = uniforms.lightNum;
-		uint seed = uint(int(clockARB()) + int(inUv.x * 1000.0) + int(inUv.y * 13300.0));
+		uint seed = uint(int(clockARB()) + int(worldPos.x * 12.0) + int(worldPos.y * 133.0) + int(worldPos.z * 7.0));
 		float tempFloatRnd = rnd(seed);
 		int selectedIdx = int(tempFloatRnd * lightNum * 100.0) % lightNum;
 	
-		vec3 tempLightPos = uniforms.lightsArray[selectedIdx].pos;
-		vec3 tempLightIntensity = uniforms.lightsArray[selectedIdx].color * uniforms.lightsArray[selectedIdx].intensity;
+		vec3 tempLightPos = ptLights.lights[selectedIdx].pos;
+		vec3 tempLightIntensity = ptLights.lights[selectedIdx].color * ptLights.lights[selectedIdx].intensity;
 
 		vec3 rayDir = tempLightPos - worldPos;
 		bool visible = raytrace(worldPos + 0.01 * rayDir, rayDir * 0.98);
@@ -80,5 +94,10 @@ void main() {
 	}
 
 	outColor = vec4(tempColor / float(sample_num), 0.0);
+	
+
+	/* Debug
+	float checkPtNum = float(ptLights.lightsNum) / 10.0;
+	outColor.xyz = vec3(checkPtNum, checkPtNum, checkPtNum);
 	*/
 }
