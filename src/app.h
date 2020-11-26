@@ -1,5 +1,6 @@
 #pragma once
 
+#define VK_ENABLE_BETA_EXTENSIONS
 #include "misc.h"
 #include "vma.h"
 #include "glfwWindow.h"
@@ -9,8 +10,25 @@
 #include "passes/demoPass.h"
 #include "passes/gBufferPass.h"
 #include "passes/lightingPass.h"
+#include "passes/rtPass.h"
+#include "passes/imguiPass.h"
 #include "camera.h"
 #include "fpsCounter.h"
+
+struct PhysicalDeviceInfo
+{
+	vk::PhysicalDeviceMemoryProperties     memoryProperties{};
+	std::vector<vk::QueueFamilyProperties> queueProperties;
+
+	vk::PhysicalDeviceFeatures         features10{};
+	vk::PhysicalDeviceVulkan11Features features11;
+	vk::PhysicalDeviceVulkan12Features features12;
+
+	vk::PhysicalDeviceProperties         properties10{};
+	vk::PhysicalDeviceVulkan11Properties properties11;
+	vk::PhysicalDeviceVulkan12Properties properties12;
+};
+
 
 class App {
 public:
@@ -18,11 +36,10 @@ public:
 	constexpr static std::size_t maxFramesInFlight = 2;
 
 	App();
-	~App() {
-		_device->waitIdle();
-	}
+	~App();
 
 	void mainLoop();
+	void updateGui();
 
 	[[nodiscard]] inline static vk::SurfaceFormatKHR chooseSurfaceFormat(
 		const vk::PhysicalDevice &dev, const vk::SurfaceKHR &surface
@@ -86,8 +103,11 @@ protected:
 
 	vma::Allocator _allocator;
 	vk::UniqueCommandPool _commandPool;
+	vk::UniqueCommandPool _imguiCommandPool;
 	vk::UniqueDescriptorPool _staticDescriptorPool;
 	vk::UniqueDescriptorPool _textureDescriptorPool;
+	vk::UniqueDescriptorPool _imguiDescriptorPool;
+	vk::UniqueDescriptorPool _rtDescriptorPool;
 	TransientCommandBufferPool _transientCommandBufferPool;
 
 	std::vector<uint32_t> _swapchainSharedQueues;
@@ -104,7 +124,12 @@ protected:
 	LightingPass _lightingPass;
 	LightingPass::Resources _lightingPassResources;
 
-	DemoPass _demoPass;
+	/*DemoPass _demoPass;*/
+
+	RtPass _rtPass;
+
+	ImGuiPass _imguiPass;
+	std::vector<vk::UniqueCommandBuffer> _imguiCommandBuffers;
 
 	nvh::GltfScene _gltfScene;
 	SceneBuffers _sceneBuffers;
@@ -120,6 +145,10 @@ protected:
 
 	vk::UniqueFence _gBufferFence;
 
+	// ui
+	int _debugMode = GBUFFER_DEBUG_NONE;
+	bool _debugModeChanged = false;
+
 
 	nvmath::vec2f _lastMouse;
 	int _pressedMouseButton = -1;
@@ -129,20 +158,33 @@ protected:
 	void _onMouseButtonEvent(int button, int action, int mods);
 	void _onScrollEvent(double x, double y);
 
+	void initPhysicalInfo(PhysicalDeviceInfo& info, vk::PhysicalDevice physicalDevice);
 
-	void _createAndRecordSwapchainBuffers(Pass &pass) {
-		_swapchainBuffers = _swapchain.getBuffers(_device.get(), pass.getPass(), _commandPool.get());
+	void _createAndRecordSwapchainBuffers() {
+		_swapchainBuffers.clear();
+		_swapchainBuffers = _swapchain.getBuffers(_device.get(), _lightingPass.getPass(), _commandPool.get());
 
 		// record command buffers
-		for (const Swapchain::BufferSet &bufferSet : _swapchainBuffers) {
+		for (std::size_t i = 0; i < _swapchainBuffers.size(); ++i) {
+			const Swapchain::BufferSet &bufferSet = _swapchainBuffers[i];
+
 			vk::CommandBufferBeginInfo beginInfo;
 			bufferSet.commandBuffer->begin(beginInfo);
-			pass.issueCommands(bufferSet.commandBuffer.get(), bufferSet.framebuffer.get());
+
+			transitionImageLayout(
+				bufferSet.commandBuffer.get(), _swapchain.getImages()[i], _swapchain.getImageFormat(),
+				vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal
+			);
+
+			_lightingPass.issueCommands(bufferSet.commandBuffer.get(), bufferSet.framebuffer.get());
+
 			bufferSet.commandBuffer->end();
 		}
 	}
 
 	void _createAndRecordGBufferCommandBuffer() {
+		_gBufferCommandBuffer.reset();
+
 		vk::CommandBufferAllocateInfo bufferInfo;
 		bufferInfo
 			.setCommandPool(_commandPool.get())
@@ -156,12 +198,24 @@ protected:
 		_gBufferCommandBuffer->end();
 	}
 
+	void _createImguiCommandBuffers() {
+		_imguiCommandBuffers.clear();
+		vk::CommandBufferAllocateInfo cmdBufInfo;
+		cmdBufInfo
+			.setCommandPool(_imguiCommandPool.get())
+			.setCommandBufferCount(_swapchainBuffers.size())
+			.setLevel(vk::CommandBufferLevel::ePrimary);
+		_imguiCommandBuffers = _device->allocateCommandBuffersUnique(cmdBufInfo);
+	}
+
 
 	void _initializeLightingPassResources() {
+		_lightingPassResources = LightingPass::Resources();
+
 		_lightingPassResources.gBuffer = &_gBuffer;
 		_lightingPassResources.aabbTreeBuffers = &_aabbTreeBuffers;
 
-		_lightingPassResources.uniformBuffer = _allocator.createTypedBuffer<LightingPass::Uniforms>(
+		_lightingPassResources.uniformBuffer = _allocator.createTypedBuffer<shader::LightingPassUniforms>(
 			1, vk::BufferUsageFlagBits::eUniformBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU
 			);
 
@@ -174,5 +228,30 @@ protected:
 		_lightingPassResources.descriptorSet = std::move(_device->allocateDescriptorSetsUnique(lightingPassDescAlloc)[0]);
 
 		_lightingPass.initializeDescriptorSetFor(_lightingPassResources, _device.get());
+	}
+
+	void createAndRecordRTSwapchainBuffers(
+		const Swapchain& swapchain, vk::Device device, vk::CommandPool commandPool, RtPass& rtPass, vk::DispatchLoaderDynamic dld
+	) {
+		int imageSize = swapchain.getNumImages();
+		vk::CommandBufferAllocateInfo allocInfo;
+		allocInfo
+			.setCommandPool(commandPool)
+			.setLevel(vk::CommandBufferLevel::ePrimary)
+			.setCommandBufferCount(static_cast<uint32_t>(imageSize));
+		std::vector<vk::UniqueCommandBuffer> commandBuffers = device.allocateCommandBuffersUnique(allocInfo);
+		_swapchainBuffers.resize(imageSize);
+
+		for (int i = 0; i < imageSize; i++)
+		{
+			_swapchainBuffers[i].commandBuffer = std::move(commandBuffers[i]);
+			vk::CommandBufferBeginInfo beginInfo;
+			_swapchainBuffers[i].commandBuffer->begin(beginInfo);
+			rtPass.issueCommands(_swapchainBuffers[i].commandBuffer.get(),
+				_swapchainBuffers[i].framebuffer.get(),
+				swapchain.getImageExtent(),
+				_swapchain.getImageAtIndexs(i), dld);
+			_swapchainBuffers[i].commandBuffer->end();
+		}
 	}
 };

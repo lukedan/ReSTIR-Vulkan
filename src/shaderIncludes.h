@@ -20,6 +20,7 @@ namespace shader {
 #define mat4 ::nvmath::mat4
 
 #include "shaders/include/structs/aabbTree.glsl"
+#include "shaders/include/structs/lightingPassStructs.glsl"
 #include "shaders/include/structs/light.glsl"
 
 #ifdef SHADER_DEFINE_INT_UB

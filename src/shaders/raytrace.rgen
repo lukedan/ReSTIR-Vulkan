@@ -1,0 +1,124 @@
+#version 460 core
+#extension GL_EXT_ray_tracing : enable
+
+layout(location = 0) rayPayloadEXT bool isShadowed;
+
+layout(binding = 0, set = 0) uniform accelerationStructureEXT acc;
+
+layout(binding = 1, rgba32f) uniform image2D img;
+
+layout (binding = 2, set = 0) uniform sampler2D uniAlbedo;
+layout (binding = 3, set = 0) uniform sampler2D uniNormal;
+layout (binding = 4, set = 0) uniform sampler2D uniDepth;
+
+layout(binding = 5, set = 0) uniform CameraProperties
+{
+  mat4 viewInverse;
+  mat4 projInverse;
+  vec4 tempLightPoint;
+  float cameraNear;
+  float cameraFar;
+  float tanHalfFovY;
+  float aspectRatio;
+}
+cam;
+
+float sceneDepthToWorldDepth(float depth, float near, float far) {
+	return near * far / (far + depth * (near - far));
+}
+
+vec3 fragCoordDepthToViewPos(vec2 uv, float worldDepth, float tanHalfFovY, float aspectRatio) {
+	uv = uv * 2.0f - 1.0f; // [0, 1] to [-1, 1]
+	uv.x *= aspectRatio;
+	return vec3(uv * worldDepth * tanHalfFovY, worldDepth);
+}
+
+void main() {
+    /*const vec2 pixelCenter = vec2(gl_LaunchIDEXT.xy) + vec2(0.5);
+    const vec2 inUV        = pixelCenter / vec2(gl_LaunchSizeEXT.xy);
+    vec2       d           = inUV * 2.0 - 1.0;
+
+    vec3 albedo = texture(uniAlbedo, inUV).xyz;
+    vec3 normal = texture(uniNormal, inUV).xyz;
+    float depth = texture(uniDepth, inUV).x;
+
+    float worldDepth = sceneDepthToWorldDepth(depth, cam.cameraNear, cam.cameraFar);
+	vec3 viewPos = fragCoordDepthToViewPos(inUV, worldDepth, cam.tanHalfFovY, cam.aspectRatio);
+	vec3 worldPos = (cam.viewInverse * vec4(viewPos, 1.0f)).xyz;
+
+    vec4 origin    = vec4(worldPos, 1.0f);
+    vec4 direction = vec4(vec3(cam.tempLightPoint) - worldPos, 0.0f);
+
+    float lightDistance = length(direction);
+
+    direction = normalize(direction);
+
+    uint  rayFlags = gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsOpaqueEXT | gl_RayFlagsSkipClosestHitShaderEXT;
+    float tMin     = 0.001;
+    float tMax     = lightDistance;
+
+    isShadowed = true;
+
+    traceRayEXT(acc,     // acceleration structure
+                rayFlags,       // rayFlags
+                0xFF,           // cullMask
+                0,              // sbtRecordOffset
+                0,              // sbtRecordStride
+                1,              // missIndex
+                origin.xyz,     // ray origin
+                tMin,           // ray min range
+                direction.xyz,  // ray direction
+                tMax,           // ray max range
+                1               // payload (location = 0)
+    );
+
+    if(isShadowed)
+        imageStore(img, ivec2(gl_LaunchIDEXT.xy), 0.3f * payload);
+    else
+        imageStore(img, ivec2(gl_LaunchIDEXT.xy), payload);*/
+    
+    const vec2 pixelCenter = vec2(gl_LaunchIDEXT.xy) + vec2(0.5);
+    const vec2 inUV        = pixelCenter / vec2(gl_LaunchSizeEXT.xy);
+    vec2       d           = inUV * 2.0 - 1.0;
+
+    vec3 albedo = texture(uniAlbedo, inUV).xyz;
+    vec3 normal = texture(uniNormal, inUV).xyz;
+    float depth = texture(uniDepth, inUV).x;
+
+    float worldDepth = sceneDepthToWorldDepth(depth, cam.cameraNear, cam.cameraFar);
+	vec3 viewPos = fragCoordDepthToViewPos(inUV, worldDepth, cam.tanHalfFovY, cam.aspectRatio);
+	vec3 worldPos = (cam.viewInverse * vec4(viewPos, 1.0f)).xyz;
+
+    
+    vec4 direction = vec4(vec3(cam.tempLightPoint) - worldPos, 0.0f);
+    
+    float lightDistance = length(direction);
+
+    direction = normalize(direction);
+
+    vec4 origin    = vec4(worldPos, 1.0f) + 0.001 * direction;
+
+    uint  rayFlags = gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsOpaqueEXT | gl_RayFlagsSkipClosestHitShaderEXT;
+    float tMin     = 0.001;
+    float tMax     = lightDistance;
+
+  isShadowed = true;
+
+  traceRayEXT(acc,     // acceleration structure
+              rayFlags,       // rayFlags
+              0xFF,           // cullMask
+              0,              // sbtRecordOffset
+              0,              // sbtRecordStride
+              0,              // missIndex
+              origin.xyz,     // ray origin
+              tMin,           // ray min range
+              direction.xyz,  // ray direction
+              tMax,           // ray max range
+              0               // payload (location = 0)
+  );
+
+   if(isShadowed)
+        imageStore(img, ivec2(gl_LaunchIDEXT.xy), vec4(0.3f * normal, 1.0f));
+    else
+        imageStore(img, ivec2(gl_LaunchIDEXT.xy), vec4(normal, 1.0f));
+}

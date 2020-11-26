@@ -163,6 +163,7 @@ public:
 
 		std::vector<vk::DescriptorImageInfo> materialTextureInfo(buffers.getTextures().size());
 		vk::DescriptorImageInfo defaultNormalInfo = buffers.getDefaultNormal().getDescriptorInfo();
+		vk::DescriptorImageInfo defaultAlbedoInfo = buffers.getDefaultAlbedo().getDescriptorInfo();
 		for (std::size_t i = 0; i < buffers.getTextures().size(); ++i) {
 			materialTextureInfo[i] = buffers.getTextures()[i].getDescriptorInfo();
 		}
@@ -170,13 +171,11 @@ public:
 			vk::DescriptorSet set = sets.materialTexturesDescriptors[i].get();
 			const nvh::GltfMaterial &mat = scene.m_materials[i];
 
-			if (mat.pbrBaseColorTexture >= 0) {
-				bufferWrite.emplace_back()
-					.setDstSet(set)
-					.setDstBinding(0)
-					.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
-					.setImageInfo(materialTextureInfo[mat.pbrBaseColorTexture]);
-			}
+			bufferWrite.emplace_back()
+				.setDstSet(set)
+				.setDstBinding(0)
+				.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
+				.setImageInfo(mat.pbrBaseColorTexture >= 0 ? materialTextureInfo[mat.pbrBaseColorTexture] : defaultAlbedoInfo);
 			bufferWrite.emplace_back()
 				.setDstSet(set)
 				.setDstBinding(1)
@@ -319,7 +318,7 @@ protected:
 	}
 
 
-	void _initialize(vk::Device dev, SceneBuffers* i_scene_buffer) override {
+	void _initialize(vk::Device dev) override {
 		_vert = Shader::load(dev, "shaders/gBuffer.vert.spv", "main", vk::ShaderStageFlagBits::eVertex);
 		_frag = Shader::load(dev, "shaders/gBuffer.frag.spv", "main", vk::ShaderStageFlagBits::eFragment);
 
@@ -352,48 +351,6 @@ protected:
 			_textureDescriptorSetLayout.get()
 		};
 
-		vk::PipelineLayoutCreateInfo pipelineInfo;
-		pipelineInfo
-			.setSetLayouts(descriptorSetLayouts);
-		_pipelineLayout = dev.createPipelineLayoutUnique(pipelineInfo);
-
-		Pass::_initialize(dev);
-	}
-
-
-	void _initialize(vk::Device dev) override {
-		_vert = Shader::load(dev, "shaders/gBuffer.vert.spv", "main", vk::ShaderStageFlagBits::eVertex);
-		_frag = Shader::load(dev, "shaders/gBuffer.frag.spv", "main", vk::ShaderStageFlagBits::eFragment);
-
-		std::array<vk::DescriptorSetLayoutBinding, 1> uniformsDescriptorBindings{
-			vk::DescriptorSetLayoutBinding(0, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eVertex)
-		};
-		vk::DescriptorSetLayoutCreateInfo uniformsDescriptorSetInfo;
-		uniformsDescriptorSetInfo.setBindings(uniformsDescriptorBindings);
-		_uniformsDescriptorSetLayout = dev.createDescriptorSetLayoutUnique(uniformsDescriptorSetInfo);
-
-		std::array<vk::DescriptorSetLayoutBinding, 1> matricesDescriptorBindings{
-			vk::DescriptorSetLayoutBinding(0, vk::DescriptorType::eUniformBufferDynamic, 1, vk::ShaderStageFlagBits::eVertex)
-		};
-		vk::DescriptorSetLayoutCreateInfo matricesDescriptorSetInfo;
-		matricesDescriptorSetInfo.setBindings(matricesDescriptorBindings);
-		_matricesDescriptorSetLayout = dev.createDescriptorSetLayoutUnique(matricesDescriptorSetInfo);
-
-		std::array<vk::DescriptorSetLayoutBinding, 1> textureDescriptorBindings{
-			vk::DescriptorSetLayoutBinding(0, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment)
-		};
-		vk::DescriptorSetLayoutCreateInfo textureDescriptorSetInfo;
-		textureDescriptorSetInfo.setBindings(textureDescriptorBindings);
-		_textureDescriptorSetLayout = dev.createDescriptorSetLayoutUnique(textureDescriptorSetInfo);
-
-		// Scene textures:
-
-
-		std::array<vk::DescriptorSetLayout, 3> descriptorSetLayouts{
-			_uniformsDescriptorSetLayout.get(),
-			_matricesDescriptorSetLayout.get(),
-			_textureDescriptorSetLayout.get()
-		};
 		vk::PipelineLayoutCreateInfo pipelineInfo;
 		pipelineInfo
 			.setSetLayouts(descriptorSetLayouts);

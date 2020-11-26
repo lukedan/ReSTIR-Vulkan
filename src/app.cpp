@@ -1,6 +1,11 @@
 #include "app.h"
+#define SOFTWARE_RT
 
 #include <sstream>
+
+#include <imgui.h>
+#include <imgui_impl_glfw.h>
+#include <imgui_impl_vulkan.h>
 
 VKAPI_ATTR VkBool32 VKAPI_CALL _debugCallback(
 	VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
@@ -17,7 +22,40 @@ VKAPI_ATTR VkBool32 VKAPI_CALL _debugCallback(
 	return VK_FALSE;
 }
 
+void App::initPhysicalInfo(PhysicalDeviceInfo& info, vk::PhysicalDevice physicalDevice) {
+	vk::PhysicalDeviceFeatures2   features2;
+	vk::PhysicalDeviceProperties2 properties2;
+
+	info.memoryProperties = physicalDevice.getMemoryProperties();
+	info.queueProperties = physicalDevice.getQueueFamilyProperties();
+
+	features2.pNext = &info.features11;
+	info.features11.pNext = &info.features12;
+	info.features12.pNext = nullptr;
+
+	info.properties12.driverID = vk::DriverId::eNvidiaProprietary;
+	info.properties12.supportedDepthResolveModes = vk::ResolveModeFlagBits::eMax;
+	info.properties12.supportedStencilResolveModes = vk::ResolveModeFlagBits::eMax;
+
+	properties2.pNext = &info.properties11;
+	info.properties11.pNext = &info.properties12;
+	info.properties12.pNext = nullptr;
+
+	physicalDevice.getFeatures2(&features2);
+	physicalDevice.getProperties2(&properties2);
+
+	info.properties10 = properties2.properties;
+	info.features10 = features2.features;
+}
+
 App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
+	IMGUI_CHECKVERSION();
+	ImGui::CreateContext();
+	// the callbacks are installed here but they're overriden below, so we still need to manually call those
+	// functions in the handlers
+	ImGui_ImplGlfw_InitForVulkan(_window.getRawHandle(), true);
+	// imgui-vulkan is initialized later with the queue & render pass
+
 	_window.setMouseButtonHandler([this](int button, int action, int mods) {
 		_onMouseButtonEvent(button, action, mods);
 		});
@@ -36,16 +74,23 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 
 	std::vector<const char*> requiredExtensions = glfw::getRequiredInstanceExtensions();
 	requiredExtensions.emplace_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
-	requiredExtensions.push_back(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME);
+	requiredExtensions.emplace_back(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME);
 	std::vector<const char*> requiredDeviceExtensions{
-		VK_KHR_SWAPCHAIN_EXTENSION_NAME,
-		// VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME,
-		VK_KHR_MAINTENANCE3_EXTENSION_NAME,
 		VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME,
-		VK_KHR_SHADER_CLOCK_EXTENSION_NAME
+		VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+		VK_KHR_DEDICATED_ALLOCATION_EXTENSION_NAME,
+		VK_KHR_GET_MEMORY_REQUIREMENTS_2_EXTENSION_NAME,
+		VK_KHR_MAINTENANCE3_EXTENSION_NAME,
+		VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME
 	};
 	std::vector<const char*> requiredLayers{
-		"VK_LAYER_KHRONOS_validation"
+		"VK_LAYER_KHRONOS_validation",
+		"VK_LAYER_LUNARG_monitor"
+	};
+
+	vk::PhysicalDeviceRayTracingFeaturesKHR raytracingFeature;
+	std::vector<const char*> requiredDeviceRayTracingExtensions{
+		VK_KHR_RAY_TRACING_EXTENSION_NAME
 	};
 
 	{ // check extension & layer support
@@ -96,6 +141,8 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 		_messanger = _instance->createDebugUtilsMessengerEXTUnique(messangerInfo, nullptr, _dynamicDispatcher);
 	}
 
+	_dynamicDispatcher.init(_instance.get());
+	std::vector<void*> featureStructs; // VKRay
 	{ // pick physical device
 		auto physicalDevices = _instance->enumeratePhysicalDevices();
 		for (const vk::PhysicalDevice &dev : physicalDevices) {
@@ -115,6 +162,17 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 			if (!supportsExtensions) {
 				continue;
 			}
+
+			// #VKRay Extension Checking
+			bool supportsRTExtensions = checkSupport<&vk::ExtensionProperties::extensionName>(
+				requiredDeviceRayTracingExtensions, dev.enumerateDeviceExtensionProperties(),
+				"device extensions", "    "
+				);
+			if (supportsRTExtensions) {
+				featureStructs.push_back(&raytracingFeature);
+				requiredDeviceExtensions.push_back(requiredDeviceRayTracingExtensions[0]);
+			}
+
 			_physicalDevice = dev;
 		}
 	}
@@ -149,44 +207,98 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 		) - queueFamilyProps.begin());
 
 		std::vector<vk::DeviceQueueCreateInfo> queueInfos;
-		std::vector<float> queuePriorities{ 1.0f };
-		queueInfos.emplace_back()
-			.setQueueFamilyIndex(_graphicsQueueIndex)
-			.setQueueCount(1)
-			.setQueuePriorities(queuePriorities);
-		queueInfos.emplace_back()
-			.setQueueFamilyIndex(_presentQueueIndex)
-			.setQueueCount(1)
-			.setQueuePriorities(queuePriorities);
+		std::vector<float> queuePriorities;
 
-		// vk::PhysicalDeviceFeatures deviceFeatures;
-		vk::PhysicalDeviceFeatures2 deviceFeatures;
-		deviceFeatures.features
-			.setSamplerAnisotropy(true)
-			.setShaderInt64(true);
-		vk::PhysicalDeviceDescriptorIndexingFeatures idxFeature;
-		idxFeature
-			.setRuntimeDescriptorArray(VkBool32(true))
-			.setShaderSampledImageArrayNonUniformIndexing(VkBool32(true));
-		deviceFeatures.setPNext(&idxFeature);
+		// Setup Vulkan 1.2 Physical Device Info
+		PhysicalDeviceInfo physicalDeviceInfo;
+		initPhysicalInfo(physicalDeviceInfo, _physicalDevice);
+		vk::PhysicalDeviceFeatures2 features2;
+		features2.features = physicalDeviceInfo.features10;
+		features2.features
+            .setSamplerAnisotropy(true)
+            .setShaderInt64(true);
+		features2.pNext = &physicalDeviceInfo.features11;
+		physicalDeviceInfo.features11.pNext = &physicalDeviceInfo.features12;
+		physicalDeviceInfo.features12.pNext = nullptr;
+			
+
+		// Set Queue Info Based on Physical Device Info
+		bool queueFamilyGeneralPurpose = false;
+		for (auto& it : physicalDeviceInfo.queueProperties)
+		{
+			if ((it.queueFlags & (vk::QueueFlagBits::eGraphics | vk::QueueFlagBits::eCompute | vk::QueueFlagBits::eTransfer))
+				== (vk::QueueFlagBits::eGraphics | vk::QueueFlagBits::eCompute | vk::QueueFlagBits::eTransfer))
+			{
+				queueFamilyGeneralPurpose = true;
+			}
+
+			if (it.queueCount > queuePriorities.size())
+			{
+				queuePriorities.resize(it.queueCount, 1.0f);
+			}
+		}
+
+		for (int i = 0; i < physicalDeviceInfo.queueProperties.size(); i++)
+		{
+			vk::DeviceQueueCreateInfo queueInfo;
+			queueInfo.setQueueFamilyIndex(i);
+			queueInfo.queueCount = physicalDeviceInfo.queueProperties[i].queueCount;
+			queueInfo.pQueuePriorities = queuePriorities.data();
+
+			queueInfos.push_back(queueInfo);
+		}
 
 		vk::DeviceCreateInfo deviceInfo;
 		deviceInfo
 			.setQueueCreateInfos(queueInfos)
-			.setPEnabledFeatures(&deviceFeatures.features)
-			.setPEnabledExtensionNames(requiredDeviceExtensions)
-			.setPNext(&idxFeature);
+			.setPEnabledExtensionNames(requiredDeviceExtensions);
+
+		struct ExtensionHeader  // Helper struct to link extensions together
+		{
+			vk::StructureType sType;
+			void* pNext;
+		};
+
+		// Use the feature2 chain to append extensions
+		if (!featureStructs.empty())
+		{
+			for (size_t i = 0; i < featureStructs.size(); i++)
+			{
+				auto* header = reinterpret_cast<ExtensionHeader*>(featureStructs[i]);
+				header->pNext = i < featureStructs.size() - 1 ? featureStructs[i + 1] : nullptr;
+			}
+
+			ExtensionHeader* lastCoreFeature = (ExtensionHeader*)&features2;
+			while (lastCoreFeature->pNext != nullptr)
+			{
+				lastCoreFeature = (ExtensionHeader*)lastCoreFeature->pNext;
+			}
+			lastCoreFeature->pNext = featureStructs[0];
+		}
+
+		_physicalDevice.getFeatures2(&features2);
+		features2.features.robustBufferAccess = VK_FALSE;
+
+		deviceInfo.setPNext(&features2);
 		_device = _physicalDevice.createDeviceUnique(deviceInfo);
+		_dynamicDispatcher.init(_device.get());
 	}
 
 
 	_allocator = vma::Allocator::create(vulkanApiVersion, _instance.get(), _physicalDevice, _device.get());
 
-	{ // create command pool
+	// create command pools
+	{
 		vk::CommandPoolCreateInfo poolInfo;
 		poolInfo
 			.setQueueFamilyIndex(_graphicsQueueIndex);
 		_commandPool = _device->createCommandPoolUnique(poolInfo);
+
+		vk::CommandPoolCreateInfo imguiPoolInfo;
+		imguiPoolInfo
+			.setQueueFamilyIndex(_graphicsQueueIndex)
+			.setFlags(vk::CommandPoolCreateFlagBits::eResetCommandBuffer);
+		_imguiCommandPool = _device->createCommandPoolUnique(imguiPoolInfo);
 	}
 	_transientCommandBufferPool = TransientCommandBufferPool(_device.get(), _graphicsQueueIndex);
 
@@ -206,7 +318,7 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 			.setPreTransform(capabilities.currentTransform)
 			.setCompositeAlpha(vk::CompositeAlphaFlagBitsKHR::eOpaque)
 			.setClipped(true)
-			.setImageUsage(vk::ImageUsageFlagBits::eColorAttachment);
+			.setImageUsage(vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eTransferDst);
 
 		if (_graphicsQueueIndex == _presentQueueIndex) {
 			_swapchainInfo.setImageSharingMode(vk::SharingMode::eExclusive);
@@ -219,18 +331,20 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 		_swapchain = Swapchain::create(_device.get(), _swapchainInfo);
 	}
 
-	// loadScene("../../../scenes/cornellBox/cornellBox.gltf", _gltfScene);
+	loadScene("../../../scenes/cornellBox/cornellBox.gltf", _gltfScene);
 	// loadScene("../../../scenes/boxTextured/boxTextured.gltf", _gltfScene);
 	// loadScene("../../../scenes/duck/Duck.gltf", _gltfScene);
 	// loadScene("../../../scenes/fish/BarramundiFish.gltf", _gltfScene);
-	loadScene("../../../scenes/Sponza/glTF/Sponza.gltf", _gltfScene);
+	/*loadScene("../../../scenes/Sponza/glTF/Sponza.gltf", _gltfScene);*/
 
 	{ // create descriptor pools
-		std::array<vk::DescriptorPoolSize, 4> staticPoolSizes{
+		std::array<vk::DescriptorPoolSize, 6> staticPoolSizes{
 			vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, 3),
 			vk::DescriptorPoolSize(vk::DescriptorType::eStorageBuffer, 2),
-			vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, 2),
-			vk::DescriptorPoolSize(vk::DescriptorType::eUniformBufferDynamic, 1)
+			vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, 3),
+			vk::DescriptorPoolSize(vk::DescriptorType::eUniformBufferDynamic, 1),
+			vk::DescriptorPoolSize(vk::DescriptorType::eAccelerationStructureKHR, 1),
+			vk::DescriptorPoolSize(vk::DescriptorType::eStorageImage, 1)
 		};
 		vk::DescriptorPoolCreateInfo staticPoolInfo;
 		staticPoolInfo
@@ -240,7 +354,7 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 		_staticDescriptorPool = _device->createDescriptorPoolUnique(staticPoolInfo);
 
 		std::array<vk::DescriptorPoolSize, 1> texturePoolSizes{
-			vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, _gltfScene.m_textures.size())
+			vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, 3 * _gltfScene.m_materials.size())
 		};
 		vk::DescriptorPoolCreateInfo texturePoolInfo;
 		texturePoolInfo
@@ -248,11 +362,36 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 			.setPoolSizes(texturePoolSizes)
 			.setMaxSets(_gltfScene.m_materials.size());
 		_textureDescriptorPool = _device->createDescriptorPoolUnique(texturePoolInfo);
+
+		// initialize imgui descriptor pool
+		// this is taken from official imgui example at https://github.com/ocornut/imgui/blob/master/examples/example_glfw_vulkan/main.cpp
+		// which is wayyyy overkill, but fuck it - we're not low on memory here
+		constexpr uint32_t imguiDescriptorCount = 1000;
+		std::array<vk::DescriptorPoolSize, 11> imguiPoolSizes{
+			vk::DescriptorPoolSize(vk::DescriptorType::eSampler, imguiDescriptorCount),
+			vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, imguiDescriptorCount),
+			vk::DescriptorPoolSize(vk::DescriptorType::eSampledImage, imguiDescriptorCount),
+			vk::DescriptorPoolSize(vk::DescriptorType::eStorageImage, imguiDescriptorCount),
+			vk::DescriptorPoolSize(vk::DescriptorType::eUniformTexelBuffer, imguiDescriptorCount),
+			vk::DescriptorPoolSize(vk::DescriptorType::eStorageTexelBuffer, imguiDescriptorCount),
+			vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, imguiDescriptorCount),
+			vk::DescriptorPoolSize(vk::DescriptorType::eStorageBuffer, imguiDescriptorCount),
+			vk::DescriptorPoolSize(vk::DescriptorType::eUniformBufferDynamic, imguiDescriptorCount),
+			vk::DescriptorPoolSize(vk::DescriptorType::eStorageBufferDynamic, imguiDescriptorCount),
+			vk::DescriptorPoolSize(vk::DescriptorType::eInputAttachment, imguiDescriptorCount)
+		};
+		vk::DescriptorPoolCreateInfo imguiPoolInfo;
+		imguiPoolInfo
+			.setFlags(vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet)
+			.setMaxSets(imguiPoolSizes.size() * imguiDescriptorCount)
+			.setPoolSizes(imguiPoolSizes);
+		_imguiDescriptorPool = _device->createDescriptorPoolUnique(imguiPoolInfo);
 	}
 
 
 	_graphicsQueue = _device->getQueue(_graphicsQueueIndex, 0);
 	_presentQueue = _device->getQueue(_presentQueueIndex, 0);
+
 
 	_sceneBuffers = SceneBuffers::create(
 		_gltfScene,
@@ -264,9 +403,10 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 	std::cout << " done\n";
 	_aabbTreeBuffers = AabbTreeBuffers::create(_aabbTree, _allocator);
 
+
 	// create g buffer pass
 	GBuffer::Formats::initialize(_physicalDevice);
-	_gBufferPass = Pass::create<GBufferPass>(_device.get(), &_sceneBuffers, _swapchain.getImageExtent());
+	_gBufferPass = Pass::create<GBufferPass>(_device.get(), _swapchain.getImageExtent());
 
 	{
 		_gBufferResources.uniformBuffer = _allocator.createTypedBuffer<GBufferPass::Uniforms>(
@@ -296,18 +436,15 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 			.setSetLayouts(gBufferTexturesLayout);
 		_gBufferResources.materialTexturesDescriptors = _device->allocateDescriptorSetsUnique(gBufferSceneTexturesAlloc);
 	}
-
 	_gBufferPass.initializeResourcesFor(_gltfScene, _sceneBuffers, _device, _allocator, _gBufferResources);
+
 	_gBufferPass.descriptorSets = &_gBufferResources;
 	_gBufferPass.scene = &_gltfScene;
 	_gBufferPass.sceneBuffers = &_sceneBuffers;
 
 	_gBuffer = GBuffer::create(_allocator, _device.get(), _swapchain.getImageExtent(), _gBufferPass);
 
-	/*_demoPass = Pass::create<DemoPass>(_device.get(), _swapchain.getImageFormat());
-	_demoPass.imageExtent = _swapchain.getImageExtent();*/
-
-
+#if defined(SOFTWARE_RT)
 	// create lighting pass
 	_lightingPass = Pass::create<LightingPass>(_device.get(), _swapchain.getImageFormat());
 
@@ -315,10 +452,42 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 
 	_lightingPass.imageExtent = _swapchain.getImageExtent();
 	_lightingPass.descriptorSet = _lightingPassResources.descriptorSet.get();
+	_createAndRecordSwapchainBuffers();
+#else
+	// Rt pass initialization
+	_rtPass = RtPass::create(_device.get(), _dynamicDispatcher);
+	_rtPass._gBuffer = &_gBuffer;
+	_rtPass.createAccelerationStructure(_device.get(), _physicalDevice, _allocator, _dynamicDispatcher, 
+		                                _commandPool.get(), _graphicsQueue, _sceneBuffers, _gltfScene);
+	_rtPass.createOffscreenBuffer(_device.get(), _allocator, _swapchain.getImageExtent());
+	_rtPass.createDescriptorSetForRayTracing(_device.get(), _staticDescriptorPool.get(), _dynamicDispatcher);
+	_rtPass.createShaderBindingTable(_device.get(), _allocator, _physicalDevice, _dynamicDispatcher);
+	createAndRecordRTSwapchainBuffers(_swapchain, _device.get(), _commandPool.get(), _rtPass, _dynamicDispatcher);
+#endif
 
+	_imguiPass = Pass::create<ImGuiPass>(_device.get(), _swapchain.getImageFormat());
+	_imguiPass.imageExtent = _swapchain.getImageExtent();
+
+	// finish initializing imgui
+	{
+		ImGui_ImplVulkan_InitInfo imguiInit{};
+		imguiInit.Instance = _instance.get();
+		imguiInit.PhysicalDevice = _physicalDevice;
+		imguiInit.Device = _device.get();
+		imguiInit.QueueFamily = _graphicsQueueIndex;
+		imguiInit.Queue = _graphicsQueue;
+		imguiInit.DescriptorPool = _imguiDescriptorPool.get();
+		imguiInit.MinImageCount = _swapchainInfo.minImageCount;
+		imguiInit.ImageCount = _swapchain.getImages().size();
+		ImGui_ImplVulkan_Init(&imguiInit, _imguiPass.getPass());
+	}
+	{
+		TransientCommandBuffer cmdBuffer = _transientCommandBufferPool.begin(_graphicsQueue);
+		ImGui_ImplVulkan_CreateFontsTexture(cmdBuffer.get());
+	}
 
 	_createAndRecordGBufferCommandBuffer();
-	_createAndRecordSwapchainBuffers(_lightingPass);
+	_createImguiCommandBuffers();
 
 
 	// semaphores & fences
@@ -344,6 +513,29 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 			.setFlags(vk::FenceCreateFlagBits::eSignaled);
 		_gBufferFence = _device->createFenceUnique(fenceInfo);
 	}
+}
+
+App::~App() {
+	_device->waitIdle();
+
+	ImGui_ImplVulkan_Shutdown();
+	ImGui_ImplGlfw_Shutdown();
+	ImGui::DestroyContext();
+}
+
+void App::updateGui() {
+	ImGui_ImplVulkan_NewFrame();
+	ImGui_ImplGlfw_NewFrame();
+	ImGui::NewFrame();
+
+	const char *items[]{
+		"None",
+		"Albedo",
+		"Normal"
+	};
+	_debugModeChanged = ImGui::Combo("Debug Mode", &_debugMode, items, IM_ARRAYSIZE(items));
+
+	ImGui::Render();
 }
 
 void App::mainLoop() {
@@ -378,16 +570,15 @@ void App::mainLoop() {
 
 			/*_demoPass.imageExtent = _swapchain.getImageExtent();*/
 
-			_lightingPass.imageExtent = _swapchain.getImageExtent();
-			_lightingPassResources = LightingPass::Resources();
 			_initializeLightingPassResources();
+
+			_lightingPass.imageExtent = _swapchain.getImageExtent();
 			_lightingPass.descriptorSet = _lightingPassResources.descriptorSet.get();
 
-			_gBufferCommandBuffer.reset();
-			_createAndRecordGBufferCommandBuffer();
+			_imguiPass.imageExtent = _swapchain.getImageExtent();
 
-			_swapchainBuffers.clear();
-			_createAndRecordSwapchainBuffers(_lightingPass);
+			_createAndRecordGBufferCommandBuffer();
+			_createAndRecordSwapchainBuffers();
 
 			_camera.aspectRatio = _swapchain.getImageExtent().width / static_cast<float>(_swapchain.getImageExtent().height);
 			_camera.recomputeAttributes();
@@ -410,6 +601,7 @@ void App::mainLoop() {
 			_swapchain.getSwapchain().get(), std::numeric_limits<std::uint64_t>::max(),
 			_imageAvailableSemaphore[currentFrame].get(), nullptr
 		);
+
 		if (result == vk::Result::eErrorOutOfDateKHR || result == vk::Result::eSuboptimalKHR) {
 			needsResize = true;
 			continue;
@@ -422,15 +614,16 @@ void App::mainLoop() {
 		}
 
 
+		std::array<vk::Semaphore, 1> signalSemaphores{ _renderFinishedSemaphore[currentFrame].get() };
 		_device->resetFences({ _inFlightFences[currentFrame].get() });
 
-		std::array<vk::Semaphore, 1> signalSemaphores{ _renderFinishedSemaphore[currentFrame].get() };
+		
 
 		{
 			_device->waitForFences(_gBufferFence.get(), true, std::numeric_limits<uint64_t>::max());
 			_device->resetFences(_gBufferFence.get());
 
-			if (_cameraUpdated) {
+			if (_cameraUpdated || _debugModeChanged) {
 				_graphicsQueue.waitIdle();
 
 				auto *gBufferUniforms = _gBufferResources.uniformBuffer.mapAs<GBufferPass::Uniforms>();
@@ -438,13 +631,15 @@ void App::mainLoop() {
 				_gBufferResources.uniformBuffer.unmap();
 				_gBufferResources.uniformBuffer.flush();
 
-				auto *lightingPassUniforms = _lightingPassResources.uniformBuffer.mapAs<LightingPass::Uniforms>();
+#if defined(SOFTWARE_RT)
+				auto *lightingPassUniforms = _lightingPassResources.uniformBuffer.mapAs<shader::LightingPassUniforms>();
 				lightingPassUniforms->inverseViewMatrix = _camera.inverseViewMatrix;
 				lightingPassUniforms->tempLightPoint = _camera.lookAt;
 				lightingPassUniforms->cameraNear = _camera.zNear;
 				lightingPassUniforms->cameraFar = _camera.zFar;
 				lightingPassUniforms->tanHalfFovY = std::tan(0.5f * _camera.fovYRadians);
 				lightingPassUniforms->aspectRatio = _camera.aspectRatio;
+				lightingPassUniforms->debugMode = _debugMode;
 				lightingPassUniforms->lightNum = _lightingPass.lightNum;
 				for (int i = 0; i < _lightingPass.lightNum; ++i) {
 					lightingPassUniforms->lightsArray[i].color = _lightingPass.lightsArray[i].color;
@@ -454,8 +649,11 @@ void App::mainLoop() {
 				lightingPassUniforms->sample_num = 5;
 				_lightingPassResources.uniformBuffer.unmap();
 				_lightingPassResources.uniformBuffer.flush();
-
+#else
+				_rtPass.updateCameraUniform(_camera);
+#endif
 				_cameraUpdated = false;
+				_debugModeChanged = false;
 			}
 
 			std::array<vk::CommandBuffer, 1> gBufferCommandBuffers{ _gBufferCommandBuffer.get() };
@@ -465,10 +663,22 @@ void App::mainLoop() {
 			_graphicsQueue.submit(submitInfo, _gBufferFence.get());
 		}
 
+		updateGui();
+		{ // re-record imgui command buffer
+			vk::CommandBuffer buffer = _imguiCommandBuffers[imageIndex].get();
+			vk::CommandBufferBeginInfo beginInfo;
+			buffer.begin(beginInfo);
+			_imguiPass.issueCommands(buffer, _swapchainBuffers[imageIndex].framebuffer.get());
+			buffer.end();
+		}
+
 		{
-			std::vector<vk::Semaphore> waitSemaphores{ _imageAvailableSemaphore[currentFrame].get() };
-			std::vector<vk::CommandBuffer> cmdBuffers{ _swapchainBuffers[imageIndex].commandBuffer.get() };
-			std::vector<vk::PipelineStageFlags> waitStages{ vk::PipelineStageFlagBits::eColorAttachmentOutput };
+			std::array<vk::Semaphore, 1> waitSemaphores{ _imageAvailableSemaphore[currentFrame].get() };
+			std::array<vk::PipelineStageFlags, 1> waitStages{ vk::PipelineStageFlagBits::eColorAttachmentOutput };
+			std::array<vk::CommandBuffer, 2> cmdBuffers{
+				_swapchainBuffers[imageIndex].commandBuffer.get(),
+				_imguiCommandBuffers[imageIndex].get()
+			};
 			vk::SubmitInfo submitInfo;
 			submitInfo
 				.setWaitSemaphores(waitSemaphores)
@@ -497,6 +707,11 @@ void App::mainLoop() {
 }
 
 void App::_onMouseButtonEvent(int button, int action, int mods) {
+	if (ImGui::GetIO().WantCaptureMouse) {
+		ImGui_ImplGlfw_MouseButtonCallback(_window.getRawHandle(), button, action, mods);
+		return;
+	}
+
 	if (action == GLFW_PRESS) {
 		if (_pressedMouseButton == -1) {
 			_pressedMouseButton = button;
@@ -558,6 +773,11 @@ void App::_onMouseMoveEvent(double x, double y) {
 }
 
 void App::_onScrollEvent(double x, double y) {
+	if (ImGui::GetIO().WantCaptureMouse) {
+		ImGui_ImplGlfw_ScrollCallback(_window.getRawHandle(), x, y);
+		return;
+	}
+
 	_camera.position += _camera.unitForward * static_cast<float>(y) * 1.0f;
 	_camera.recomputeAttributes();
 	_cameraUpdated = true;

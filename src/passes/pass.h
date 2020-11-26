@@ -111,16 +111,6 @@ public:
 		static_cast<Pass*>(&pass)->_initialize(dev);
 		return std::move(pass);
 	}
-
-	template <typename PassT, typename ...Args> [[nodiscard]] inline static PassT create(
-		vk::Device dev, SceneBuffers* i_scene_buffer, Args &&...args
-	) {
-		static_assert(std::is_base_of_v<Pass, PassT>, "Passes must derive from class Pass");
-		PassT pass(std::forward<Args>(args)...);
-		static_cast<Pass*>(&pass)->_initialize(dev, i_scene_buffer);
-		return std::move(pass);
-	}
-
 protected:
 	Pass() = default;
 

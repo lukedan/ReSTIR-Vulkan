@@ -2,22 +2,13 @@
 
 #include "pass.h"
 #include "gBufferPass.h"
+#include "shaderIncludes.h"
 #include "../aabbTreeBuilder.h"
+#include "../shaders/include/gBufferDebugConstants.glsl"
 
 class LightingPass : public Pass {
 	friend Pass;
 public:
-	struct Uniforms {
-		nvmath::mat4 inverseViewMatrix;
-		nvmath::vec4 tempLightPoint;
-		float cameraNear;
-		float cameraFar;
-		float tanHalfFovY;
-		float aspectRatio;
-		shader::pointLight lightsArray[10];
-		int lightNum;
-		int sample_num;
-	};
 	struct Resources {
 		vma::UniqueBuffer uniformBuffer;
 		GBuffer *gBuffer = nullptr;
@@ -82,7 +73,7 @@ public:
 		std::array<vk::DescriptorBufferInfo, 3> bufferInfo{
 			vk::DescriptorBufferInfo(rsrc.aabbTreeBuffers->nodeBuffer.get(), 0, rsrc.aabbTreeBuffers->nodeBufferSize),
 			vk::DescriptorBufferInfo(rsrc.aabbTreeBuffers->triangleBuffer.get(), 0, rsrc.aabbTreeBuffers->triangleBufferSize),
-			vk::DescriptorBufferInfo(rsrc.uniformBuffer.get(), 0, sizeof(Uniforms))
+			vk::DescriptorBufferInfo(rsrc.uniformBuffer.get(), 0, sizeof(shader::LightingPassUniforms))
 		};
 		descriptorWrite[3]
 			.setDstSet(rsrc.descriptorSet.get())
@@ -121,29 +112,28 @@ protected:
 	vk::UniqueDescriptorSetLayout _descriptorSetLayout;
 
 	vk::UniqueRenderPass _createPass(vk::Device device) override {
-		std::vector<vk::AttachmentDescription> colorAttachments;
-		colorAttachments.emplace_back()
+		std::array<vk::AttachmentDescription, 1> colorAttachments;
+		colorAttachments[0]
 			.setFormat(_swapchainFormat)
 			.setSamples(vk::SampleCountFlagBits::e1)
 			.setLoadOp(vk::AttachmentLoadOp::eClear)
 			.setStoreOp(vk::AttachmentStoreOp::eStore)
 			.setStencilLoadOp(vk::AttachmentLoadOp::eDontCare)
 			.setStencilStoreOp(vk::AttachmentStoreOp::eDontCare)
-			.setInitialLayout(vk::ImageLayout::eUndefined)
-			.setFinalLayout(vk::ImageLayout::ePresentSrcKHR);
+			.setInitialLayout(vk::ImageLayout::eColorAttachmentOptimal)
+			.setFinalLayout(vk::ImageLayout::eColorAttachmentOptimal);
 
-		std::vector<vk::AttachmentReference> colorAttachmentReferences;
-		colorAttachmentReferences.emplace_back()
-			.setAttachment(0)
-			.setLayout(vk::ImageLayout::eColorAttachmentOptimal);
+		std::array<vk::AttachmentReference, 1> colorAttachmentReferences{
+			vk::AttachmentReference(0, vk::ImageLayout::eColorAttachmentOptimal)
+		};
 
-		std::vector<vk::SubpassDescription> subpasses;
-		subpasses.emplace_back()
+		std::array<vk::SubpassDescription, 1> subpasses;
+		subpasses[0]
 			.setPipelineBindPoint(vk::PipelineBindPoint::eGraphics)
 			.setColorAttachments(colorAttachmentReferences);
 
-		std::vector<vk::SubpassDependency> dependencies;
-		dependencies.emplace_back()
+		std::array<vk::SubpassDependency, 1> dependencies;
+		dependencies[0]
 			.setSrcSubpass(VK_SUBPASS_EXTERNAL)
 			.setDstSubpass(0)
 			.setSrcStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eLateFragmentTests)
@@ -159,7 +149,7 @@ protected:
 
 		return device.createRenderPassUnique(renderPassInfo);
 	}
-	std::vector<PipelineCreationInfo> _getPipelineCreationInfo() {
+	std::vector<PipelineCreationInfo> _getPipelineCreationInfo() override {
 		std::vector<PipelineCreationInfo> result;
 		PipelineCreationInfo &info = result.emplace_back();
 		info.inputAssemblyState
@@ -198,10 +188,10 @@ protected:
 			.setBindings(descriptorBindings);
 		_descriptorSetLayout = dev.createDescriptorSetLayoutUnique(descriptorInfo);
 
+
 		std::array<vk::DescriptorSetLayout, 1> descriptorLayouts{ _descriptorSetLayout.get() };
 		vk::PipelineLayoutCreateInfo pipelineInfo;
-		pipelineInfo
-			.setSetLayouts(descriptorLayouts);
+		pipelineInfo.setSetLayouts(descriptorLayouts);
 		_pipelineLayout = dev.createPipelineLayoutUnique(pipelineInfo);
 
 		// Init lights info

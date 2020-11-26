@@ -79,6 +79,9 @@ void transitionImageLayout(
 	case vk::ImageLayout::ePreinitialized:
 		sourceAccessMask = vk::AccessFlagBits::eHostWrite;
 		break;
+	case vk::ImageLayout::eColorAttachmentOptimal:
+		sourceAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
+		break;
 	case vk::ImageLayout::eGeneral:
 		[[fallthrough]];
 	case vk::ImageLayout::eUndefined:
@@ -100,6 +103,9 @@ void transitionImageLayout(
 		[[fallthrough]];
 	case vk::ImageLayout::eTransferDstOptimal:
 		sourceStage = vk::PipelineStageFlagBits::eTransfer;
+		break;
+	case vk::ImageLayout::eColorAttachmentOptimal:
+		sourceStage = vk::PipelineStageFlagBits::eColorAttachmentOutput;
 		break;
 	case vk::ImageLayout::eUndefined:
 		sourceStage = vk::PipelineStageFlagBits::eTopOfPipe;
@@ -189,15 +195,15 @@ void transitionImageLayout(
 }
 
 vma::UniqueImage loadTexture(
-	const tinygltf::Image &imageBinary, vk::Format format, uint32_t mipLevels,
+	const unsigned char *data, uint32_t width, uint32_t height, vk::Format format, uint32_t mipLevels,
 	vma::Allocator &allocator, TransientCommandBufferPool &cmdBufferPool, vk::Queue queue
 ) {
 	vma::UniqueBuffer buffer = allocator.createTypedBuffer<unsigned char>(
-		imageBinary.image.size(), vk::BufferUsageFlagBits::eTransferSrc, VMA_MEMORY_USAGE_CPU_TO_GPU
+		width * height * 4, vk::BufferUsageFlagBits::eTransferSrc, VMA_MEMORY_USAGE_CPU_TO_GPU
 		);
 
 	void *bufferData = buffer.map();
-	std::memcpy(bufferData, imageBinary.image.data(), sizeof(unsigned char) * imageBinary.image.size());
+	std::memcpy(bufferData, data, sizeof(unsigned char) * width * height * 4);
 	buffer.unmap();
 	buffer.flush();
 
@@ -206,7 +212,7 @@ vma::UniqueImage loadTexture(
 		usageFlags |= vk::ImageUsageFlagBits::eTransferSrc;
 	}
 	vma::UniqueImage image = allocator.createImage2D(
-		vk::Extent2D(imageBinary.width, imageBinary.height),
+		vk::Extent2D(width, height),
 		format, usageFlags,
 		VMA_MEMORY_USAGE_GPU_ONLY,
 		vk::ImageTiling::eOptimal,
@@ -225,13 +231,13 @@ vma::UniqueImage loadTexture(
 		// copy buffer to image
 		vk::BufferImageCopy bufImgCopy;
 		bufImgCopy
-			.setImageExtent(vk::Extent3D(imageBinary.width, imageBinary.height, 1))
+			.setImageExtent(vk::Extent3D(width, height, 1))
 			.setImageSubresource(vk::ImageSubresourceLayers(vk::ImageAspectFlagBits::eColor, 0, 0, 1));
 		cmdBuffer->copyBufferToImage(buffer.get(), image.get(), vk::ImageLayout::eTransferDstOptimal, bufImgCopy);
 
 		// generate mipmaps
 		if (mipLevels > 1) {
-			uint32_t mipWidth = imageBinary.width, mipHeight = imageBinary.height;
+			uint32_t mipWidth = width, mipHeight = height;
 			for (uint32_t i = 1; i < mipLevels; ++i) {
 				uint32_t nextWidth = std::max<uint32_t>(mipWidth / 2, 1), nextHeight = std::max<uint32_t>(mipHeight / 2, 1);
 
@@ -273,6 +279,16 @@ vma::UniqueImage loadTexture(
 	}
 
 	return image;
+}
+
+vma::UniqueImage loadTexture(
+	const tinygltf::Image &imageBinary, vk::Format format, uint32_t mipLevels,
+	vma::Allocator &allocator, TransientCommandBufferPool &cmdBufferPool, vk::Queue queue
+) {
+	return loadTexture(
+		imageBinary.image.data(), imageBinary.width, imageBinary.height, format, mipLevels,
+		allocator, cmdBufferPool, queue
+	);
 }
 
 
