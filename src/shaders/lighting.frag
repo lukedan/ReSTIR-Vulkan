@@ -57,14 +57,18 @@ void main() {
 		float roughness = materialProps.r;
 		float metallic = materialProps.g;
 
-		vec3 wi = normalize(uniforms.tempLightPoint.xyz - worldPos);
+		vec3 wi = uniforms.tempLightPoint.xyz - worldPos;
+		float sqrDist = dot(wi, wi);
+		wi /= sqrt(sqrDist);
 		vec3 wo = normalize(vec3(uniforms.cameraPos) - worldPos);
 
 		float cosIn = dot(normal, wi);
 		float cosOut = dot(normal, wo);
-		float cosInHalf = dot(wi, normalize(wi + wo));
+		vec3 halfVec = normalize(wi + wo);
+		float cosHalf = dot(normal, halfVec);
+		float cosInHalf = dot(wi, halfVec);
 
-		outColor = vec4(disneyBrdfColor(cosIn, cosOut, cosInHalf, albedo, roughness, metallic), 1.0) * abs(cosIn) / pow(roughness, 2);
+		outColor = vec4(disneyBrdfColor(cosIn, cosOut, cosHalf, cosInHalf, albedo, roughness, metallic), 1.0) * abs(cosIn) / sqrDist;
 	}
 
 	vec3 rayDir = uniforms.tempLightPoint.xyz - worldPos;

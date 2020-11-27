@@ -96,7 +96,9 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 
 	vk::PhysicalDeviceRayTracingFeaturesKHR raytracingFeature;
 	std::vector<const char*> requiredDeviceRayTracingExtensions{
+#ifndef RENDERDOC_CAPTURE
 		VK_KHR_RAY_TRACING_EXTENSION_NAME
+#endif
 	};
 
 	{ // check extension & layer support

@@ -32,7 +32,7 @@ vec3 disneyBrdfDiffuse(float cosIn, float cosOut, float cosInHalf, vec3 albedo, 
 	return albedo * fresnelDiffuse * (1.0 - metallic) / M_PI;
 }
 
-vec3 disneyBrdfSpecular(float cosIn, float cosOut, float cosInHalf, vec3 albedo, float roughness, float metallic)
+vec3 disneyBrdfSpecular(float cosIn, float cosOut, float cosHalf, float cosInHalf, vec3 albedo, float roughness, float metallic)
 {
 	// Fresnel specular (Fs)
 	float albedoLum = 0.2126 * albedo.r + 0.7152 * albedo.g + 0.0722 * albedo.b;
@@ -41,11 +41,11 @@ vec3 disneyBrdfSpecular(float cosIn, float cosOut, float cosInHalf, vec3 albedo,
 	float specularTint = 0.0f;
 	vec3 specularColor = mix(0.08 * specular * mix(vec3(1.0), colorTint, specularTint), albedo, metallic);
 	float fresnelInHalf = schlickFresnel(cosInHalf);
-	vec3 Fs = mix(vec3(1.0), specularColor, fresnelInHalf);
+	vec3 Fs = mix(specularColor, vec3(1.0), fresnelInHalf);
 	
 	//  Microfacet normal distribution (Ds)
 	float a = max(0.001, pow(roughness, 2.0));
-	float Ds = GTR2(cosInHalf, a);
+	float Ds = GTR2(cosHalf, a);
 
 	// Geometry distribution (Gs)
 	float Gs = smithG_GGX(cosIn, a) * smithG_GGX(cosOut, a);
@@ -53,10 +53,13 @@ vec3 disneyBrdfSpecular(float cosIn, float cosOut, float cosInHalf, vec3 albedo,
 	return Gs * Fs * Ds;
 }
 
-vec3 disneyBrdfColor(float cosIn, float cosOut, float cosInHalf, vec3 albedo, float roughness, float metallic) 
+vec3 disneyBrdfColor(float cosIn, float cosOut, float cosHalf, float cosInHalf, vec3 albedo, float roughness, float metallic) 
 {
+	if (cosIn < 0.0f) {
+		return vec3(0.0f);
+	}
 	vec3 diffuse = disneyBrdfDiffuse(cosIn, cosOut, cosInHalf, albedo, roughness, metallic);
-	vec3 specular = disneyBrdfSpecular(cosIn, cosOut, cosInHalf, albedo, roughness, metallic);
+	vec3 specular = disneyBrdfSpecular(cosIn, cosOut, cosHalf, cosInHalf, albedo, roughness, metallic);
 
-	return diffuse;
+	return diffuse + specular;
 }
