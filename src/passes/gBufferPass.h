@@ -325,7 +325,7 @@ protected:
 		info.vertexInputBindingStorage.emplace_back(0, sizeof(Vertex), vk::VertexInputRate::eVertex);
 		info.vertexInputAttributeStorage.emplace_back(0, 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, position));
 		info.vertexInputAttributeStorage.emplace_back(1, 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, normal));
-		info.vertexInputAttributeStorage.emplace_back(2, 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, tangent));
+		info.vertexInputAttributeStorage.emplace_back(2, 0, vk::Format::eR32G32B32A32Sfloat, offsetof(Vertex, tangent));
 		info.vertexInputAttributeStorage.emplace_back(3, 0, vk::Format::eR32G32B32A32Sfloat, offsetof(Vertex, color));
 		info.vertexInputAttributeStorage.emplace_back(4, 0, vk::Format::eR32G32Sfloat, offsetof(Vertex, uv));
 		info.vertexInputState
