@@ -1,5 +1,7 @@
 #include "app.h"
+
 #define SOFTWARE_RT
+/*#define RENDERDOC_CAPTURE*/
 
 #include <sstream>
 
@@ -81,14 +83,15 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 		VK_KHR_DEDICATED_ALLOCATION_EXTENSION_NAME,
 		VK_KHR_GET_MEMORY_REQUIREMENTS_2_EXTENSION_NAME,
 		VK_KHR_MAINTENANCE3_EXTENSION_NAME,
+#ifndef RENDERDOC_CAPTURE
 		VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME,
 		VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
+#endif
 		VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
 		VK_KHR_SHADER_CLOCK_EXTENSION_NAME
 	};
 	std::vector<const char*> requiredLayers{
-		"VK_LAYER_KHRONOS_validation",
-		"VK_LAYER_LUNARG_monitor"
+		"VK_LAYER_KHRONOS_validation"
 	};
 
 	vk::PhysicalDeviceRayTracingFeaturesKHR raytracingFeature;
@@ -172,8 +175,11 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 				"device extensions", "    "
 				);
 			if (supportsRTExtensions) {
-				featureStructs.push_back(&raytracingFeature);
-				requiredDeviceExtensions.push_back(requiredDeviceRayTracingExtensions[0]);
+				featureStructs.emplace_back(&raytracingFeature);
+				requiredDeviceExtensions.insert(
+					requiredDeviceExtensions.end(),
+					requiredDeviceRayTracingExtensions.begin(), requiredDeviceRayTracingExtensions.end()
+				);
 			}
 
 			_physicalDevice = dev;
@@ -347,7 +353,7 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 			vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, 3),
 			vk::DescriptorPoolSize(vk::DescriptorType::eStorageBuffer, 4),
 			vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, 3),
-			vk::DescriptorPoolSize(vk::DescriptorType::eUniformBufferDynamic, 1),
+			vk::DescriptorPoolSize(vk::DescriptorType::eUniformBufferDynamic, 2),
 			vk::DescriptorPoolSize(vk::DescriptorType::eAccelerationStructureKHR, 1),
 			vk::DescriptorPoolSize(vk::DescriptorType::eStorageImage, 1)
 		};
@@ -432,6 +438,13 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 			.setSetLayouts(gBufferMatricesLayout);
 		_gBufferResources.matrixDescriptor = std::move(_device->allocateDescriptorSetsUnique(gBufferMatricesAlloc)[0]);
 
+		std::array<vk::DescriptorSetLayout, 1> gBufferMaterialsLayout{ _gBufferPass.getMaterialDescriptorSetLayout() };
+		vk::DescriptorSetAllocateInfo gBufferMaterialsAlloc;
+		gBufferMaterialsAlloc
+			.setDescriptorPool(_staticDescriptorPool.get())
+			.setSetLayouts(gBufferMaterialsLayout);
+		_gBufferResources.materialDescriptor = std::move(_device->allocateDescriptorSetsUnique(gBufferMaterialsAlloc)[0]);
+
 		// Scene textures
 		std::vector<vk::DescriptorSetLayout> gBufferTexturesLayout(_gltfScene.m_materials.size());
 		std::fill(gBufferTexturesLayout.begin(), gBufferTexturesLayout.end(), _gBufferPass.getTexturesDescriptorSetLayout());
@@ -441,7 +454,7 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 			.setSetLayouts(gBufferTexturesLayout);
 		_gBufferResources.materialTexturesDescriptors = _device->allocateDescriptorSetsUnique(gBufferSceneTexturesAlloc);
 	}
-	_gBufferPass.initializeResourcesFor(_gltfScene, _sceneBuffers, _device, _allocator, _gBufferResources);
+	_gBufferPass.initializeResourcesFor(_gltfScene, _sceneBuffers, _device, _gBufferResources);
 
 	_gBufferPass.descriptorSets = &_gBufferResources;
 	_gBufferPass.scene = &_gltfScene;
@@ -538,7 +551,9 @@ void App::updateGui() {
 	const char *items[]{
 		"None",
 		"Albedo",
-		"Normal"
+		"Normal",
+		"MaterialProperties",
+		"DisneyBRDF"
 	};
 	_debugModeChanged = ImGui::Combo("Debug Mode", &_debugMode, items, IM_ARRAYSIZE(items));
 
@@ -621,10 +636,7 @@ void App::mainLoop() {
 		}
 
 
-		std::array<vk::Semaphore, 1> signalSemaphores{ _renderFinishedSemaphore[currentFrame].get() };
 		_device->resetFences({ _inFlightFences[currentFrame].get() });
-
-		
 
 		{
 			_device->waitForFences(_gBufferFence.get(), true, std::numeric_limits<uint64_t>::max());
@@ -642,6 +654,7 @@ void App::mainLoop() {
 				auto *lightingPassUniforms = _lightingPassResources.uniformBuffer.mapAs<shader::LightingPassUniforms>();
 				lightingPassUniforms->inverseViewMatrix = _camera.inverseViewMatrix;
 				lightingPassUniforms->tempLightPoint = _camera.lookAt;
+				lightingPassUniforms->cameraPos = _camera.position;
 				lightingPassUniforms->cameraNear = _camera.zNear;
 				lightingPassUniforms->cameraFar = _camera.zFar;
 				lightingPassUniforms->tanHalfFovY = std::tan(0.5f * _camera.fovYRadians);
@@ -676,10 +689,13 @@ void App::mainLoop() {
 			vk::CommandBuffer buffer = _imguiCommandBuffers[imageIndex].get();
 			vk::CommandBufferBeginInfo beginInfo;
 			buffer.begin(beginInfo);
+#if defined(SOFTWARE_RT)
 			_imguiPass.issueCommands(buffer, _swapchainBuffers[imageIndex].framebuffer.get());
+#endif
 			buffer.end();
 		}
 
+		std::array<vk::Semaphore, 1> signalSemaphores{ _renderFinishedSemaphore[currentFrame].get() };
 		{
 			std::array<vk::Semaphore, 1> waitSemaphores{ _imageAvailableSemaphore[currentFrame].get() };
 			std::array<vk::PipelineStageFlags, 1> waitStages{ vk::PipelineStageFlagBits::eColorAttachmentOutput };
