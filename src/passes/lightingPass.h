@@ -54,7 +54,7 @@ public:
 	}
 
 	void initializeDescriptorSetFor(Resources &rsrc, vk::Device device) {
-		std::array<vk::WriteDescriptorSet, 7> descriptorWrite;
+		std::array<vk::WriteDescriptorSet, 8> descriptorWrite;
 
 		std::array<vk::DescriptorImageInfo, 3> imageInfo{
 			vk::DescriptorImageInfo(_sampler.get(), rsrc.gBuffer->getAlbedoView(), vk::ImageLayout::eShaderReadOnlyOptimal),
@@ -70,11 +70,12 @@ public:
 				.setDescriptorCount(1);
 		}
 
-		std::array<vk::DescriptorBufferInfo, 4> bufferInfo{
+		std::array<vk::DescriptorBufferInfo, 5> bufferInfo{
 			vk::DescriptorBufferInfo(rsrc.aabbTreeBuffers->nodeBuffer.get(), 0, rsrc.aabbTreeBuffers->nodeBufferSize),
 			vk::DescriptorBufferInfo(rsrc.aabbTreeBuffers->triangleBuffer.get(), 0, rsrc.aabbTreeBuffers->triangleBufferSize),
 			vk::DescriptorBufferInfo(rsrc.uniformBuffer.get(), 0, sizeof(shader::LightingPassUniforms)),
-			vk::DescriptorBufferInfo(sceneBuffers->getPtLights(), 0, sceneBuffers->getPtLightsBufferSize())
+			vk::DescriptorBufferInfo(sceneBuffers->getPtLights(), 0, sceneBuffers->getPtLightsBufferSize()),
+			vk::DescriptorBufferInfo(sceneBuffers->getTriLights(), 0, sceneBuffers->getTriLightsBufferSize())
 		};
 		descriptorWrite[3]
 			.setDstSet(rsrc.descriptorSet.get())
@@ -100,6 +101,12 @@ public:
 			.setDescriptorType(vk::DescriptorType::eStorageBuffer)
 			.setDescriptorCount(1)
 			.setPBufferInfo(&bufferInfo[3]);
+		descriptorWrite[7]
+			.setDstSet(rsrc.descriptorSet.get())
+			.setDstBinding(7)
+			.setDescriptorType(vk::DescriptorType::eStorageBuffer)
+			.setDescriptorCount(1)
+			.setPBufferInfo(&bufferInfo[4]);
 
 		device.updateDescriptorSets(descriptorWrite, {});
 	}
@@ -182,14 +189,15 @@ protected:
 
 		_sampler = createSampler(dev, vk::Filter::eNearest, vk::Filter::eNearest, vk::SamplerMipmapMode::eNearest);
 
-		std::array<vk::DescriptorSetLayoutBinding, 7> descriptorBindings{
+		std::array<vk::DescriptorSetLayoutBinding, 8> descriptorBindings{
 			vk::DescriptorSetLayoutBinding(0, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment),
 			vk::DescriptorSetLayoutBinding(1, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment),
 			vk::DescriptorSetLayoutBinding(2, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment),
 			vk::DescriptorSetLayoutBinding(3, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eFragment),
 			vk::DescriptorSetLayoutBinding(4, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eFragment),
 			vk::DescriptorSetLayoutBinding(5, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eFragment),
-			vk::DescriptorSetLayoutBinding(6, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eFragment)
+			vk::DescriptorSetLayoutBinding(6, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eFragment),
+			vk::DescriptorSetLayoutBinding(7, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eFragment)
 		};
 		vk::DescriptorSetLayoutCreateInfo descriptorInfo;
 		descriptorInfo

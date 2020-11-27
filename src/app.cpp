@@ -336,8 +336,8 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 
 	/** NOTE: A scene without emissive materials will be given 8 point lights and scenes with lightning material won't have point lights **/
 	/** cornellBox has emissive materials and others don't have **/
-	// loadScene("../../../scenes/cornellBox/cornellBox.gltf", _gltfScene);
-	loadScene("../../../scenes/boxTextured/boxTextured.gltf", _gltfScene);
+	loadScene("../../../scenes/cornellBox/cornellBox.gltf", _gltfScene);
+	// loadScene("../../../scenes/boxTextured/boxTextured.gltf", _gltfScene);
 	// loadScene("../../../scenes/duck/Duck.gltf", _gltfScene);
 	// loadScene("../../../scenes/fish/BarramundiFish.gltf", _gltfScene);
 	// loadScene("../../../scenes/Sponza/glTF/Sponza.gltf", _gltfScene);
@@ -345,7 +345,7 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 	{ // create descriptor pools
 		std::array<vk::DescriptorPoolSize, 6> staticPoolSizes{
 			vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, 3),
-			vk::DescriptorPoolSize(vk::DescriptorType::eStorageBuffer, 3),
+			vk::DescriptorPoolSize(vk::DescriptorType::eStorageBuffer, 4),
 			vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, 3),
 			vk::DescriptorPoolSize(vk::DescriptorType::eUniformBufferDynamic, 1),
 			vk::DescriptorPoolSize(vk::DescriptorType::eAccelerationStructureKHR, 1),
@@ -355,7 +355,7 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 		staticPoolInfo
 			.setFlags(vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet)
 			.setPoolSizes(staticPoolSizes)
-			.setMaxSets(3);
+			.setMaxSets(4);
 		_staticDescriptorPool = _device->createDescriptorPoolUnique(staticPoolInfo);
 
 		std::array<vk::DescriptorPoolSize, 1> texturePoolSizes{

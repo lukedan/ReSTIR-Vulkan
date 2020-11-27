@@ -352,10 +352,39 @@ void loadScene(const std::string& filename, nvh::GltfScene& m_gltfScene) {
 			m_gltfScene.m_pointLights.push_back(shader::pointLight{ m_gltfScene.m_dimensions.center + vec3((rand_x-0.5) * tempRadius, 0.0, (rand_z-0.5) * tempRadius), 50, vec3(r, g, b) });
 		}
 		m_gltfScene.m_ptLightsNum = 18;
+
+		// Push a default triangle light
+		m_gltfScene.m_triLights.push_back(shader::triLight{ vec3(0.0, 0.0, 0.0), vec3(0.0, 0.0, 0.0), vec3(0.0, 0.0, 0.0), vec3(0.0, 0.0, 0.0) });
+		m_gltfScene.m_triLightsNum = 0;
 	}
 	else {
 		// Push a default point light
 		m_gltfScene.m_pointLights.push_back(shader::pointLight{ vec3(0.0, 0.0, 0.0), 0.0, vec3(0.0, 0.0, 0.0) });
 		m_gltfScene.m_ptLightsNum = 0;
+
+		// Init triangle light -- Temparory don't consider the light texture
+		m_gltfScene.m_triLightsNum = 0;
+		for (const nvh::GltfNode& node : m_gltfScene.m_nodes) {
+			const nvh::GltfPrimMesh& mesh = m_gltfScene.m_primMeshes[node.primMesh];
+			auto& tmp_mat = m_gltfScene.m_materials[mesh.materialIndex];
+			if (tmp_mat.emissiveFactor.norm() != 0.0) {
+				const uint32_t* indices = m_gltfScene.m_indices.data() + mesh.firstIndex;
+				const nvmath::vec3* pos = m_gltfScene.m_positions.data() + mesh.vertexOffset;
+				for (uint32_t i = 0; i < mesh.indexCount; i += 3, indices += 3) {
+					// triangle
+					vec4 p1 = node.worldMatrix * nvmath::vec4(pos[indices[0]], 1.0f);
+					vec4 p2 = node.worldMatrix * nvmath::vec4(pos[indices[1]], 1.0f);
+					vec4 p3 = node.worldMatrix * nvmath::vec4(pos[indices[2]], 1.0f);
+					vec3 p1_vec3(p1.x, p1.y, p1.z), p2_vec3(p2.x, p2.y, p2.z), p3_vec3(p3.x, p3.y, p3.z);
+					float area = nvmath::cross(p2_vec3 - p1_vec3, p3_vec3 - p1_vec3).norm() / 2.f;
+					shader::triLight tmpTriLight{ p1_vec3, p2_vec3, p3_vec3, tmp_mat.emissiveFactor, area};
+					m_gltfScene.m_triLights.push_back(tmpTriLight);
+					m_gltfScene.m_triLightsNum++;
+				}
+			}
+		}
+		if (m_gltfScene.m_triLightsNum == 0) {
+			assert("This scene should have triangle lights!");
+		}
 	}
 }

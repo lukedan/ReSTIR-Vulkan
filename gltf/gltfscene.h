@@ -191,8 +191,10 @@ namespace nvh {
         std::vector<GltfCamera>   m_cameras;
         std::vector<GltfLight>    m_lights;
         std::vector<shader::pointLight> m_pointLights;
+        std::vector<shader::triLight> m_triLights;
         std::vector<tinygltf::Image>    m_textures;
         int m_ptLightsNum;
+        int m_triLightsNum;
 
         // Attributes, all same length if valid
         std::vector<nvmath::vec3f> m_positions;

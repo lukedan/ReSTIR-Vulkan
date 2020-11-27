@@ -38,6 +38,9 @@ public:
 	[[nodiscard]] const vk::Buffer getPtLights() const {
 		return _ptLightsBuffer.get();
 	}
+	[[nodiscard]] const vk::Buffer getTriLights() const {
+		return _triLightsBuffer.get();
+	}
 	[[nodiscard]] const std::vector<SceneTexture> &getTextures() const {
 		return _textureImages;
 	}
@@ -49,6 +52,9 @@ public:
 	}
 	[[nodiscard]] const vk::DeviceSize getPtLightsBufferSize() const {
 		return _ptLightsBufferSize;
+	}
+	[[nodiscard]] const vk::DeviceSize getTriLightsBufferSize() const {
+		return _triLightsBufferSize;
 	}
 	
 
@@ -80,6 +86,11 @@ public:
 		result._ptLightsBufferSize = 16 + sizeof(shader::pointLight) * scene.m_pointLights.size();
 		result._ptLightsBuffer = allocator.createBuffer(
 			result._ptLightsBufferSize, vk::BufferUsageFlagBits::eStorageBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU
+		);
+		// Triangle lights
+		result._triLightsBufferSize = 16 + sizeof(shader::triLight) * scene.m_triLights.size();
+		result._triLightsBuffer = allocator.createBuffer(
+			result._triLightsBufferSize, vk::BufferUsageFlagBits::eStorageBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU
 		);
 
 		vk::Format format = vk::Format::eR8G8B8A8Unorm;
@@ -178,15 +189,20 @@ public:
 
 		// Lights
 		// Point lights
-		int32_t* ptr = result._ptLightsBuffer.mapAs<int32_t>();
-		*ptr = scene.m_ptLightsNum;
-		auto* ptLights = reinterpret_cast<shader::pointLight*>(reinterpret_cast<uintptr_t>(ptr) + 16);
+		int32_t* pointLightPtr = result._ptLightsBuffer.mapAs<int32_t>();
+		*pointLightPtr = scene.m_ptLightsNum;
+		auto* ptLights = reinterpret_cast<shader::pointLight*>(reinterpret_cast<uintptr_t>(pointLightPtr) + 16);
 		std::memcpy(ptLights, scene.m_pointLights.data(), sizeof(shader::pointLight) * scene.m_pointLights.size());
 		result._ptLightsBuffer.unmap();
 		result._ptLightsBuffer.flush();
 		
-		// TODO: Tri lights
-		
+		// Tri lights
+		int32_t* triLightsPtr = result._triLightsBuffer.mapAs<int32_t>();
+		*triLightsPtr = scene.m_triLightsNum;
+		auto* triLights = reinterpret_cast<shader::triLight*>(reinterpret_cast<uintptr_t>(triLightsPtr) + 16);
+		std::memcpy(triLights, scene.m_triLights.data(), sizeof(shader::triLight) * scene.m_triLights.size());
+		result._triLightsBuffer.unmap();
+		result._triLightsBuffer.flush();
 
 		return result;
 	}
@@ -196,8 +212,10 @@ private:
 	vma::UniqueBuffer _matrices;
 	vma::UniqueBuffer _materials;
 	vma::UniqueBuffer _ptLightsBuffer;
+	vma::UniqueBuffer _triLightsBuffer;
 	std::vector<SceneTexture> _textureImages;
 	SceneTexture _defaultNormal;
 	SceneTexture _defaultAlbedo;
 	vk::DeviceSize _ptLightsBufferSize;
+	vk::DeviceSize _triLightsBufferSize;
 };
