@@ -1,14 +1,14 @@
 
 struct pointLight {
-	vec3 pos;
+	vec4 pos;
 	float intensity;
-	vec3 color;
+	vec4 color;
 };
 
 struct triLight {
-	vec3 p1;
-	vec3 p2;
-	vec3 p3;
-	vec3 emissiveFactor;
+	vec4 p1;
+	vec4 p2;
+	vec4 p3;
+	vec4 emissiveFactor;
 	float area;
 };

@@ -133,7 +133,7 @@ protected:
 
 	nvh::GltfScene _gltfScene;
 	SceneBuffers _sceneBuffers;
-	int sampleNum = 10;
+	int sampleNum = 50;
 
 	AabbTree _aabbTree;
 	AabbTreeBuffers _aabbTreeBuffers;

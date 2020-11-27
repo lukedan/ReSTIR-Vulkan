@@ -377,7 +377,7 @@ void loadScene(const std::string& filename, nvh::GltfScene& m_gltfScene) {
 					vec4 p3 = node.worldMatrix * nvmath::vec4(pos[indices[2]], 1.0f);
 					vec3 p1_vec3(p1.x, p1.y, p1.z), p2_vec3(p2.x, p2.y, p2.z), p3_vec3(p3.x, p3.y, p3.z);
 					float area = nvmath::cross(p2_vec3 - p1_vec3, p3_vec3 - p1_vec3).norm() / 2.f;
-					shader::triLight tmpTriLight{ p1_vec3, p2_vec3, p3_vec3, tmp_mat.emissiveFactor, area};
+					shader::triLight tmpTriLight{ p1, p2, p3, vec4(tmp_mat.emissiveFactor, 0.0), area};
 					m_gltfScene.m_triLights.push_back(tmpTriLight);
 					m_gltfScene.m_triLightsNum++;
 				}

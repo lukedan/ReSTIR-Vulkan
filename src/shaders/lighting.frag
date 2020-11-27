@@ -26,13 +26,13 @@ layout (binding = 6) uniform Uniforms {
 	LightingPassUniforms uniforms;
 };
 
-layout (binding = 6) buffer PtLights {
+layout (binding = 7) buffer PtLights {
 	int lightsNum;
 	pointLight lights[];
 } ptLights;
 
 /* Wait for pipeline layout */
-layout (binding = 7) buffer TriLights {
+layout (binding = 8) buffer TriLights {
 	int lightsNum;
 	triLight lights[];
 } triLights;
@@ -52,7 +52,7 @@ layout (location = 0) out vec4 outColor;
 #include "include/RIS.glsl"
 
 void main() {
-	vec3 albedo = texture(uniAlbedo, inUv).xyz;
+	vec4 albedo = texture(uniAlbedo, inUv);
 	vec3 normal = texture(uniNormal, inUv).xyz;
 	float depth = texture(uniDepth, inUv).x;
 	vec2 materialProps = texture(uniMaterialProperties, inUv).xy;
@@ -63,9 +63,9 @@ void main() {
 
 	/* No Monte-Carlo rendering 
 	if (uniforms.debugMode == GBUFFER_DEBUG_NONE) {
-		outColor = vec4(albedo, 1.0f); // TODO
+		outColor = vec4(albedo.rgb, 1.0f); // TODO
 	} else if (uniforms.debugMode == GBUFFER_DEBUG_ALBEDO) {
-		outColor = vec4(albedo, 1.0f);
+		outColor = vec4(albedo.rgb, 1.0f);
 	} else if (uniforms.debugMode == GBUFFER_DEBUG_NORMAL) {
 		outColor = vec4((vec3(normal) + 1.0f) * 0.5f, 1.0f);
 	} else if (uniforms.debugMode == GBUFFER_DEBUG_MATERIAL_PROPERTIES) {
@@ -81,7 +81,7 @@ void main() {
 		float cosOut = dot(normal, wo);
 		float cosInHalf = dot(wi, normalize(wi + wo));
 
-		outColor = vec4(disneyBrdfColor(cosIn, cosOut, cosInHalf, albedo, roughness, metallic), 1.0) * abs(cosIn) / pow(roughness, 2);
+		outColor = vec4(disneyBrdfColor(cosIn, cosOut, cosInHalf, albedo.rgb, roughness, metallic), 1.0) * abs(cosIn) / pow(roughness, 2);
 	}
 
 	vec3 rayDir = uniforms.tempLightPoint.xyz - worldPos;
@@ -94,83 +94,60 @@ void main() {
 	vec3 tempColor = vec3(0.0, 0.0, 0.0);
 	int sample_num = uniforms.sampleNum;
 
-	/* Monte-Carlo rendering -- point lights 
-	int lightNum = ptLights.lightsNum;
-	if(lightNum != 0){
+	/* Monte-Carlo rendering -- point lights */
+	int ptLightNum = ptLights.lightsNum;
+	if(ptLightNum != 0){
 		for(int i = 0; i < sample_num; ++i){
 			// Lights parameters and init
 			uint seed = uint(int(clockARB()) + int(worldPos.x * 12.0) + int(worldPos.y * 133.0) + int(worldPos.z * 7.0));
 			float tempFloatRnd = rnd(seed);
-			int selectedIdx = int(tempFloatRnd * lightNum * 100.0) % lightNum;
+			int selectedIdx = int(tempFloatRnd * ptLightNum * 100.0) % ptLightNum;
 	
-			vec3 tempLightPos = ptLights.lights[selectedIdx].pos;
-			vec3 tempLightIntensity = ptLights.lights[selectedIdx].color * ptLights.lights[selectedIdx].intensity;
+			vec3 tempLightPos = ptLights.lights[selectedIdx].pos.xyz;
+			vec3 tempLightIntensity = ptLights.lights[selectedIdx].color.rgb * ptLights.lights[selectedIdx].intensity;
 
 			vec3 rayDir = tempLightPos - worldPos;
 			bool visible = raytrace(worldPos + 0.01 * rayDir, rayDir * 0.98);
 		
 			if (visible) {
 				// Direct light shading
-				vec3 f = albedo / PI;
+				vec3 f = albedo.rgb / PI;
 				float pdf = length(tempLightPos - worldPos);
 				pdf = pdf * pdf;
-				tempColor += f * tempLightIntensity * abs(dot(normalize(rayDir), normal)) / (pdf * lightNum);
+				tempColor += f * tempLightIntensity * abs(dot(normalize(rayDir), normal)) / (pdf * ptLightNum);
+			}
+		}
+	}else{
+		/* Monte-Carlo rendering -- triangle lights */
+		if(albedo.w == 1.0){
+			tempColor = albedo.xyz * sample_num;
+		}else{
+			int lightNum = triLights.lightsNum;
+			if(lightNum != 0){
+				for(int i = 0; i < sample_num; ++i){
+					uint seed = uint(int(clockARB()) + int(worldPos.x * 12.0) + int(worldPos.y * 133.0) + int(worldPos.z * 7.0));
+					float tempFloatRnd = rnd(seed);
+					int selectedIdx = int(tempFloatRnd * lightNum * 100.0) % lightNum;
+
+					// Pick a triangle light
+					uint seed1 = uint(int(clockARB()) + int(worldPos.x * 2.0) + int(worldPos.y * 33.0) + int(worldPos.z * 17.0));
+					uint seed2 = uint(int(clockARB()) + int(worldPos.x * 7.0) + int(worldPos.y * 3.0) + int(worldPos.z * 121.0));
+					triLight pickedLight = triLights.lights[selectedIdx];
+					vec3 pickedLightPos = pickPointOnTriangle(seed1, seed2, pickedLight.p1.xyz, pickedLight.p2.xyz, pickedLight.p3.xyz);
+					vec3 pickedLightIntensity = pickedLight.emissiveFactor.xyz * 10.0;
+
+					vec3 rayDir = pickedLightPos - worldPos;
+					bool visible = raytrace(worldPos + 0.01 * rayDir, rayDir * 0.98);
+	
+					if (visible) {
+						// Direct light shading
+						vec3 f = albedo.xyz / PI;
+						float pdf = triLightPDF(pickedLight, normalize(rayDir), pickedLightPos, worldPos);
+						tempColor += f * pickedLightIntensity * abs(dot(normalize(rayDir), normal)) / (pdf * lightNum);
+					}
+				}
 			}
 		}
 	}
-	*/
-
-	/* Monte-Carlo rendering -- triangle lights */
-	int lightNum = triLights.lightsNum;
-	if(lightNum != 0){
-		for(int i = 0; i < sample_num; ++i){
-			uint seed = uint(int(clockARB()) + int(worldPos.x * 12.0) + int(worldPos.y * 133.0) + int(worldPos.z * 7.0));
-			float tempFloatRnd = rnd(seed);
-			int selectedIdx = int(tempFloatRnd * lightNum * 100.0) % lightNum;
-
-			vec3 tempLightPos = (triLights.lights[selectedIdx].p1 + triLights.lights[selectedIdx].p2 + triLights.lights[selectedIdx].p3) / 3.0;
-			vec3 tempLightIntensity = triLights.lights[selectedIdx].emissiveFactor * 10.0;
-
-			vec3 rayDir = tempLightPos - worldPos;
-			bool visible = raytrace(worldPos + 0.01 * rayDir, rayDir * 0.98);
-
-			if (visible) {
-				// Direct light shading
-				vec3 f = vec3(1.0, 1.0, 1.0) / PI;
-				float pdf = length(tempLightPos - worldPos);
-				pdf = pdf * pdf;
-				tempColor += f * tempLightIntensity * abs(dot(normalize(rayDir), normal)) / (pdf * lightNum);
-			}
-		}
-		
-	}
-
 	outColor = vec4(tempColor / float(sample_num), 0.0);
-	
-
-	/* Debug
-	// vec3 tempLightPos = (triLights.lights[8].p1 + triLights.lights[8].p2 + triLights.lights[8].p3) / 3.0;
-	vec3 tempLightIntensity = triLights.lights[12].emissiveFactor;
-	vec3 tempLightPos = vec3(0.0, 0.0, 0.0);
-	// vec3 tempLightIntensity = vec3(10.0, 10.0, 10.0);
-
-	vec3 rayDir = tempLightPos - worldPos;
-	bool visible = raytrace(worldPos + 0.01 * rayDir, rayDir * 0.98);
-
-	if (visible) {
-		// Direct light shading
-		vec3 f = vec3(1.0, 1.0, 1.0) / PI;
-		float pdf = length(tempLightPos - worldPos);
-		pdf = pdf * pdf;
-		// tempColor += f * tempLightIntensity * abs(dot(normalize(rayDir), normal)) / (pdf * lightNum);
-		tempColor += tempLightIntensity;
-	}
-
-	outColor = vec4(tempColor, 0.0);
-	*/
-
-	/* Debug 
-	float checkNum = float(triLights.lightsNum) / 12.0;
-	outColor.xyz = vec3(checkNum, checkNum, checkNum);
-	*/
 }
