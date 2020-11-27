@@ -4,6 +4,7 @@
 #include "include/structs/aabbTree.glsl"
 #include "include/structs/lightingPassStructs.glsl"
 #include "include/gBufferDebugConstants.glsl"
+#include "include/disneyBRDF.glsl"
 
 layout (binding = 0) uniform sampler2D uniAlbedo;
 layout (binding = 1) uniform sampler2D uniNormal;
@@ -52,6 +53,18 @@ void main() {
 		outColor = vec4((vec3(normal) + 1.0f) * 0.5f, 1.0f);
 	} else if (uniforms.debugMode == GBUFFER_DEBUG_MATERIAL_PROPERTIES) {
 		outColor = vec4(materialProps, 1.0f, 1.0f);
+	} else if (uniforms.debugMode == GBUFFER_DEBUG_DISNEY_BRDF) {
+		float roughness = materialProps.r;
+		float metallic = materialProps.g;
+
+		vec3 wi = normalize(uniforms.tempLightPoint.xyz - worldPos);
+		vec3 wo = normalize(vec3(uniforms.cameraPos) - worldPos);
+
+		float cosIn = dot(normal, wi);
+		float cosOut = dot(normal, wo);
+		float cosInHalf = dot(wi, normalize(wi + wo));
+
+		outColor = vec4(disneyBrdfColor(cosIn, cosOut, cosInHalf, albedo, roughness, metallic), 1.0) * abs(cosIn);
 	}
 
 	vec3 rayDir = uniforms.tempLightPoint.xyz - worldPos;

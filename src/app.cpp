@@ -1,5 +1,5 @@
 #include "app.h"
-//#define SOFTWARE_RT
+#define SOFTWARE_RT
 
 #include <sstream>
 
@@ -541,7 +541,8 @@ void App::updateGui() {
 		"None",
 		"Albedo",
 		"Normal",
-		"MaterialProperties"
+		"MaterialProperties",
+		"DisneyBRDF"
 	};
 	_debugModeChanged = ImGui::Combo("Debug Mode", &_debugMode, items, IM_ARRAYSIZE(items));
 
@@ -645,6 +646,7 @@ void App::mainLoop() {
 				auto *lightingPassUniforms = _lightingPassResources.uniformBuffer.mapAs<shader::LightingPassUniforms>();
 				lightingPassUniforms->inverseViewMatrix = _camera.inverseViewMatrix;
 				lightingPassUniforms->tempLightPoint = _camera.lookAt;
+				lightingPassUniforms->cameraPos = _camera.position;
 				lightingPassUniforms->cameraNear = _camera.zNear;
 				lightingPassUniforms->cameraFar = _camera.zFar;
 				lightingPassUniforms->tanHalfFovY = std::tan(0.5f * _camera.fovYRadians);
@@ -671,7 +673,9 @@ void App::mainLoop() {
 			vk::CommandBuffer buffer = _imguiCommandBuffers[imageIndex].get();
 			vk::CommandBufferBeginInfo beginInfo;
 			buffer.begin(beginInfo);
-			//_imguiPass.issueCommands(buffer, _swapchainBuffers[imageIndex].framebuffer.get());
+#if defined(SOFTWARE_RT)
+			_imguiPass.issueCommands(buffer, _swapchainBuffers[imageIndex].framebuffer.get());
+#endif
 			buffer.end();
 		}
 
