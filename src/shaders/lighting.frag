@@ -64,7 +64,7 @@ void main() {
 		float cosOut = dot(normal, wo);
 		float cosInHalf = dot(wi, normalize(wi + wo));
 
-		outColor = vec4(disneyBrdfColor(cosIn, cosOut, cosInHalf, albedo, roughness, metallic), 1.0) * abs(cosIn);
+		outColor = vec4(disneyBrdfColor(cosIn, cosOut, cosInHalf, albedo, roughness, metallic), 1.0) * abs(cosIn) / pow(roughness, 2);
 	}
 
 	vec3 rayDir = uniforms.tempLightPoint.xyz - worldPos;

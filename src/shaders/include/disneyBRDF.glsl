@@ -58,5 +58,5 @@ vec3 disneyBrdfColor(float cosIn, float cosOut, float cosInHalf, vec3 albedo, fl
 	vec3 diffuse = disneyBrdfDiffuse(cosIn, cosOut, cosInHalf, albedo, roughness, metallic);
 	vec3 specular = disneyBrdfSpecular(cosIn, cosOut, cosInHalf, albedo, roughness, metallic);
 
-	return diffuse + specular;
+	return diffuse;
 }
