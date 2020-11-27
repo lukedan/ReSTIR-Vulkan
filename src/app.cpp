@@ -628,10 +628,7 @@ void App::mainLoop() {
 		}
 
 
-		std::array<vk::Semaphore, 1> signalSemaphores{ _renderFinishedSemaphore[currentFrame].get() };
 		_device->resetFences({ _inFlightFences[currentFrame].get() });
-
-		
 
 		{
 			_device->waitForFences(_gBufferFence.get(), true, std::numeric_limits<uint64_t>::max());
@@ -679,6 +676,7 @@ void App::mainLoop() {
 			buffer.end();
 		}
 
+		std::array<vk::Semaphore, 1> signalSemaphores{ _renderFinishedSemaphore[currentFrame].get() };
 		{
 			std::array<vk::Semaphore, 1> waitSemaphores{ _imageAvailableSemaphore[currentFrame].get() };
 			std::array<vk::PipelineStageFlags, 1> waitStages{ vk::PipelineStageFlagBits::eColorAttachmentOutput };
