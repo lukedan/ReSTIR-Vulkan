@@ -19,7 +19,7 @@ layout (location = 3) in vec2 inUv;
 
 layout (location = 0) out vec3 outAlbedo;
 layout (location = 1) out vec3 outNormal;
-layout (location = 2) out vec3 outMaterialProperties;
+layout (location = 2) out vec2 outMaterialProperties;
 
 void main() {
 	// compute baseColor or diffuse
@@ -50,4 +50,5 @@ void main() {
 
 		// TODO get metallic and adjust albedo
 	}
+	outMaterialProperties = vec2(roughness, metallic);
 }
