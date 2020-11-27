@@ -1,5 +1,7 @@
 #include "app.h"
+
 #define SOFTWARE_RT
+/*#define RENDERDOC_CAPTURE*/
 
 #include <sstream>
 
@@ -81,8 +83,10 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 		VK_KHR_DEDICATED_ALLOCATION_EXTENSION_NAME,
 		VK_KHR_GET_MEMORY_REQUIREMENTS_2_EXTENSION_NAME,
 		VK_KHR_MAINTENANCE3_EXTENSION_NAME,
+#ifndef RENDERDOC_CAPTURE
 		VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME,
 		VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
+#endif
 		VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
 		VK_KHR_SHADER_CLOCK_EXTENSION_NAME
 	};
@@ -625,10 +629,7 @@ void App::mainLoop() {
 		}
 
 
-		std::array<vk::Semaphore, 1> signalSemaphores{ _renderFinishedSemaphore[currentFrame].get() };
 		_device->resetFences({ _inFlightFences[currentFrame].get() });
-
-		
 
 		{
 			_device->waitForFences(_gBufferFence.get(), true, std::numeric_limits<uint64_t>::max());
@@ -679,6 +680,7 @@ void App::mainLoop() {
 			buffer.end();
 		}
 
+		std::array<vk::Semaphore, 1> signalSemaphores{ _renderFinishedSemaphore[currentFrame].get() };
 		{
 			std::array<vk::Semaphore, 1> waitSemaphores{ _imageAvailableSemaphore[currentFrame].get() };
 			std::array<vk::PipelineStageFlags, 1> waitStages{ vk::PipelineStageFlagBits::eColorAttachmentOutput };

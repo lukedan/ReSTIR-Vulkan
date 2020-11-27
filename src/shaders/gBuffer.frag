@@ -19,7 +19,7 @@ layout (location = 3) in vec2 inUv;
 
 layout (location = 0) out vec3 outAlbedo;
 layout (location = 1) out vec3 outNormal;
-layout (location = 2) out vec3 outMaterialProperties;
+layout (location = 2) out vec2 outMaterialProperties;
 
 void main() {
 	// compute baseColor or diffuse
@@ -48,6 +48,19 @@ void main() {
 	} else if (material.shadingModel == SHADING_MODEL_SPECULAR_GLOSSINESS) {
 		roughness = 1.0f - materialProp.a;
 
-		// TODO get metallic and adjust albedo
+		// get metallic and adjust albedo
+		//
+		// - full metal have a diffuse of 0
+		// - full dielectric have a specular of 0.04
+		// diffuse = albedo * (1 - metalness)
+		// specular = lerp(0.04, albedo, metalness)
+		
+		vec3 average = 0.5f * (albedo.rgb + materialProp.rgb);
+		vec3 sqrtTerm = sqrt(average * average - 0.04f * albedo.rgb);
+		vec3 metallicRgb = 25.0f * average - sqrtTerm;
+
+		metallic = (metallicRgb.r + metallicRgb.g + metallicRgb.b) / 3.0f;
+		outAlbedo = average + sqrtTerm;
 	}
+	outMaterialProperties = vec2(roughness, metallic);
 }
