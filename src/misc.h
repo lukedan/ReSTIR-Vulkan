@@ -19,6 +19,10 @@ namespace vma {
 }
 
 
+[[nodiscard]] constexpr int ceilDiv(int a, int b) {
+	return (a + b - 1) / b;
+}
+
 [[nodiscard]] std::vector<char> readFile(const std::filesystem::path&);
 
 

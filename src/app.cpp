@@ -459,6 +459,10 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 
 	_gBuffer = GBuffer::create(_allocator, _device.get(), _swapchain.getImageExtent(), _gBufferPass);
 
+
+	_swVisibilityTestPass = Pass::create<SoftwareVisibilityTestPass>(_device.get());
+
+
 #if defined(SOFTWARE_RT)
 	// create lighting pass
 	_lightingPass = Pass::create<LightingPass>(_device.get(), _swapchain.getImageFormat());
@@ -583,8 +587,6 @@ void App::mainLoop() {
 
 			_gBuffer.resize(_allocator, _device.get(), _swapchain.getImageExtent(), _gBufferPass);
 			_gBufferPass.onResized(_device.get(), _swapchain.getImageExtent());
-
-			/*_demoPass.imageExtent = _swapchain.getImageExtent();*/
 
 			_initializeLightingPassResources();
 

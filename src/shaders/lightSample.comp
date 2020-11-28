@@ -1,0 +1,25 @@
+#version 450
+
+#include "include/disneyBRDF.glsl"
+#include "include/reservoir.glsl"
+#include "include/structs/restirStructs.glsl"
+
+layout (binding = 0) uniform Uniforms {
+	RestirUniforms uniforms;
+};
+
+layout (binding = 1) uniform sampler2D uniWorldPosition;
+
+layout (binding = 2) buffer Reservoirs {
+	Reservoir reservoirs[];
+};
+layout (binding = 3) buffer PointLights {
+	int TODO;
+} pointLights;
+layout (binding = 4) buffer TriangleLights {
+	int TODO;
+} triangleLights;
+
+void main() {
+	// TODO
+}

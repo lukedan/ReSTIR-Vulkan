@@ -1,5 +1,9 @@
 // these structs are not supposed to be seen by the cpu
 
+#include "rand.glsl"
+
+#define RESERVOIR_SIZE 4
+
 struct LightSample {
 	vec3 emission;
 	float pHat;

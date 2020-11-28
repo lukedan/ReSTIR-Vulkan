@@ -7,13 +7,17 @@
 #include "swapchain.h"
 #include "transientCommandBuffer.h"
 #include "sceneBuffers.h"
-#include "passes/demoPass.h"
+#include "camera.h"
+#include "fpsCounter.h"
+
 #include "passes/gBufferPass.h"
+#include "passes/lightSamplePass.h"
+#include "passes/softwareVisibilityTestPass.h"
+#include "passes/temporalReusePass.h"
+#include "passes/spatialReusePass.h"
 #include "passes/lightingPass.h"
 #include "passes/rtPass.h"
 #include "passes/imguiPass.h"
-#include "camera.h"
-#include "fpsCounter.h"
 
 struct PhysicalDeviceInfo
 {
@@ -121,10 +125,12 @@ protected:
 	vk::UniqueCommandBuffer _gBufferCommandBuffer;
 	GBufferPass::Resources _gBufferResources;
 
+	LightSamplePass _lightSamplePass;
+
+	SoftwareVisibilityTestPass _swVisibilityTestPass;
+
 	LightingPass _lightingPass;
 	LightingPass::Resources _lightingPassResources;
-
-	/*DemoPass _demoPass;*/
 
 	RtPass _rtPass;
 
