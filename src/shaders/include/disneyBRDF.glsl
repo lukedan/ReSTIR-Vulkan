@@ -37,18 +37,19 @@ vec3 disneyBrdfSpecular(float cosIn, float cosOut, float cosHalf, float cosInHal
 	// Fresnel specular (Fs)
 	float albedoLum = 0.2126 * albedo.r + 0.7152 * albedo.g + 0.0722 * albedo.b;
 	vec3 colorTint = albedo / albedoLum;
-	float specular = 0.5f;
 	float specularTint = 0.0f;
+	float specular = 0.5f;
 	vec3 specularColor = mix(0.08 * specular * mix(vec3(1.0), colorTint, specularTint), albedo, metallic);
 	float fresnelInHalf = schlickFresnel(cosInHalf);
 	vec3 Fs = mix(specularColor, vec3(1.0), fresnelInHalf);
 	
-	//  Microfacet normal distribution (Ds)
 	float a = max(0.001, pow(roughness, 2.0));
+	//  Microfacet normal distribution (Ds)
 	float Ds = GTR2(cosHalf, a);
 
-	// Geometry distribution (Gs)
-	float Gs = smithG_GGX(cosIn, a) * smithG_GGX(cosOut, a);
+	float Gs;
+	Gs = smithG_GGX(cosIn, a);
+	Gs *= smithG_GGX(cosOut, a);
 
 	return Gs * Fs * Ds;
 }

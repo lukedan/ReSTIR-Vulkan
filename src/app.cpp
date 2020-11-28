@@ -1,6 +1,6 @@
 #include "app.h"
 
-#define SOFTWARE_RT
+//#define SOFTWARE_RT
 /*#define RENDERDOC_CAPTURE*/
 
 #include <sstream>
@@ -348,7 +348,7 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 	{ // create descriptor pools
 		std::array<vk::DescriptorPoolSize, 6> staticPoolSizes{
 			vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, 3),
-			vk::DescriptorPoolSize(vk::DescriptorType::eStorageBuffer, 2),
+			vk::DescriptorPoolSize(vk::DescriptorType::eStorageBuffer, 3),
 			vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, 3),
 			vk::DescriptorPoolSize(vk::DescriptorType::eUniformBufferDynamic, 2),
 			vk::DescriptorPoolSize(vk::DescriptorType::eAccelerationStructureKHR, 1),
@@ -474,7 +474,7 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 	_rtPass._gBuffer = &_gBuffer;
 	_rtPass.createAccelerationStructure(_device.get(), _physicalDevice, _allocator, _dynamicDispatcher, 
 		                                _commandPool.get(), _graphicsQueue, _sceneBuffers, _gltfScene);
-	_rtPass.createOffscreenBuffer(_device.get(), _allocator, _swapchain.getImageExtent());
+	_rtPass.createOffscreenBuffer(_device.get(), _physicalDevice, _allocator, _swapchain.getImageExtent());
 	_rtPass.createDescriptorSetForRayTracing(_device.get(), _staticDescriptorPool.get(), _dynamicDispatcher);
 	_rtPass.createShaderBindingTable(_device.get(), _allocator, _physicalDevice, _dynamicDispatcher);
 	createAndRecordRTSwapchainBuffers(_swapchain, _device.get(), _commandPool.get(), _rtPass, _dynamicDispatcher);

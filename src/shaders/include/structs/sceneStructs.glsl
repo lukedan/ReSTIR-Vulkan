@@ -1,3 +1,5 @@
+#define RESERVOIR_SIZE 4
+
 struct ModelMatrices {
 	mat4 transform;
 	mat4 transformInverseTransposed;
@@ -29,4 +31,17 @@ struct MaterialUniforms {
 	int alphaMode;
 	float alphaCutoff;
 	float normalTextureScale;
+};
+
+// these structs are not supposed to be seen by the cpu
+struct LightSample {
+	vec3 emission;
+	float pHat;
+	vec3 position;
+	float sumWeights; // setting W to 0 is equivalent to setting sumWeights to 0
+};
+
+struct Reservoir {
+	LightSample samples[RESERVOIR_SIZE];
+	int numStreamSamples;
 };

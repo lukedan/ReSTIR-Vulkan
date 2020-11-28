@@ -1,4 +1,7 @@
 #pragma once
+
+#define RESERVOIR_SIZE 4
+
 #include <vulkan/vulkan.hpp>
 #include "vma.h"
 
@@ -42,6 +45,7 @@ public:
 	{
 		nvmath::mat4 viewInverse;
 		nvmath::mat4 projInverse;
+		nvmath::vec4 cameraPos;
 		nvmath::vec4 tempLightPoint;
 		float cameraNear;
 		float cameraFar;
@@ -178,7 +182,7 @@ public:
 		vk::DescriptorPool& pool,
 		vk::DispatchLoaderDynamic& dld)
 	{
-		std::array<vk::WriteDescriptorSet, 6> descriptorWrite;
+		std::array<vk::WriteDescriptorSet, 8> descriptorWrite;
 
 		vk::DescriptorSetAllocateInfo setInfo;
 		setInfo
@@ -219,13 +223,14 @@ public:
 		descriptorWrite[1] = outputImageWrite;
 
 		// GBuffer Data
-		std::array<vk::DescriptorImageInfo, 3> imageInfo{
+		std::array<vk::DescriptorImageInfo, 4> imageInfo{
 			vk::DescriptorImageInfo(_sampler.get(), _gBuffer->getAlbedoView(), vk::ImageLayout::eShaderReadOnlyOptimal),
 			vk::DescriptorImageInfo(_sampler.get(), _gBuffer->getNormalView(), vk::ImageLayout::eShaderReadOnlyOptimal),
-			vk::DescriptorImageInfo(_sampler.get(), _gBuffer->getDepthView(), vk::ImageLayout::eShaderReadOnlyOptimal)
+			vk::DescriptorImageInfo(_sampler.get(), _gBuffer->getDepthView(), vk::ImageLayout::eShaderReadOnlyOptimal),
+			vk::DescriptorImageInfo(_sampler.get(), _gBuffer->getMaterialPropertiesView(), vk::ImageLayout::eShaderReadOnlyOptimal)
 		};
 
-		for (std::size_t i = 2; i < 5; ++i) {
+		for (std::size_t i = 2; i < 6; ++i) {
 			descriptorWrite[i]
 				.setDstSet(_descriptorSet.get())
 				.setDstBinding(i)
@@ -237,16 +242,29 @@ public:
 
 		std::array<vk::DescriptorBufferInfo, 1> cameraBufferInfo
 		{
-			vk::DescriptorBufferInfo(cameraUniformBuffer.get(), 0, sizeof(cameraUniforms))
+			vk::DescriptorBufferInfo(cameraUniformBuffer.get(), 0, sizeof(shader::LightingPassUniforms))
 		};
 
 		vk::WriteDescriptorSet cameraWrite;
 		cameraWrite
 			.setDstSet(_descriptorSet.get())
-			.setDstBinding(5)
+			.setDstBinding(6)
 			.setDescriptorType(vk::DescriptorType::eUniformBuffer)
 			.setBufferInfo(cameraBufferInfo);
-		descriptorWrite[5] = cameraWrite;
+		descriptorWrite[6] = cameraWrite;
+
+		std::array<vk::DescriptorBufferInfo, 1> lightsBufferInfo
+		{
+			vk::DescriptorBufferInfo(lightsUniformBuffer.get(), 0, sizeof(shader::Reservoir))
+		};
+
+		vk::WriteDescriptorSet lightsWrite;
+		lightsWrite
+			.setDstSet(_descriptorSet.get())
+			.setDstBinding(7)
+			.setDescriptorType(vk::DescriptorType::eStorageBuffer)
+			.setBufferInfo(lightsBufferInfo);
+		descriptorWrite[7] = lightsWrite;
 
 		dev.updateDescriptorSets(descriptorWrite, {}, dld);
 	}
@@ -587,12 +605,15 @@ public:
 		dev.freeCommandBuffers(commandPool, tlasCommandBuffers);
 	}
 
-	void createOffscreenBuffer(vk::Device& dev, vma::Allocator& allocator, vk::Extent2D extent)
+	void createOffscreenBuffer(vk::Device& dev, vk::PhysicalDevice& pd, vma::Allocator& allocator, vk::Extent2D extent)
 	{
+		vk::Format offscreenImageFormat = findSupportedFormat({ vk::Format::eB8G8R8A8Unorm }, pd, vk::ImageTiling::eOptimal,
+			vk::FormatFeatureFlagBits::eStorageImage | vk::FormatFeatureFlagBits::eTransferSrc);
+
 		// Offscreen buffer
 		vk::ImageCreateInfo imageInfo;
 		imageInfo.imageType = vk::ImageType::e2D;
-		imageInfo.format = vk::Format::eB8G8R8A8Unorm;
+		imageInfo.format = offscreenImageFormat;
 		imageInfo.extent = vk::Extent3D(extent, 1);
 		imageInfo.mipLevels = 1;
 		imageInfo.arrayLayers = 1;
@@ -609,7 +630,7 @@ public:
 
 		vk::ImageViewCreateInfo imageViewInfo;
 		imageViewInfo.viewType = vk::ImageViewType::e2D;
-		imageViewInfo.format = vk::Format::eB8G8R8A8Unorm;
+		imageViewInfo.format = offscreenImageFormat;
 		imageViewInfo.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
 		imageViewInfo.subresourceRange.baseMipLevel = 0;
 		imageViewInfo.subresourceRange.levelCount = 1;
@@ -624,14 +645,15 @@ public:
 		_offscreenBufferView = dev.createImageViewUnique(imageViewInfo);
 
 		// Create camera uniform buffer
-		cameraUniformBuffer = allocator.createTypedBuffer<cameraUniforms>(1, vk::BufferUsageFlagBits::eUniformBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU);
+		cameraUniformBuffer = allocator.createTypedBuffer<shader::LightingPassUniforms>(1, vk::BufferUsageFlagBits::eUniformBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU);
+		lightsUniformBuffer = allocator.createTypedBuffer<shader::Reservoir>(1, vk::BufferUsageFlagBits::eStorageBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU);
 	}
 
 	void updateCameraUniform(Camera& _camera) 
 	{
-		auto* cameraUniformBegin = cameraUniformBuffer.mapAs<cameraUniforms>();
-		cameraUniformBegin->projInverse = nvmath::invert(_camera.projectionMatrix);
-		cameraUniformBegin->viewInverse = _camera.inverseViewMatrix;
+		auto* cameraUniformBegin = cameraUniformBuffer.mapAs<shader::LightingPassUniforms>();
+		cameraUniformBegin->inverseViewMatrix = _camera.inverseViewMatrix;
+		cameraUniformBegin->cameraPos = _camera.position;
 		cameraUniformBegin->aspectRatio = _camera.aspectRatio;
 		cameraUniformBegin->cameraFar = _camera.zFar;
 		cameraUniformBegin->cameraNear = _camera.zNear;
@@ -639,6 +661,20 @@ public:
 		cameraUniformBegin->tanHalfFovY = std::tan(0.5f * _camera.fovYRadians);
 		cameraUniformBuffer.unmap();
 		cameraUniformBuffer.flush();
+	}
+
+	void updateLightsUniform() 
+	{
+		auto* lightsUniformBegin = lightsUniformBuffer.mapAs<shader::Reservoir>();
+		int cnt = 0;
+		for (shader::LightSample light : lightsUniformBegin->samples) 
+		{
+			light.emission = vec4(1.0f, 1.0f, 1.0f, 1.0f);
+			light.position = vec4(cnt * 2.0f, cnt * 1.0f, cnt * 1.0f, 1.0f);
+			cnt++;
+		}
+		lightsUniformBuffer.unmap();
+		lightsUniformBuffer.flush();
 	}
 
 	inline static RtPass create(vk::Device dev, vk::DispatchLoaderDynamic& dld)
@@ -730,13 +766,15 @@ protected:
 
 		
 
-		std::array<vk::DescriptorSetLayoutBinding, 6> bindings{ 
+		std::array<vk::DescriptorSetLayoutBinding, 8> bindings{ 
 			accelerationStructureLayoutBinding,
 			storageImageLayoutBinding,
 			vk::DescriptorSetLayoutBinding(2, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eRaygenKHR),
 			vk::DescriptorSetLayoutBinding(3, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eRaygenKHR),
 			vk::DescriptorSetLayoutBinding(4, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eRaygenKHR),
-			vk::DescriptorSetLayoutBinding(5, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eRaygenKHR) 
+			vk::DescriptorSetLayoutBinding(5, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eRaygenKHR),
+			vk::DescriptorSetLayoutBinding(6, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eRaygenKHR),
+			vk::DescriptorSetLayoutBinding(7, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eRaygenKHR)
 		};
 
 		vk::DescriptorSetLayoutCreateInfo layoutInfo;
@@ -763,6 +801,7 @@ private:
 	AccelerationMemory index;
 	AccelerationMemory instance;
 	vma::UniqueBuffer cameraUniformBuffer;
+	vma::UniqueBuffer lightsUniformBuffer;
 
 	// Acceleration Structure
 	vk::UniqueHandle<vk::AccelerationStructureKHR, vk::DispatchLoaderDynamic> _bottomLevelAS;
