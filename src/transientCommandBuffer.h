@@ -22,7 +22,8 @@ public:
 			vk::SubmitInfo submitInfo;
 			submitInfo.setCommandBuffers(buffers);
 			_queue.submit(submitInfo, _fence.get());
-			_device.waitForFences(_fence.get(), true, std::numeric_limits<uint64_t>::max());
+			while (_device.waitForFences(_fence.get(), true, std::numeric_limits<uint64_t>::max()) == vk::Result::eTimeout) {
+			}
 
 			_buffer.reset();
 			_fence.reset();

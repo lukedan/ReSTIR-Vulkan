@@ -23,7 +23,7 @@ public:
 		commandBuffer.beginRenderPass(passBeginInfo, vk::SubpassContents::eInline);
 
 		commandBuffer.setViewport(0, { vk::Viewport(
-			0.0f, 0.0f, imageExtent.width, imageExtent.height, 0.0f, 1.0f
+			0.0f, 0.0f, static_cast<float>(imageExtent.width), static_cast<float>(imageExtent.height), 0.0f, 1.0f
 		) });
 		commandBuffer.setScissor(0, { vk::Rect2D(vk::Offset2D(0, 0), imageExtent) });
 
@@ -83,20 +83,22 @@ protected:
 	}
 	std::vector<PipelineCreationInfo> _getPipelineCreationInfo() {
 		std::vector<PipelineCreationInfo> result;
-		PipelineCreationInfo &info = result.emplace_back();
-		info.inputAssemblyState = PipelineCreationInfo::getTriangleListWithoutPrimitiveRestartInputAssembly();
+
+		GraphicsPipelineCreationInfo info;
+		info.inputAssemblyState = GraphicsPipelineCreationInfo::getTriangleListWithoutPrimitiveRestartInputAssembly();
 		info.viewportState
 			.setViewportCount(1)
 			.setScissorCount(1);
-		info.rasterizationState = PipelineCreationInfo::getDefaultRasterizationState();
-		info.multisampleState = PipelineCreationInfo::getNoMultisampleState();
-		info.attachmentColorBlendStorage.emplace_back(PipelineCreationInfo::getNoBlendAttachment());
+		info.rasterizationState = GraphicsPipelineCreationInfo::getDefaultRasterizationState();
+		info.multisampleState = GraphicsPipelineCreationInfo::getNoMultisampleState();
+		info.attachmentColorBlendStorage.emplace_back(GraphicsPipelineCreationInfo::getNoBlendAttachment());
 		info.colorBlendState.setAttachments(info.attachmentColorBlendStorage);
 		info.shaderStages.emplace_back(_frag.getStageInfo());
 		info.shaderStages.emplace_back(_vert.getStageInfo());
 		info.dynamicStates.emplace_back(vk::DynamicState::eViewport);
 		info.dynamicStates.emplace_back(vk::DynamicState::eScissor);
 		info.pipelineLayout = _pipelineLayout.get();
+		result.emplace_back(std::move(info));
 
 		return result;
 	}

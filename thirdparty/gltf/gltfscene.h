@@ -58,12 +58,11 @@
 #include "tiny_gltf.h"
 #include "nvmath.h"
 #include "nvmath_glsltypes.h"
-// #include "../src/vma.h"
+
 #include <map>
 #include <string>
 #include <unordered_map>
 #include <vector>
-#include <vulkan/vulkan.hpp>
 
 using namespace nvmath;
 #define EXTENSION_LIGHT "KHR_lights_punctual"

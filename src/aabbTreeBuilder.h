@@ -3,8 +3,9 @@
 #include <cmath>
 #include <vector>
 
+#include <gltfscene.h>
+
 #include "shaderIncludes.h"
-#include "../gltf/gltfscene.h"
 #include "vma.h"
 
 struct AabbTree {
@@ -26,12 +27,14 @@ struct AabbTreeBuffers {
 		// due to alignment there are 12 bytes padding after the root node index
 		result.nodeBufferSize = 16 + sizeof(shader::AabbTreeNode) * tree.nodes.size();
 		result.nodeBuffer = allocator.createBuffer(
-			result.nodeBufferSize, vk::BufferUsageFlagBits::eStorageBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU
+			static_cast<uint32_t>(result.nodeBufferSize),
+			vk::BufferUsageFlagBits::eStorageBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU
 		);
 
 		result.triangleBufferSize = sizeof(shader::Triangle) * tree.triangles.size();
 		result.triangleBuffer = allocator.createBuffer(
-			result.triangleBufferSize, vk::BufferUsageFlagBits::eStorageBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU
+			static_cast<uint32_t>(result.triangleBufferSize),
+			vk::BufferUsageFlagBits::eStorageBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU
 		);
 
 		int32_t *ptr = result.nodeBuffer.mapAs<int32_t>();
