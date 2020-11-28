@@ -7,6 +7,7 @@
 #include "include/structs/lightingPassStructs.glsl"
 #include "include/gBufferDebugConstants.glsl"
 #include "include/disneyBRDF.glsl"
+#include "include/rand.glsl"
 #include "include/structs/light.glsl"
 
 layout (binding = 0) uniform sampler2D uniAlbedo;
@@ -99,7 +100,7 @@ void main() {
 	if(ptLightNum != 0){
 		for(int i = 0; i < sample_num; ++i){
 			// Lights parameters and init
-			uint seed = uint(int(clockARB()) + int(worldPos.x * 12.0) + int(worldPos.y * 133.0) + int(worldPos.z * 7.0));
+			uint seed = uint(uniforms.sysTime + int(worldPos.x * 12.0) + int(worldPos.y * 133.0 * inUv.x * inUv.y) + int(worldPos.z * 7.0 * inUv.y));
 			float tempFloatRnd = rnd(seed);
 			int selectedIdx = int(tempFloatRnd * ptLightNum * 100.0) % ptLightNum;
 	
@@ -125,15 +126,21 @@ void main() {
 			int lightNum = triLights.lightsNum;
 			if(lightNum != 0){
 				for(int i = 0; i < sample_num; ++i){
-					uint seed = uint(int(clockARB()) + int(worldPos.x * 12.0) + int(worldPos.y * 133.0) + int(worldPos.z * 7.0));
-					float tempFloatRnd = rnd(seed);
+					uint seed = floatBitsToUint(uniforms.sysTime / i + inUv.x * 1333 + inUv.y * 1213 + worldPos.x * worldPos.y * worldPos.z);
+					Rand randomNum;
+					randomNum.context = seed;
+					float tempFloatRnd = randFloat(randomNum);
 					int selectedIdx = int(tempFloatRnd * lightNum * 100.0) % lightNum;
+					triLight pickedLight = triLights.lights[selectedIdx];
 
 					// Pick a triangle light
-					uint seed1 = uint(int(clockARB()) + int(worldPos.x * 2.0) + int(worldPos.y * 33.0) + int(worldPos.z * 17.0));
-					uint seed2 = uint(int(clockARB()) + int(worldPos.x * 7.0) + int(worldPos.y * 3.0) + int(worldPos.z * 121.0));
-					triLight pickedLight = triLights.lights[selectedIdx];
-					vec3 pickedLightPos = pickPointOnTriangle(seed1, seed2, pickedLight.p1.xyz, pickedLight.p2.xyz, pickedLight.p3.xyz);
+					uint seed1 = floatBitsToUint(uniforms.sysTime + i * 123 + worldPos.x * 10001399.0 + worldPos.y * 33.0 + worldPos.z * 17.0);
+					uint seed2 = floatBitsToUint(uniforms.sysTime + i * 10001227 + worldPos.x * 7.0 + worldPos.y * 3.0 + worldPos.z * 121.0);
+					Rand randomNum2;
+					randomNum2.context = seed1;
+					Rand randomNum3;
+					randomNum3.context = seed2;
+					vec3 pickedLightPos = pickPointOnTriangle(randFloat(randomNum2), randFloat(randomNum3), pickedLight.p1.xyz, pickedLight.p2.xyz, pickedLight.p3.xyz);
 					vec3 pickedLightIntensity = pickedLight.emissiveFactor.xyz * 10.0;
 
 					vec3 rayDir = pickedLightPos - worldPos;

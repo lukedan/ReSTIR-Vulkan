@@ -155,6 +155,9 @@ protected:
 	int _pressedMouseButton = -1;
 	bool _cameraUpdated = true;
 
+	// Time
+	std::clock_t app_start;
+
 	void _onMouseMoveEvent(double x, double y);
 	void _onMouseButtonEvent(int button, int action, int mods);
 	void _onScrollEvent(double x, double y);

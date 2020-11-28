@@ -1,6 +1,6 @@
 struct Rand {
 	uint context;
-}
+};
 
 uint randUint16(inout Rand r) {
 	r.context = r.context * 1103515245 + 12345;

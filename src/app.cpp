@@ -51,6 +51,8 @@ void App::initPhysicalInfo(PhysicalDeviceInfo& info, vk::PhysicalDevice physical
 }
 
 App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
+	app_start = std::clock();
+
 	IMGUI_CHECKVERSION();
 	ImGui::CreateContext();
 	// the callbacks are installed here but they're overriden below, so we still need to manually call those
@@ -635,7 +637,13 @@ void App::mainLoop() {
 			);
 		}
 
-
+#if defined(SOFTWARE_RT)
+		auto* lightingPassUniforms = _lightingPassResources.uniformBuffer.mapAs<shader::LightingPassUniforms>();
+		std::clock_t app_time_now = std::clock();
+		lightingPassUniforms->sysTime = int(1000.0 * (app_time_now - app_start) / CLOCKS_PER_SEC);
+		_lightingPassResources.uniformBuffer.unmap();
+		_lightingPassResources.uniformBuffer.flush();
+#endif
 		_device->resetFences({ _inFlightFences[currentFrame].get() });
 
 		{
@@ -660,13 +668,6 @@ void App::mainLoop() {
 				lightingPassUniforms->tanHalfFovY = std::tan(0.5f * _camera.fovYRadians);
 				lightingPassUniforms->aspectRatio = _camera.aspectRatio;
 				lightingPassUniforms->debugMode = _debugMode;
-				/*
-				for (int i = 0; i < _lightingPass.lightNum; ++i) {
-					lightingPassUniforms->lightsArray[i].color = _lightingPass.lightsArray[i].color;
-					lightingPassUniforms->lightsArray[i].intensity = _lightingPass.lightsArray[i].intensity;
-					lightingPassUniforms->lightsArray[i].pos = _lightingPass.lightsArray[i].pos;
-				}
-				*/
 				lightingPassUniforms->sampleNum = this->sampleNum;
 				_lightingPassResources.uniformBuffer.unmap();
 				_lightingPassResources.uniformBuffer.flush();
