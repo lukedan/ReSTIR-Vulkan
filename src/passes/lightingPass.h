@@ -71,10 +71,12 @@ public:
 				.setDescriptorCount(1);
 		}
 
-		std::array<vk::DescriptorBufferInfo, 3> bufferInfo{
+		std::array<vk::DescriptorBufferInfo, 5> bufferInfo{
 			vk::DescriptorBufferInfo(rsrc.aabbTreeBuffers->nodeBuffer.get(), 0, rsrc.aabbTreeBuffers->nodeBufferSize),
 			vk::DescriptorBufferInfo(rsrc.aabbTreeBuffers->triangleBuffer.get(), 0, rsrc.aabbTreeBuffers->triangleBufferSize),
-			vk::DescriptorBufferInfo(rsrc.uniformBuffer.get(), 0, sizeof(shader::LightingPassUniforms))
+			vk::DescriptorBufferInfo(rsrc.uniformBuffer.get(), 0, sizeof(shader::LightingPassUniforms)),
+			vk::DescriptorBufferInfo(sceneBuffers->getPtLights(), 0, sceneBuffers->getPtLightsBufferSize()),
+			vk::DescriptorBufferInfo(sceneBuffers->getTriLights(), 0, sceneBuffers->getTriLightsBufferSize())
 		};
 		descriptorWrite.emplace_back()
 			.setDstSet(rsrc.descriptorSet.get())
@@ -94,12 +96,26 @@ public:
 			.setDescriptorType(vk::DescriptorType::eUniformBuffer)
 			.setDescriptorCount(1)
 			.setPBufferInfo(&bufferInfo[2]);
+		descriptorWrite.emplace_back()
+			.setDstSet(rsrc.descriptorSet.get())
+			.setDstBinding(7)
+			.setDescriptorType(vk::DescriptorType::eStorageBuffer)
+			.setDescriptorCount(1)
+			.setPBufferInfo(&bufferInfo[3]);
+		descriptorWrite.emplace_back()
+			.setDstSet(rsrc.descriptorSet.get())
+			.setDstBinding(8)
+			.setDescriptorType(vk::DescriptorType::eStorageBuffer)
+			.setDescriptorCount(1)
+			.setPBufferInfo(&bufferInfo[4]);
 
 		device.updateDescriptorSets(descriptorWrite, {});
 	}
 
 	vk::Extent2D imageExtent;
 	vk::DescriptorSet descriptorSet;
+	const nvh::GltfScene* scene = nullptr;
+	const SceneBuffers* sceneBuffers = nullptr;
 protected:
 	explicit LightingPass(vk::Format format) : Pass(), _swapchainFormat(format) {
 	}
@@ -176,14 +192,16 @@ protected:
 
 		_sampler = createSampler(dev, vk::Filter::eNearest, vk::Filter::eNearest, vk::SamplerMipmapMode::eNearest);
 
-		std::array<vk::DescriptorSetLayoutBinding, 7> descriptorBindings{
+		std::array<vk::DescriptorSetLayoutBinding, 9> descriptorBindings{
 			vk::DescriptorSetLayoutBinding(0, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment),
 			vk::DescriptorSetLayoutBinding(1, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment),
 			vk::DescriptorSetLayoutBinding(2, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment),
 			vk::DescriptorSetLayoutBinding(3, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment),
 			vk::DescriptorSetLayoutBinding(4, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eFragment),
 			vk::DescriptorSetLayoutBinding(5, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eFragment),
-			vk::DescriptorSetLayoutBinding(6, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eFragment)
+			vk::DescriptorSetLayoutBinding(6, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eFragment),
+			vk::DescriptorSetLayoutBinding(7, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eFragment),
+			vk::DescriptorSetLayoutBinding(8, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eFragment)
 		};
 		vk::DescriptorSetLayoutCreateInfo descriptorInfo;
 		descriptorInfo
@@ -195,7 +213,6 @@ protected:
 		vk::PipelineLayoutCreateInfo pipelineInfo;
 		pipelineInfo.setSetLayouts(descriptorLayouts);
 		_pipelineLayout = dev.createPipelineLayoutUnique(pipelineInfo);
-
 
 		Pass::_initialize(dev);
 	}

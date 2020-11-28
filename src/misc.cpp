@@ -1,8 +1,12 @@
 #include "misc.h"
 
+#include <cstdlib>
+#include <ctime>
 #include <fstream>
+#include <random>
 
 #include "vma.h"
+
 
 std::vector<char> readFile(const std::filesystem::path &path) {
 	std::ifstream fin(path, std::ios::ate | std::ios::binary);
@@ -20,7 +24,7 @@ void vkCheck(vk::Result res) {
 	}
 }
 
-[[nodiscard]] vk::Format findSupportedFormat(
+vk::Format findSupportedFormat(
 	const std::vector<vk::Format> &candidates, vk::PhysicalDevice physicalDevice,
 	vk::ImageTiling requiredTiling, vk::FormatFeatureFlags requiredFeatures
 ) {
@@ -291,6 +295,16 @@ vma::UniqueImage loadTexture(
 	);
 }
 
+bool hasEmissiveMaterial(const nvh::GltfScene& m_gltfScene) {
+
+	for (auto tmp_mat : m_gltfScene.m_materials) {
+		if (tmp_mat.emissiveFactor.norm() != 0.0 || tmp_mat.emissiveTexture != -1) {
+			return true;
+		}
+	}
+	return false;
+}
+
 
 void loadScene(const std::string& filename, nvh::GltfScene& m_gltfScene) {
 	tinygltf::Model    tmodel;
@@ -302,7 +316,6 @@ void loadScene(const std::string& filename, nvh::GltfScene& m_gltfScene) {
 	m_gltfScene.importDrawableNodes(tmodel, nvh::GltfAttributes::Normal | nvh::GltfAttributes::Texcoord_0 | nvh::GltfAttributes::Color_0 | nvh::GltfAttributes::Tangent);
 	m_gltfScene.importMaterials(tmodel);
 	m_gltfScene.importTexutureImages(tmodel);
-
 
 	// Show gltf scene info
 	std::cout << "Show gltf scene info" << std::endl;
@@ -325,4 +338,60 @@ void loadScene(const std::string& filename, nvh::GltfScene& m_gltfScene) {
 		<< m_gltfScene.m_dimensions.size.z << "]" << std::endl;
 
 	std::cout << "vertex num:" << m_gltfScene.m_positions.size() << std::endl;
+}
+
+std::vector<shader::pointLight> collectPointLightsFromScene(const nvh::GltfScene &scene) {
+	std::vector<shader::pointLight> result;
+	result.reserve(scene.m_lights.size());
+	for (const nvh::GltfLight &light : scene.m_lights) {
+		shader::pointLight &addedLight = result.emplace_back(shader::pointLight{
+			.pos = light.worldMatrix.col(3),
+			.color = nvmath::vec3(light.light.color[0], light.light.color[1], light.light.color[2])
+			});
+		addedLight.intensity = shader::luminance(addedLight.color.x, addedLight.color.y, addedLight.color.z);
+	}
+	return result;
+}
+
+std::vector<shader::pointLight> generateRandomPointLights(std::size_t count, nvmath::vec3 min, nvmath::vec3 max) {
+	std::uniform_real_distribution<float> distX(min.x, max.x);
+	std::uniform_real_distribution<float> distY(min.y, max.y);
+	std::uniform_real_distribution<float> distZ(min.z, max.z);
+	std::uniform_real_distribution<float> distRgb(0.5f, 1.0f);
+	std::default_random_engine rand;
+
+	std::vector<shader::pointLight> result(count);
+	for (shader::pointLight &light : result) {
+		light.pos = nvmath::vec4(distX(rand), distY(rand), distZ(rand), 1.0f);
+		light.color = nvmath::vec4(distRgb(rand), distRgb(rand), distRgb(rand), 1.0f);
+		light.intensity = shader::luminance(light.color.x, light.color.y, light.color.z);
+	}
+	return result;
+}
+
+std::vector<shader::triLight> collectTriangleLightsFromScene(const nvh::GltfScene &scene) {
+	std::vector<shader::triLight> result;
+	for (const nvh::GltfNode &node : scene.m_nodes) {
+		const nvh::GltfPrimMesh &mesh = scene.m_primMeshes[node.primMesh];
+		const nvh::GltfMaterial &material = scene.m_materials[mesh.materialIndex];
+		if (material.emissiveFactor.sq_norm() > 1e-6) {
+			const uint32_t *indices = scene.m_indices.data() + mesh.firstIndex;
+			const nvmath::vec3* pos = scene.m_positions.data() + mesh.vertexOffset;
+			for (uint32_t i = 0; i < mesh.indexCount; i += 3, indices += 3) {
+				// triangle
+				vec4 p1 = node.worldMatrix * nvmath::vec4(pos[indices[0]], 1.0f);
+				vec4 p2 = node.worldMatrix * nvmath::vec4(pos[indices[1]], 1.0f);
+				vec4 p3 = node.worldMatrix * nvmath::vec4(pos[indices[2]], 1.0f);
+				vec3 p1_vec3(p1.x, p1.y, p1.z), p2_vec3(p2.x, p2.y, p2.z), p3_vec3(p3.x, p3.y, p3.z);
+				float area = nvmath::cross(p2_vec3 - p1_vec3, p3_vec3 - p1_vec3).norm() / 2.f;
+				shader::triLight tmpTriLight{ p1, p2, p3, vec4(material.emissiveFactor, 0.0), area };
+				result.emplace_back(shader::triLight{
+					.p1 = p1, .p2 = p2, .p3 = p3,
+					.emissiveFactor = material.emissiveFactor,
+					.area = area
+					});
+			}
+		}
+	}
+	return result;
 }

@@ -17,7 +17,7 @@ layout (location = 1) in vec4 inTangent;
 layout (location = 2) in vec4 inColor;
 layout (location = 3) in vec2 inUv;
 
-layout (location = 0) out vec3 outAlbedo;
+layout (location = 0) out vec4 outAlbedo;
 layout (location = 1) out vec3 outNormal;
 layout (location = 2) out vec2 outMaterialProperties;
 
@@ -30,7 +30,7 @@ void main() {
 		}
 	}
 	// the deferred pipeline doesn't support transparency; set alpha to 1
-	outAlbedo = albedo.rgb;
+	outAlbedo.rgb = albedo.rgb;
 
 	// compute normal
 	// this front facing flag may come in handy later when handling double-sided geometry
@@ -60,7 +60,18 @@ void main() {
 		vec3 metallicRgb = 25.0f * average - sqrtTerm;
 
 		metallic = (metallicRgb.r + metallicRgb.g + metallicRgb.b) / 3.0f;
-		outAlbedo = average + sqrtTerm;
+		outAlbedo.rgb = average + sqrtTerm;
 	}
+
 	outMaterialProperties = vec2(roughness, metallic);
+
+	
+	if(length(material.emissiveFactor.xyz) > 0.0){
+		// Emissive material
+		outAlbedo.xyz = material.emissiveFactor.xyz;
+		outAlbedo.w = 1.0;
+	}else{
+		outAlbedo.w = 0.0;
+	}
+	
 }

@@ -51,6 +51,8 @@ void App::initPhysicalInfo(PhysicalDeviceInfo& info, vk::PhysicalDevice physical
 }
 
 App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
+	app_start = std::clock();
+
 	IMGUI_CHECKVERSION();
 	ImGui::CreateContext();
 	// the callbacks are installed here but they're overriden below, so we still need to manually call those
@@ -225,10 +227,13 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 		initPhysicalInfo(physicalDeviceInfo, _physicalDevice);
 		vk::PhysicalDeviceFeatures2 features2;
 		features2.features = physicalDeviceInfo.features10;
-		features2.features.setSamplerAnisotropy(true);
+		features2.features
+            .setSamplerAnisotropy(true)
+            .setShaderInt64(true);
 		features2.pNext = &physicalDeviceInfo.features11;
 		physicalDeviceInfo.features11.pNext = &physicalDeviceInfo.features12;
 		physicalDeviceInfo.features12.pNext = nullptr;
+			
 
 		// Set Queue Info Based on Physical Device Info
 		bool queueFamilyGeneralPurpose = false;
@@ -339,16 +344,18 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 		_swapchain = Swapchain::create(_device.get(), _swapchainInfo);
 	}
 
-	/*loadScene("../../../scenes/cornellBox/cornellBox.gltf", _gltfScene);*/
+	/** NOTE: A scene without emissive materials will be given 8 point lights and scenes with lightning material won't have point lights **/
+	/** cornellBox has emissive materials and others don't have **/
+	loadScene("../../../scenes/cornellBox/cornellBox.gltf", _gltfScene);
 	// loadScene("../../../scenes/boxTextured/boxTextured.gltf", _gltfScene);
 	// loadScene("../../../scenes/duck/Duck.gltf", _gltfScene);
 	// loadScene("../../../scenes/fish/BarramundiFish.gltf", _gltfScene);
-	loadScene("../../../scenes/Sponza/glTF/Sponza.gltf", _gltfScene);
+	// loadScene("../../../scenes/Sponza/glTF/Sponza.gltf", _gltfScene);
 
 	{ // create descriptor pools
 		std::array<vk::DescriptorPoolSize, 6> staticPoolSizes{
 			vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, 3),
-			vk::DescriptorPoolSize(vk::DescriptorType::eStorageBuffer, 2),
+			vk::DescriptorPoolSize(vk::DescriptorType::eStorageBuffer, 4),
 			vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, 3),
 			vk::DescriptorPoolSize(vk::DescriptorType::eUniformBufferDynamic, 2),
 			vk::DescriptorPoolSize(vk::DescriptorType::eAccelerationStructureKHR, 1),
@@ -466,6 +473,8 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 #if defined(SOFTWARE_RT)
 	// create lighting pass
 	_lightingPass = Pass::create<LightingPass>(_device.get(), _swapchain.getImageFormat());
+	_lightingPass.scene = &_gltfScene;
+	_lightingPass.sceneBuffers = &_sceneBuffers;
 
 	_initializeLightingPassResources();
 
@@ -633,7 +642,13 @@ void App::mainLoop() {
 			}
 		}
 
-
+#if defined(SOFTWARE_RT)
+		auto* lightingPassUniforms = _lightingPassResources.uniformBuffer.mapAs<shader::LightingPassUniforms>();
+		std::clock_t app_time_now = std::clock();
+		lightingPassUniforms->sysTime = int(1000.0 * (app_time_now - app_start) / CLOCKS_PER_SEC);
+		_lightingPassResources.uniformBuffer.unmap();
+		_lightingPassResources.uniformBuffer.flush();
+#endif
 		_device->resetFences({ _inFlightFences[currentFrame].get() });
 
 		{
@@ -659,6 +674,7 @@ void App::mainLoop() {
 				lightingPassUniforms->tanHalfFovY = std::tan(0.5f * _camera.fovYRadians);
 				lightingPassUniforms->aspectRatio = _camera.aspectRatio;
 				lightingPassUniforms->debugMode = _debugMode;
+				lightingPassUniforms->sampleNum = this->sampleNum;
 				_lightingPassResources.uniformBuffer.unmap();
 				_lightingPassResources.uniformBuffer.flush();
 #else
