@@ -1,7 +1,7 @@
 #include "sceneStructs.glsl"
 #include "../rand.glsl"
 
-void updateReservoir(inout Reservoir res, float weight, vec3 emission, vec3 position, float pHat, inout Rand rand) {
+void updateReservoir(inout Reservoir res, float weight, vec4 emission, vec4 position, float pHat, inout Rand rand) {
 	for (int i = 0; i < RESERVOIR_SIZE; ++i) {
 		res.samples[i].sumWeights += weight;
 		float replacePossibility = weight / res.samples[i].sumWeights;
@@ -13,7 +13,7 @@ void updateReservoir(inout Reservoir res, float weight, vec3 emission, vec3 posi
 	}
 } 
 
-void addSampleToReservoir(inout Reservoir res, vec3 emission, vec3 position, float pHat, float sampleP, inout Rand rand) {
+void addSampleToReservoir(inout Reservoir res, vec4 emission, vec4 position, float pHat, float sampleP, inout Rand rand) {
 	float weight = pHat / sampleP;
 	++res.numStreamSamples;
 

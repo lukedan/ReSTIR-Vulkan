@@ -105,7 +105,9 @@ void main() {
 		for(int i = 0; i < sample_num; ++i){
 			// Lights parameters and init
 			uint seed = uint(uniforms.sysTime + int(worldPos.x * 12.0) + int(worldPos.y * 133.0 * inUv.x * inUv.y) + int(worldPos.z * 7.0 * inUv.y));
-			float tempFloatRnd = rnd(seed);
+			Rand randomNum;
+			randomNum.context = seed;
+			float tempFloatRnd = randFloat(randomNum);
 			int selectedIdx = int(tempFloatRnd * ptLightNum * 100.0) % ptLightNum;
 	
 			vec3 tempLightPos = ptLights.lights[selectedIdx].pos.xyz;

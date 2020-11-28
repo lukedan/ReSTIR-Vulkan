@@ -52,18 +52,12 @@
    ~~~
 
  */
-
-#pragma once
 #pragma once
 #include "tiny_gltf.h"
 #include "nvmath.h"
-#include "nvmath_glsltypes.h"
-<<<<<<< HEAD:thirdparty/gltf/gltfscene.h
+#include "nvmath_glsltypes.h" 
+#include "../../src/shaderIncludes.h"
 
-=======
-#include "../src/shaderIncludes.h"
-// #include "../src/vma.h"
->>>>>>> jiarui_gltf:gltf/gltfscene.h
 #include <map>
 #include <string>
 #include <unordered_map>

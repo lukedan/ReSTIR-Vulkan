@@ -64,7 +64,7 @@ void main() {
      {
         isShadowed = true;
        
-        vec3 curLightPos = reservoir.samples[i].position;
+        vec3 curLightPos = vec3(reservoir.samples[i].position);
         vec4 curDirection = vec4(vec3(curLightPos) - worldPos, 0.0f);
         float curTMax = length(curDirection);
         curDirection = normalize(curDirection);
@@ -136,14 +136,14 @@ void main() {
     float cosHalf = dot(normal, halfVec);
     float cosInHalf = dot(wi, halfVec);
 
-    vec3 outColor = disneyBrdfColor(cosIn, cosOut, cosHalf, cosInHalf, albedo, roughness, metallic) * abs(cosIn) / sqrDist;
+    vec3 outColor =10 * disneyBrdfColor(cosIn, cosOut, cosHalf, cosInHalf, albedo, roughness, metallic) * abs(cosIn) / sqrDist;
 
     //outColor = albedo;
 
-    imageStore(img, ivec2(gl_LaunchIDEXT.xy), vec4(hasLight * vec3(1.0) / 4.0, 1.0f));
+    //imageStore(img, ivec2(gl_LaunchIDEXT.xy), vec4(hasLight * vec3(1.0) / 4.0, 1.0f));
 
-    /*if(isShadowed)
+    if(isShadowed)
         imageStore(img, ivec2(gl_LaunchIDEXT.xy), vec4(0.5 * outColor, 1.0f));
     else
-        imageStore(img, ivec2(gl_LaunchIDEXT.xy), vec4(outColor, 1.0f));*/
+        imageStore(img, ivec2(gl_LaunchIDEXT.xy), vec4(outColor, 1.0f));
 }

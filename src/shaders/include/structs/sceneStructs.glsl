@@ -35,9 +35,9 @@ struct MaterialUniforms {
 
 // these structs are not supposed to be seen by the cpu
 struct LightSample {
-	vec3 emission;
+	vec4 emission;
 	float pHat;
-	vec3 position;
+	vec4 position;
 	float sumWeights; // setting W to 0 is equivalent to setting sumWeights to 0
 };
 
