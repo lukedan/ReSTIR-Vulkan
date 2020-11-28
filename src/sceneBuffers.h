@@ -2,9 +2,10 @@
 
 #include <nvmath_glsltypes.h>
 
+#include <gltfscene.h>
+
 #include "vertex.h"
 #include "vma.h"
-#include "../gltf/gltfscene.h"
 #include "transientCommandBuffer.h"
 #include "shaderIncludes.h"
 
@@ -48,10 +49,8 @@ public:
 		const nvh::GltfScene &scene,
 		vma::Allocator &allocator,
 		TransientCommandBufferPool &oneTimeBufferPool,
-		vk::PhysicalDevice p_device,
 		vk::Device l_device,
-		vk::Queue graphicsQueue,
-		vk::CommandPool commandPool
+		vk::Queue graphicsQueue
 	) {
 		SceneBuffers result;
 

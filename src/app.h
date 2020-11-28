@@ -203,7 +203,7 @@ protected:
 		vk::CommandBufferAllocateInfo cmdBufInfo;
 		cmdBufInfo
 			.setCommandPool(_imguiCommandPool.get())
-			.setCommandBufferCount(_swapchainBuffers.size())
+			.setCommandBufferCount(static_cast<uint32_t>(_swapchainBuffers.size()))
 			.setLevel(vk::CommandBufferLevel::ePrimary);
 		_imguiCommandBuffers = _device->allocateCommandBuffersUnique(cmdBufInfo);
 	}
@@ -233,7 +233,7 @@ protected:
 	void createAndRecordRTSwapchainBuffers(
 		const Swapchain& swapchain, vk::Device device, vk::CommandPool commandPool, RtPass& rtPass, vk::DispatchLoaderDynamic dld
 	) {
-		int imageSize = swapchain.getNumImages();
+		std::size_t imageSize = swapchain.getNumImages();
 		vk::CommandBufferAllocateInfo allocInfo;
 		allocInfo
 			.setCommandPool(commandPool)
@@ -242,7 +242,7 @@ protected:
 		std::vector<vk::UniqueCommandBuffer> commandBuffers = device.allocateCommandBuffersUnique(allocInfo);
 		_swapchainBuffers.resize(imageSize);
 
-		for (int i = 0; i < imageSize; i++)
+		for (std::size_t i = 0; i < imageSize; i++)
 		{
 			_swapchainBuffers[i].commandBuffer = std::move(commandBuffers[i]);
 			vk::CommandBufferBeginInfo beginInfo;
@@ -250,7 +250,8 @@ protected:
 			rtPass.issueCommands(_swapchainBuffers[i].commandBuffer.get(),
 				_swapchainBuffers[i].framebuffer.get(),
 				swapchain.getImageExtent(),
-				_swapchain.getImageAtIndexs(i), dld);
+				_swapchain.getImages()[i],
+				dld);
 			_swapchainBuffers[i].commandBuffer->end();
 		}
 	}

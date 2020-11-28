@@ -8,7 +8,8 @@
 
 #include <vulkan/vulkan.hpp>
 
-#include "../gltf/gltfscene.h"
+#include <gltfscene.h>
+
 #include "transientCommandBuffer.h"
 
 

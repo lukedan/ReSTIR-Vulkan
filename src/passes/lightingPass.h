@@ -36,7 +36,7 @@ public:
 		);*/
 
 		commandBuffer.setViewport(0, { vk::Viewport(
-			0.0f, 0.0f, imageExtent.width, imageExtent.height, 0.0f, 1.0f
+			0.0f, 0.0f, static_cast<float>(imageExtent.width), static_cast<float>(imageExtent.height), 0.0f, 1.0f
 		) });
 		commandBuffer.setScissor(0, { vk::Rect2D(vk::Offset2D(0, 0), imageExtent) });
 
@@ -65,7 +65,7 @@ public:
 		for (std::size_t i = 0; i < imageInfo.size(); ++i) {
 			descriptorWrite.emplace_back()
 				.setDstSet(rsrc.descriptorSet.get())
-				.setDstBinding(i)
+				.setDstBinding(static_cast<uint32_t>(i))
 				.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
 				.setPImageInfo(&imageInfo[i])
 				.setDescriptorCount(1);
@@ -150,21 +150,23 @@ protected:
 	}
 	std::vector<PipelineCreationInfo> _getPipelineCreationInfo() override {
 		std::vector<PipelineCreationInfo> result;
-		PipelineCreationInfo &info = result.emplace_back();
+
+		GraphicsPipelineCreationInfo info;
 		info.inputAssemblyState
 			.setTopology(vk::PrimitiveTopology::eTriangleStrip);
 		info.viewportState
 			.setViewportCount(1)
 			.setScissorCount(1);
-		info.rasterizationState = PipelineCreationInfo::getDefaultRasterizationState();
-		info.multisampleState = PipelineCreationInfo::getNoMultisampleState();
-		info.attachmentColorBlendStorage.emplace_back(PipelineCreationInfo::getNoBlendAttachment());
+		info.rasterizationState = GraphicsPipelineCreationInfo::getDefaultRasterizationState();
+		info.multisampleState = GraphicsPipelineCreationInfo::getNoMultisampleState();
+		info.attachmentColorBlendStorage.emplace_back(GraphicsPipelineCreationInfo::getNoBlendAttachment());
 		info.colorBlendState.setAttachments(info.attachmentColorBlendStorage);
 		info.shaderStages.emplace_back(_frag.getStageInfo());
 		info.shaderStages.emplace_back(_vert.getStageInfo());
 		info.dynamicStates.emplace_back(vk::DynamicState::eViewport);
 		info.dynamicStates.emplace_back(vk::DynamicState::eScissor);
 		info.pipelineLayout = _pipelineLayout.get();
+		result.emplace_back(std::move(info));
 
 		return result;
 	}

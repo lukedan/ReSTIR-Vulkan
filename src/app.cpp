@@ -13,7 +13,7 @@ VKAPI_ATTR VkBool32 VKAPI_CALL _debugCallback(
 	VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
 	VkDebugUtilsMessageTypeFlagsEXT messageType,
 	const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData,
-	void *pUserData
+	void*
 ) {
 	if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) {
 		std::cerr << pCallbackData->pMessage << std::endl;
@@ -362,13 +362,13 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 		_staticDescriptorPool = _device->createDescriptorPoolUnique(staticPoolInfo);
 
 		std::array<vk::DescriptorPoolSize, 1> texturePoolSizes{
-			vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, 3 * _gltfScene.m_materials.size())
+			vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, static_cast<uint32_t>(3 * _gltfScene.m_materials.size()))
 		};
 		vk::DescriptorPoolCreateInfo texturePoolInfo;
 		texturePoolInfo
 			.setFlags(vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet)
 			.setPoolSizes(texturePoolSizes)
-			.setMaxSets(_gltfScene.m_materials.size());
+			.setMaxSets(static_cast<uint32_t>(_gltfScene.m_materials.size()));
 		_textureDescriptorPool = _device->createDescriptorPoolUnique(texturePoolInfo);
 
 		// initialize imgui descriptor pool
@@ -391,7 +391,7 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 		vk::DescriptorPoolCreateInfo imguiPoolInfo;
 		imguiPoolInfo
 			.setFlags(vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet)
-			.setMaxSets(imguiPoolSizes.size() * imguiDescriptorCount)
+			.setMaxSets(static_cast<uint32_t>(imguiPoolSizes.size() * imguiDescriptorCount))
 			.setPoolSizes(imguiPoolSizes);
 		_imguiDescriptorPool = _device->createDescriptorPoolUnique(imguiPoolInfo);
 	}
@@ -404,7 +404,7 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 	_sceneBuffers = SceneBuffers::create(
 		_gltfScene,
 		_allocator, _transientCommandBufferPool,
-		_physicalDevice, _device.get(), _graphicsQueue, _commandPool.get()
+		_device.get(), _graphicsQueue
 	);
 	std::cout << "Building AABB tree...";
 	_aabbTree = AabbTree::build(_gltfScene);
@@ -493,7 +493,7 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 		imguiInit.Queue = _graphicsQueue;
 		imguiInit.DescriptorPool = _imguiDescriptorPool.get();
 		imguiInit.MinImageCount = _swapchainInfo.minImageCount;
-		imguiInit.ImageCount = _swapchain.getImages().size();
+		imguiInit.ImageCount = static_cast<uint32_t>(_swapchain.getImages().size());
 		ImGui_ImplVulkan_Init(&imguiInit, _imguiPass.getPass());
 	}
 	{
@@ -510,7 +510,6 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 	_renderFinishedSemaphore.resize(maxFramesInFlight);
 	_inFlightFences.resize(maxFramesInFlight);
 	_inFlightImageFences.resize(_swapchainBuffers.size());
-	std::size_t currentFrame = 0;
 	for (std::size_t i = 0; i < maxFramesInFlight; ++i) {
 		vk::SemaphoreCreateInfo semaphoreInfo;
 		_imageAvailableSemaphore[i] = _device->createSemaphoreUnique(semaphoreInfo);
@@ -602,9 +601,10 @@ void App::mainLoop() {
 			_cameraUpdated = true;
 		}
 
-		_device->waitForFences(
+		while (_device->waitForFences(
 			{ _inFlightFences[currentFrame].get() }, true, std::numeric_limits<std::uint64_t>::max()
-		);
+		) == vk::Result::eTimeout) {
+		}
 
 		_fpsCounter.tick();
 		std::stringstream ss;
@@ -625,16 +625,18 @@ void App::mainLoop() {
 		}
 
 		if (_inFlightImageFences[imageIndex]) {
-			_device->waitForFences(
+			while (_device->waitForFences(
 				{ _inFlightImageFences[imageIndex].get() }, true, std::numeric_limits<std::uint64_t>::max()
-			);
+			) == vk::Result::eTimeout) {
+			}
 		}
 
 
 		_device->resetFences({ _inFlightFences[currentFrame].get() });
 
 		{
-			_device->waitForFences(_gBufferFence.get(), true, std::numeric_limits<uint64_t>::max());
+			while (_device->waitForFences(_gBufferFence.get(), true, std::numeric_limits<uint64_t>::max()) == vk::Result::eTimeout) {
+			}
 			_device->resetFences(_gBufferFence.get());
 
 			if (_cameraUpdated || _debugModeChanged) {
@@ -708,7 +710,9 @@ void App::mainLoop() {
 			.setSwapchains(swapchains)
 			.setImageIndices(imageIndices);
 		try {
-			_presentQueue.presentKHR(presentInfo);
+			if (_presentQueue.presentKHR(presentInfo) == vk::Result::eSuboptimalKHR) {
+				needsResize = true;
+			}
 		} catch (const vk::OutOfDateKHRError&) {
 			needsResize = true;
 		}
@@ -743,22 +747,22 @@ void App::_onMouseMoveEvent(double x, double y) {
 		{
 			nvmath::vec3f camOffset = _camera.position - _camera.lookAt;
 
-			nvmath::vec3f y = nvmath::normalize(_camera.worldUp);
-			nvmath::vec3f x = nvmath::normalize(nvmath::cross(y, camOffset));
-			nvmath::vec3f z = nvmath::cross(x, y);
+			nvmath::vec3f yAxis = nvmath::normalize(_camera.worldUp);
+			nvmath::vec3f xAxis = nvmath::normalize(nvmath::cross(yAxis, camOffset));
+			nvmath::vec3f zAxis = nvmath::cross(xAxis, yAxis);
 
 			nvmath::vec2f angles = offset * -1.0f * 0.005f;
 			nvmath::vec2f vert(std::cos(angles.y), std::sin(angles.y));
 			nvmath::vec2f hori(std::cos(angles.x), std::sin(angles.x));
 
-			nvmath::vec3f angle(0.0f, nvmath::dot(camOffset, y), nvmath::dot(camOffset, z));
+			nvmath::vec3f angle(0.0f, nvmath::dot(camOffset, yAxis), nvmath::dot(camOffset, zAxis));
 			float newZ = angle.y * vert.y + angle.z * vert.x;
 			if (newZ > 0.0f) {
 				angle = nvmath::vec3f(0.0f, angle.y * vert.x - angle.z * vert.y, newZ);
 			}
 			angle = nvmath::vec3f(angle.z * hori.y, angle.y, angle.z * hori.x);
 
-			_camera.position = _camera.lookAt + x * angle.x + y * angle.y + z * angle.z;
+			_camera.position = _camera.lookAt + xAxis * angle.x + yAxis * angle.y + zAxis * angle.z;
 		}
 		break;
 	case GLFW_MOUSE_BUTTON_RIGHT:

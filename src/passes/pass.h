@@ -1,6 +1,10 @@
 #pragma once
 
+#include <variant>
+
 #include <vulkan/vulkan.hpp>
+
+#include "../misc.h"
 
 class SceneBuffers;
 
@@ -9,7 +13,7 @@ public:
 	Pass(Pass&&) = default;
 	Pass &operator=(Pass&&) = default;
 
-	struct PipelineCreationInfo {
+	struct GraphicsPipelineCreationInfo {
 		[[nodiscard]] inline static vk::PipelineInputAssemblyStateCreateInfo
 			getTriangleListWithoutPrimitiveRestartInputAssembly() {
 
@@ -91,6 +95,8 @@ public:
 
 		vk::PipelineLayout pipelineLayout;
 	};
+	using PipelineCreationInfo = std::variant<GraphicsPipelineCreationInfo, vk::ComputePipelineCreateInfo>;
+
 
 	virtual ~Pass() = default;
 
@@ -120,33 +126,42 @@ protected:
 		std::vector<PipelineCreationInfo> pipelineInfo = _getPipelineCreationInfo();
 		std::vector<vk::UniquePipeline> pipelines(pipelineInfo.size());
 		for (std::size_t i = 0; i < pipelineInfo.size(); ++i) {
-			const PipelineCreationInfo &info = pipelineInfo[i];
+			if (std::holds_alternative<GraphicsPipelineCreationInfo>(pipelineInfo[i])) {
+				const auto &info = std::get<GraphicsPipelineCreationInfo>(pipelineInfo[i]);
 
-			// checks that storages are properly bound
-			assert(info.vertexInputState.pVertexBindingDescriptions == info.vertexInputBindingStorage.data());
-			assert(info.vertexInputState.pVertexAttributeDescriptions == info.vertexInputAttributeStorage.data());
-			assert(info.colorBlendState.pAttachments == info.attachmentColorBlendStorage.data());
-			assert(info.viewportState.pViewports == info.viewportStorage.data());
-			assert(info.viewportState.pScissors == info.scissorStorage.data());
+				// checks that storages are properly bound
+				assert(info.vertexInputState.pVertexBindingDescriptions == info.vertexInputBindingStorage.data());
+				assert(info.vertexInputState.pVertexAttributeDescriptions == info.vertexInputAttributeStorage.data());
+				assert(info.colorBlendState.pAttachments == info.attachmentColorBlendStorage.data());
+				assert(info.viewportState.pViewports == info.viewportStorage.data());
+				assert(info.viewportState.pScissors == info.scissorStorage.data());
 
-			vk::PipelineDynamicStateCreateInfo dynamicStateInfo;
-			dynamicStateInfo.setDynamicStates(info.dynamicStates);
+				vk::PipelineDynamicStateCreateInfo dynamicStateInfo;
+				dynamicStateInfo.setDynamicStates(info.dynamicStates);
 
-			vk::GraphicsPipelineCreateInfo thisPipelineInfo;
-			thisPipelineInfo
-				.setPVertexInputState(&info.vertexInputState)
-				.setPInputAssemblyState(&info.inputAssemblyState)
-				.setPViewportState(&info.viewportState)
-				.setPRasterizationState(&info.rasterizationState)
-				.setPDepthStencilState(&info.depthStencilState)
-				.setPMultisampleState(&info.multisampleState)
-				.setPColorBlendState(&info.colorBlendState)
-				.setStages(info.shaderStages)
-				.setLayout(info.pipelineLayout)
-				.setPDynamicState(&dynamicStateInfo)
-				.setRenderPass(_pass.get())
-				.setSubpass(static_cast<uint32_t>(i));
-			pipelines[i] = dev.createGraphicsPipelineUnique(nullptr, thisPipelineInfo);
+				vk::GraphicsPipelineCreateInfo thisPipelineInfo;
+				thisPipelineInfo
+					.setPVertexInputState(&info.vertexInputState)
+					.setPInputAssemblyState(&info.inputAssemblyState)
+					.setPViewportState(&info.viewportState)
+					.setPRasterizationState(&info.rasterizationState)
+					.setPDepthStencilState(&info.depthStencilState)
+					.setPMultisampleState(&info.multisampleState)
+					.setPColorBlendState(&info.colorBlendState)
+					.setStages(info.shaderStages)
+					.setLayout(info.pipelineLayout)
+					.setPDynamicState(&dynamicStateInfo)
+					.setRenderPass(_pass.get())
+					.setSubpass(static_cast<uint32_t>(i));
+				auto [result, pipe] = dev.createGraphicsPipelineUnique(nullptr, thisPipelineInfo).asTuple();
+				vkCheck(result);
+				pipelines[i] = std::move(pipe);
+			} else if (std::holds_alternative<vk::ComputePipelineCreateInfo>(pipelineInfo[i])) {
+				const auto &info = std::get<vk::ComputePipelineCreateInfo>(pipelineInfo[i]);
+				auto [result, pipe] = dev.createComputePipelineUnique(nullptr, info);
+				vkCheck(result);
+				pipelines[i] = std::move(pipe);
+			}
 		}
 		return pipelines;
 	}
@@ -155,10 +170,6 @@ protected:
 		_pipelines = _createPipelines(dev);
 	}
 	virtual void _initialize(vk::Device dev) {
-		_pass = _createPass(dev);
-		_pipelines = _createPipelines(dev);
-	}
-	virtual void _initialize(vk::Device dev, SceneBuffers* i_scene_buffer) {
 		_pass = _createPass(dev);
 		_pipelines = _createPipelines(dev);
 	}
