@@ -133,6 +133,7 @@ protected:
 
 	nvh::GltfScene _gltfScene;
 	SceneBuffers _sceneBuffers;
+	int sampleNum = 50;
 
 	AabbTree _aabbTree;
 	AabbTreeBuffers _aabbTreeBuffers;
@@ -153,6 +154,9 @@ protected:
 	nvmath::vec2f _lastMouse;
 	int _pressedMouseButton = -1;
 	bool _cameraUpdated = true;
+
+	// Time
+	std::clock_t app_start;
 
 	void _onMouseMoveEvent(double x, double y);
 	void _onMouseButtonEvent(int button, int action, int mods);

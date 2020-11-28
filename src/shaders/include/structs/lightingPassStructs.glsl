@@ -7,4 +7,6 @@ struct LightingPassUniforms{
 	float tanHalfFovY;
 	float aspectRatio;
 	int debugMode;
+	int sampleNum;
+	int sysTime;
 };
