@@ -3,7 +3,7 @@
 
 #include "include/disneyBRDF.glsl"
 #include "include/structs/lightingPassStructs.glsl"
-#include "include/structs/reservoir.glsl"
+#include "include/reservoir.glsl"
 
 layout(location = 0) rayPayloadEXT bool isShadowed;
 
@@ -13,7 +13,7 @@ layout(binding = 1, rgba32f) uniform image2D img;
 
 layout (binding = 2, set = 0) uniform sampler2D uniAlbedo;
 layout (binding = 3, set = 0) uniform sampler2D uniNormal;
-layout (binding = 4, set = 0) uniform sampler2D uniDepth;
+layout (binding = 4, set = 0) uniform sampler2D uniWorldPosition;
 layout (binding = 5) uniform sampler2D uniMaterialProperties;
 
 layout (binding = 6, set = 0) uniform Uniforms {
@@ -21,7 +21,11 @@ layout (binding = 6, set = 0) uniform Uniforms {
 };
 
 layout (binding = 7, set = 0) buffer Reservoirs {
-    Reservoir reservoir;
+    Reservoir reservoirs[];
+};
+
+layout (binding = 8, set = 0) uniform Restiruniforms {
+	RestirUniforms restirUniforms;
 };
 
 float sceneDepthToWorldDepth(float depth, float near, float far) {
@@ -35,115 +39,46 @@ vec3 fragCoordDepthToViewPos(vec2 uv, float worldDepth, float tanHalfFovY, float
 }
 
 void main() {
-    const vec2 pixelCenter = vec2(gl_LaunchIDEXT.xy) + vec2(0.5);
-    const vec2 inUV        = pixelCenter / vec2(gl_LaunchSizeEXT.xy);
-    
-    vec3 albedo = texture(uniAlbedo, inUV).xyz;
-    vec3 normal = texture(uniNormal, inUV).xyz;
-    float depth = texture(uniDepth, inUV).x;
-    vec2 materialProps = texture(uniMaterialProperties, inUV).xy;
+    uvec2 pixelCoord = gl_LaunchIDEXT.xy;
+	if (any(greaterThanEqual(pixelCoord, restirUniforms.screenSize))) {
+		return;
+	}
 
-    float worldDepth = sceneDepthToWorldDepth(depth, uniforms.cameraNear, uniforms.cameraFar);
-	vec3 viewPos = fragCoordDepthToViewPos(inUV, worldDepth, uniforms.tanHalfFovY, uniforms.aspectRatio);
-	vec3 worldPos = (uniforms.inverseViewMatrix * vec4(viewPos, 1.0f)).xyz;
+    vec3 worldPos = texelFetch(uniWorldPosition, ivec2(pixelCoord), 0).xyz;
+	uint reservoirIndex = pixelCoord.y * restirUniforms.screenSize.x + pixelCoord.x;
 
-    vec4 direction = vec4(vec3(uniforms.tempLightPoint) - worldPos, 0.0f);
-    
-    float lightDistance = length(direction);
+    Reservoir res = reservoirs[reservoirIndex];
 
-    direction = normalize(direction);
-
-    vec4 origin    = vec4(worldPos, 1.0f) + 0.01 * direction;
-
-    uint  rayFlags = gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsOpaqueEXT | gl_RayFlagsSkipClosestHitShaderEXT;
+    uint rayFlags = gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsOpaqueEXT | gl_RayFlagsSkipClosestHitShaderEXT;
     float tMin     = 0.001;
-    float tMax     = lightDistance;
-    
-    float hasLight = 0.0;
-     for(int i = 0; i < RESERVOIR_SIZE; i++)
-     {
+
+    for(int i = 0; i < RESERVOIR_SIZE; i++)
+    {
         isShadowed = true;
        
-        vec3 curLightPos = vec3(reservoir.samples[i].position);
-        vec4 curDirection = vec4(vec3(curLightPos) - worldPos, 0.0f);
+        vec3 curLightPos = vec3(res.samples[i].position);
+        vec3 curDirection = vec3(curLightPos) - worldPos;
         float curTMax = length(curDirection);
         curDirection = normalize(curDirection);
+         vec3 origin    = worldPos + 0.001 * curDirection;
 
-         traceRayEXT(acc,     // acceleration structure
-                rayFlags,       // rayFlags
-                0xFF,           // cullMask
-                0,              // sbtRecordOffset
-                0,              // sbtRecordStride
-                0,              // missIndex
-                origin.xyz,     // ray origin
-                tMin,           // ray min range
-                curDirection.xyz,  // ray direction
-                curTMax,           // ray max range
-                0               // payload (location = 0)
+        traceRayEXT(acc,     // acceleration structure
+            rayFlags,       // rayFlags
+            0xFF,           // cullMask
+            0,              // sbtRecordOffset
+            0,              // sbtRecordStride
+            0,              // missIndex
+            origin.xyz,     // ray origin
+            tMin,           // ray min range
+            curDirection.xyz,  // ray direction
+            curTMax,           // ray max range
+            0               // payload (location = 0)
         );
 
         if(isShadowed)
         {
-            reservoir.samples[i].sumWeights = 0.0;
+            res.samples[i].sumWeights = 0.0;
         }
-        else
-        {
-            hasLight += 1.0f;
-        }
-     }
-
-    isShadowed = true;
-
-    traceRayEXT(acc,     // acceleration structure
-                rayFlags,       // rayFlags
-                0xFF,           // cullMask
-                0,              // sbtRecordOffset
-                0,              // sbtRecordStride
-                0,              // missIndex
-                origin.xyz,     // ray origin
-                tMin,           // ray min range
-                direction.xyz,  // ray direction
-                tMax,           // ray max range
-                0               // payload (location = 0)
-    );
-
-    float roughness = materialProps.r;
-    float metallic = materialProps.g;
-
-    if(albedo.r <= 0.04045)
-        albedo.r = albedo.r / 12.92;
-    else
-        albedo.r = 2.4 * (albedo.r + 0.055 / 1.055);
-
-     if(albedo.g <= 0.04045)
-        albedo.g = albedo.g / 12.92;
-    else
-        albedo.g = 2.4 * (albedo.g + 0.055 / 1.055);
-
-     if(albedo.b <= 0.04045)
-        albedo.b = albedo.b / 12.92;
-    else
-        albedo.b = 2.4 * (albedo.b + 0.055 / 1.055);
-
-    vec3 wi = uniforms.tempLightPoint.xyz - worldPos;
-    float sqrDist = dot(wi, wi);
-    wi /= sqrt(sqrDist);
-    vec3 wo = normalize(vec3(uniforms.cameraPos) - worldPos);
-
-    float cosIn = dot(normal, wi);
-    float cosOut = dot(normal, wo);
-    vec3 halfVec = normalize(wi + wo);
-    float cosHalf = dot(normal, halfVec);
-    float cosInHalf = dot(wi, halfVec);
-
-    vec3 outColor =10 * disneyBrdfColor(cosIn, cosOut, cosHalf, cosInHalf, albedo, roughness, metallic) * abs(cosIn) / sqrDist;
-
-    //outColor = albedo;
-
-    //imageStore(img, ivec2(gl_LaunchIDEXT.xy), vec4(hasLight * vec3(1.0) / 4.0, 1.0f));
-
-    if(isShadowed)
-        imageStore(img, ivec2(gl_LaunchIDEXT.xy), vec4(0.5 * outColor, 1.0f));
-    else
-        imageStore(img, ivec2(gl_LaunchIDEXT.xy), vec4(outColor, 1.0f));
+    } 
+    reservoirs[reservoirIndex] = res;
 }

@@ -1,6 +1,6 @@
 #include "app.h"
 
-//#define SOFTWARE_RT
+
 /*#define RENDERDOC_CAPTURE*/
 
 #include <sstream>
@@ -484,7 +484,7 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 	_lightSamplePass.descriptorSet = _lightSampleDescriptors.get();
 	_lightSamplePass.screenSize = _swapchain.getImageExtent();
 
-
+#ifdef SOFTWARE_RT
 	_swVisibilityTestPass = Pass::create<SoftwareVisibilityTestPass>(_device.get());
 	{
 		std::array<vk::DescriptorSetLayout, 1> setLayouts{ _swVisibilityTestPass.getDescriptorSetLayout() };
@@ -499,8 +499,17 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 
 	_updateRestirBuffers();
 
+#else
+	// Hardware RT pass for visibility test
+	_rtPass = RtPass::create(_device.get(), _dynamicDispatcher);
+	_rtPass._gBuffer = &_gBuffer;
+	_rtPass.createAccelerationStructure(_device.get(), _physicalDevice, _allocator, _dynamicDispatcher,
+		_commandPool.get(), _graphicsQueue, _sceneBuffers, _gltfScene);
+	_rtPass.createOffscreenBuffer(_device.get(), _allocator, _swapchain.getImageExtent());
+	_rtPass.createShaderBindingTable(_device.get(), _allocator, _physicalDevice, _dynamicDispatcher);
+	_updateRestirBuffers();
+#endif
 
-#if defined(SOFTWARE_RT)
 	// create lighting pass
 	_lightingPass = Pass::create<LightingPass>(_device.get(), _swapchain.getImageFormat());
 	_initializeLightingPassResources();
@@ -508,17 +517,7 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 	_lightingPass.imageExtent = _swapchain.getImageExtent();
 	_lightingPass.descriptorSet = _lightingPassResources.descriptorSet.get();
 	_createAndRecordSwapchainBuffers();
-#else
-	// Rt pass initialization
-	_rtPass = RtPass::create(_device.get(), _dynamicDispatcher);
-	_rtPass._gBuffer = &_gBuffer;
-	_rtPass.createAccelerationStructure(_device.get(), _physicalDevice, _allocator, _dynamicDispatcher,
-		_commandPool.get(), _graphicsQueue, _sceneBuffers, _gltfScene);
-	_rtPass.createOffscreenBuffer(_device.get(), _allocator, _swapchain.getImageExtent());
-	_rtPass.createDescriptorSetForRayTracing(_device.get(), _staticDescriptorPool.get(), _dynamicDispatcher);
-	_rtPass.createShaderBindingTable(_device.get(), _allocator, _physicalDevice, _dynamicDispatcher);
-	createAndRecordRTSwapchainBuffers(_swapchain, _device.get(), _commandPool.get(), _rtPass, _dynamicDispatcher);
-#endif
+
 
 	_imguiPass = Pass::create<ImGuiPass>(_device.get(), _swapchain.getImageFormat());
 	_imguiPass.imageExtent = _swapchain.getImageExtent();
@@ -682,13 +681,12 @@ void App::mainLoop() {
 			}
 		}
 
-#if defined(SOFTWARE_RT)
 		auto* lightingPassUniforms = _lightingPassResources.uniformBuffer.mapAs<shader::LightingPassUniforms>();
 		std::clock_t app_time_now = std::clock();
 		lightingPassUniforms->sysTime = int(1000.0 * (app_time_now - app_start) / CLOCKS_PER_SEC);
 		_lightingPassResources.uniformBuffer.unmap();
 		_lightingPassResources.uniformBuffer.flush();
-#endif
+
 		_device->resetFences({ _inFlightFences[currentFrame].get() });
 
 		{
@@ -710,7 +708,6 @@ void App::mainLoop() {
 				_restirUniformBuffer.unmap();
 				_restirUniformBuffer.flush();
 
-#if defined(SOFTWARE_RT)
 				auto *lightingPassUniforms = _lightingPassResources.uniformBuffer.mapAs<shader::LightingPassUniforms>();
 				lightingPassUniforms->inverseViewMatrix = _camera.inverseViewMatrix;
 				lightingPassUniforms->tempLightPoint = _camera.lookAt;
@@ -724,9 +721,7 @@ void App::mainLoop() {
 				lightingPassUniforms->sampleNum = this->sampleNum;
 				_lightingPassResources.uniformBuffer.unmap();
 				_lightingPassResources.uniformBuffer.flush();
-#else
-				_rtPass.updateCameraUniform(_camera);
-#endif
+
 				_cameraUpdated = false;
 				_debugModeChanged = false;
 			}
@@ -743,9 +738,9 @@ void App::mainLoop() {
 			vk::CommandBuffer buffer = _imguiCommandBuffers[imageIndex].get();
 			vk::CommandBufferBeginInfo beginInfo;
 			buffer.begin(beginInfo);
-#if defined(SOFTWARE_RT)
+
 			_imguiPass.issueCommands(buffer, _swapchainBuffers[imageIndex].framebuffer.get());
-#endif
+
 			buffer.end();
 		}
 

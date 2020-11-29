@@ -55,67 +55,16 @@ public:
 
 	GBuffer* _gBuffer = nullptr;
 
-	void issueCommands(vk::CommandBuffer commandBuffer, vk::Framebuffer framebuffer, vk::Extent2D extent, vk::Image swapchainImage, vk::DispatchLoaderDynamic dld) {
-		vk::ImageSubresourceRange subresourceRange;
-		subresourceRange
-			.setAspectMask(vk::ImageAspectFlagBits::eColor)
-			.setBaseMipLevel(0)
-			.setLevelCount(1)
-			.setBaseArrayLayer(0)
-			.setLayerCount(1);
-
-		vk::ImageCopy copyRegion;
-		copyRegion
-			.setSrcOffset({ 0, 0, 0 })
-			.setDstOffset({ 0, 0, 0 });
-
-		copyRegion.srcSubresource
-			.setAspectMask(vk::ImageAspectFlagBits::eColor)
-			.setMipLevel(0)
-			.setBaseArrayLayer(0)
-			.setLayerCount(1);
-
-		copyRegion.dstSubresource
-			.setAspectMask(vk::ImageAspectFlagBits::eColor)
-			.setMipLevel(0)
-			.setBaseArrayLayer(0)
-			.setLayerCount(1);
-
-		copyRegion.extent
-			.setDepth(1)
-			.setWidth(extent.width)
-			.setHeight(extent.height);
-
-		// Offscreen buffer -> Shader writeable state
-		InsertCommandImageBarrier(commandBuffer, _offscreenBuffer.get(), {},
-			vk::AccessFlagBits::eShaderWrite,
-			vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral,
-			subresourceRange);
+	void issueCommands(vk::CommandBuffer commandBuffer, vk::Extent2D extent, vk::DispatchLoaderDynamic dld) {
+		commandBuffer.pipelineBarrier(
+			vk::PipelineStageFlagBits::eAllCommands,
+			vk::PipelineStageFlagBits::eAllCommands,
+			{}, {}, {}, {}
+		);
 
 		commandBuffer.bindPipeline(vk::PipelineBindPoint::eRayTracingKHR, _pipelines[0].get());
 		commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eRayTracingKHR, _pipelineLayout.get(), 0, {_descriptorSet.get()}, {});
 		commandBuffer.traceRaysKHR(rayGenSBT, rayMissSBT, rayHitSBT, rayCallSBT, extent.width, extent.height, 1, dld);
-
-		// Swapchain image -> Copy destination state
-		InsertCommandImageBarrier(commandBuffer, swapchainImage, {},
-			vk::AccessFlagBits::eTransferWrite,
-			vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal,
-			subresourceRange);
-
-		// Offscreen buffer -> Copy source state
-		InsertCommandImageBarrier(commandBuffer, _offscreenBuffer.get(), vk::AccessFlagBits::eShaderWrite,
-			vk::AccessFlagBits::eTransferRead, vk::ImageLayout::eGeneral, vk::ImageLayout::eTransferSrcOptimal,
-			subresourceRange);
-
-		// Offscreen buffer -> Swapchain image
-		commandBuffer.copyImage(_offscreenBuffer.get(), vk::ImageLayout::eTransferSrcOptimal,
-			swapchainImage, vk::ImageLayout::eTransferDstOptimal, copyRegion);
-
-		// Swapchain image -> Presentable state
-		InsertCommandImageBarrier(commandBuffer, swapchainImage, {},
-			vk::AccessFlagBits::eTransferWrite,
-			vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::ePresentSrcKHR,
-			subresourceRange);
 	}
 
 	struct PipelineCreationInfo
@@ -179,10 +128,12 @@ public:
 	};
 
 	void createDescriptorSetForRayTracing(vk::Device& dev,
-		vk::DescriptorPool& pool,
+		vk::DescriptorPool& pool, 
+		vk::Buffer uniformBuffer,
+		vk::Buffer reservoirBuffer, vk::DeviceSize reservoirBufferSize,
 		vk::DispatchLoaderDynamic& dld)
 	{
-		std::array<vk::WriteDescriptorSet, 8> descriptorWrite;
+		std::array<vk::WriteDescriptorSet, 9> descriptorWrite;
 
 		vk::DescriptorSetAllocateInfo setInfo;
 		setInfo
@@ -226,7 +177,7 @@ public:
 		std::array<vk::DescriptorImageInfo, 4> imageInfo{
 			vk::DescriptorImageInfo(_sampler.get(), _gBuffer->getAlbedoView(), vk::ImageLayout::eShaderReadOnlyOptimal),
 			vk::DescriptorImageInfo(_sampler.get(), _gBuffer->getNormalView(), vk::ImageLayout::eShaderReadOnlyOptimal),
-			vk::DescriptorImageInfo(_sampler.get(), _gBuffer->getDepthView(), vk::ImageLayout::eShaderReadOnlyOptimal),
+			vk::DescriptorImageInfo(_sampler.get(), _gBuffer->getWorldPositionView(), vk::ImageLayout::eShaderReadOnlyOptimal),
 			vk::DescriptorImageInfo(_sampler.get(), _gBuffer->getMaterialPropertiesView(), vk::ImageLayout::eShaderReadOnlyOptimal)
 		};
 
@@ -255,7 +206,7 @@ public:
 
 		std::array<vk::DescriptorBufferInfo, 1> lightsBufferInfo
 		{
-			vk::DescriptorBufferInfo(lightsUniformBuffer.get(), 0, sizeof(shader::Reservoir))
+			vk::DescriptorBufferInfo(reservoirBuffer, 0, reservoirBufferSize)
 		};
 
 		vk::WriteDescriptorSet lightsWrite;
@@ -265,6 +216,14 @@ public:
 			.setDescriptorType(vk::DescriptorType::eStorageBuffer)
 			.setBufferInfo(lightsBufferInfo);
 		descriptorWrite[7] = lightsWrite;
+
+		vk::DescriptorBufferInfo restirUniformInfo(uniformBuffer, 0, sizeof(shader::RestirUniforms));
+
+		descriptorWrite[8]
+			.setDstSet(_descriptorSet.get())
+			.setDstBinding(8)
+			.setDescriptorType(vk::DescriptorType::eUniformBuffer)
+			.setBufferInfo(restirUniformInfo);
 
 		dev.updateDescriptorSets(descriptorWrite, {}, dld);
 	}
@@ -666,7 +625,7 @@ public:
 		int cnt = 0;
 		for (shader::LightSample light : lightsUniformBegin->samples) 
 		{
-			light.emission = vec4(1.0f, 1.0f, 1.0f, 1.0f);
+			//light.emission = vec4(1.0f, 1.0f, 1.0f, 1.0f);
 			light.position = vec4(cnt * 2.0f, cnt * 1.0f, cnt * 1.0f, 1.0f);
 			cnt++;
 		}
@@ -763,7 +722,7 @@ protected:
 
 		
 
-		std::array<vk::DescriptorSetLayoutBinding, 8> bindings{ 
+		std::array<vk::DescriptorSetLayoutBinding, 9> bindings{ 
 			accelerationStructureLayoutBinding,
 			storageImageLayoutBinding,
 			vk::DescriptorSetLayoutBinding(2, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eRaygenKHR),
@@ -771,7 +730,8 @@ protected:
 			vk::DescriptorSetLayoutBinding(4, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eRaygenKHR),
 			vk::DescriptorSetLayoutBinding(5, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eRaygenKHR),
 			vk::DescriptorSetLayoutBinding(6, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eRaygenKHR),
-			vk::DescriptorSetLayoutBinding(7, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eRaygenKHR)
+			vk::DescriptorSetLayoutBinding(7, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eRaygenKHR),
+			vk::DescriptorSetLayoutBinding(8, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eRaygenKHR)
 		};
 
 		vk::DescriptorSetLayoutCreateInfo layoutInfo;

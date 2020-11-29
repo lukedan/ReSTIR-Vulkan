@@ -32,16 +32,3 @@ struct MaterialUniforms {
 	float alphaCutoff;
 	float normalTextureScale;
 };
-
-// these structs are not supposed to be seen by the cpu
-struct LightSample {
-	vec4 emission;
-	float pHat;
-	vec4 position;
-	float sumWeights; // setting W to 0 is equivalent to setting sumWeights to 0
-};
-
-struct Reservoir {
-	LightSample samples[RESERVOIR_SIZE];
-	int numStreamSamples;
-};

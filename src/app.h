@@ -1,5 +1,6 @@
 #pragma once
 
+//#define SOFTWARE_RT
 #define VK_ENABLE_BETA_EXTENSIONS
 #include "misc.h"
 #include "vma.h"
@@ -213,7 +214,12 @@ protected:
 		_mainCommandBuffer->begin(beginInfo);
 		_gBufferPass.issueCommands(_mainCommandBuffer.get(), _gBuffer.getFramebuffer());
 		_lightSamplePass.issueCommands(_mainCommandBuffer.get(), nullptr);
+#ifdef SOFTWARE_RT
 		_swVisibilityTestPass.issueCommands(_mainCommandBuffer.get(), nullptr);
+#else
+		//createAndRecordRTSwapchainBuffers(_swapchain, _device.get(), _commandPool.get(), _rtPass, _dynamicDispatcher);
+		_rtPass.issueCommands(_mainCommandBuffer.get(), _swapchain.getImageExtent(), _dynamicDispatcher);
+#endif
 		_mainCommandBuffer->end();
 	}
 
@@ -245,11 +251,15 @@ protected:
 			_gBuffer, _sceneBuffers, _restirUniformBuffer.get(), _reservoirBuffer1.get(), _reservoirBufferSize,
 			_device.get(), _lightSampleDescriptors.get()
 		);
-
+#ifdef SOFTWARE_RT
 		_swVisibilityTestPass.initializeDescriptorSetFor(
 			_gBuffer, _aabbTreeBuffers, _restirUniformBuffer.get(), _reservoirBuffer1.get(), _reservoirBufferSize,
 			_device.get(), _swVisibilityTestDescriptors.get()
 		);
+#else
+		_rtPass.createDescriptorSetForRayTracing(_device.get(), _staticDescriptorPool.get(),
+			_restirUniformBuffer.get(), _reservoirBuffer1.get(), _reservoirBufferSize, _dynamicDispatcher);
+#endif
 	}
 
 
@@ -292,9 +302,7 @@ protected:
 			vk::CommandBufferBeginInfo beginInfo;
 			_swapchainBuffers[i].commandBuffer->begin(beginInfo);
 			rtPass.issueCommands(_swapchainBuffers[i].commandBuffer.get(),
-				_swapchainBuffers[i].framebuffer.get(),
 				swapchain.getImageExtent(),
-				_swapchain.getImages()[i],
 				dld);
 			_swapchainBuffers[i].commandBuffer->end();
 		}
