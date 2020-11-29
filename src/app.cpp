@@ -1,6 +1,6 @@
 #include "app.h"
 
-/*#define RENDERDOC_CAPTURE*/
+#define RENDERDOC_CAPTURE
 
 #include <sstream>
 
@@ -496,12 +496,13 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 
 
 	// Hardware RT pass for visibility test
+	/*
 	_rtPass = RtPass::create(_device.get(), _dynamicDispatcher);
 	_rtPass._gBuffer = &_gBuffer;
 	_rtPass.createAccelerationStructure(_device.get(), _physicalDevice, _allocator, _dynamicDispatcher,
 		_commandPool.get(), _graphicsQueue, _sceneBuffers, _gltfScene);
 	_rtPass.createShaderBindingTable(_device.get(), _allocator, _physicalDevice, _dynamicDispatcher);
-
+	*/
 
 	_updateRestirBuffers();
 
@@ -570,7 +571,7 @@ App::~App() {
 	ImGui_ImplVulkan_Shutdown();
 	ImGui_ImplGlfw_Shutdown();
 	ImGui::DestroyContext();
-	_rtPass.freeDeviceMemory(_device.get());
+	// _rtPass.freeDeviceMemory(_device.get());
 }
 
 void App::updateGui() {

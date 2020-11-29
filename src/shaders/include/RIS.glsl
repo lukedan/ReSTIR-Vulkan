@@ -1,23 +1,9 @@
-void RIS(int M, vec2 pixel, out vec3 y, out float sumWeights) {
-	y = vec3(1.0, 1.0, 1.0);
-	sumWeights = 0.5;
-    int maxM = 10;
-    if (M > maxM) {
-        y = vec3(0.0, 0.0, 0.0);
-        sumWeights = -1.0;
-        return;
-    }
-    
-    vec3 xSet[10];
-    float wSet[10];
-
-    // Generate proposals
-    for (int i = 0; i < M; ++i) {
-
-    }
-
-    // Select from candidates
-}
+struct lightSample {
+    vec3 pos;
+    vec3 pHat;
+    float pHatLum;
+    float p;
+};
 
 // https://math.stackexchange.com/questions/18686/uniform-random-point-in-triangle
 vec3 pickPointOnTriangle(float r1, float r2, vec3 p1, vec3 p2, vec3 p3) {

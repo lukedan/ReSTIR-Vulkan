@@ -140,7 +140,7 @@ protected:
 	LightingPass _lightingPass;
 	LightingPass::Resources _lightingPassResources;
 
-	RtPass _rtPass;
+	// RtPass _rtPass;
 
 	ImGuiPass _imguiPass;
 	std::vector<vk::UniqueCommandBuffer> _imguiCommandBuffers;
@@ -216,7 +216,7 @@ protected:
 		_gBufferPass.issueCommands(_mainCommandBuffer.get(), _gBuffer.getFramebuffer());
 		_lightSamplePass.issueCommands(_mainCommandBuffer.get(), nullptr);
 		if (_useHardwareRt) {
-			_rtPass.issueCommands(_mainCommandBuffer.get(), _swapchain.getImageExtent(), _dynamicDispatcher);
+			// _rtPass.issueCommands(_mainCommandBuffer.get(), _swapchain.getImageExtent(), _dynamicDispatcher);
 		} else {
 			_swVisibilityTestPass.issueCommands(_mainCommandBuffer.get(), nullptr);
 		}
@@ -257,9 +257,10 @@ protected:
 			_gBuffer, _aabbTreeBuffers, _restirUniformBuffer.get(), _reservoirBuffer1.get(), _reservoirBufferSize,
 			_device.get(), _swVisibilityTestDescriptors.get()
 		);
-
+		/*
 		_rtPass.createDescriptorSetForRayTracing(_device.get(), _staticDescriptorPool.get(),
 			_restirUniformBuffer.get(), _reservoirBuffer1.get(), _reservoirBufferSize, _dynamicDispatcher);
+		*/
 	}
 
 
