@@ -22,6 +22,9 @@ namespace shader {
 #define uvec4 ::nvmath::uvec4
 #define mat4 ::nvmath::mat4
 
+#define CPP_FUNCTION inline
+
+#include "shaders/include/common.glsl"
 #include "shaders/include/structs/aabbTree.glsl"
 #include "shaders/include/structs/lightingPassStructs.glsl"
 #include "shaders/include/structs/restirStructs.glsl"
@@ -39,4 +42,6 @@ namespace shader {
 #undef uvec2
 #undef uvec4
 #undef mat4
+
+#undef CPP_FUNCTION
 }

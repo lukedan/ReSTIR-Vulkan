@@ -357,7 +357,7 @@ std::vector<shader::pointLight> generateRandomPointLights(std::size_t count, nvm
 	std::uniform_real_distribution<float> distX(min.x, max.x);
 	std::uniform_real_distribution<float> distY(min.y, max.y);
 	std::uniform_real_distribution<float> distZ(min.z, max.z);
-	std::uniform_real_distribution<float> distRgb(0.5f, 1.0f);
+	std::uniform_real_distribution<float> distRgb(5.0f, 10.0f);
 	std::default_random_engine rand;
 
 	std::vector<shader::pointLight> result(count);

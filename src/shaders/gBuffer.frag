@@ -12,14 +12,16 @@ layout (set = 3, binding = 0) uniform sampler2D uniAlbedo;
 layout (set = 3, binding = 1) uniform sampler2D uniNormal;
 layout (set = 3, binding = 2) uniform sampler2D uniMaterial;
 
-layout (location = 0) in vec3 inNormal;
-layout (location = 1) in vec4 inTangent;
-layout (location = 2) in vec4 inColor;
-layout (location = 3) in vec2 inUv;
+layout (location = 0) in vec3 inPosition;
+layout (location = 1) in vec3 inNormal;
+layout (location = 2) in vec4 inTangent;
+layout (location = 3) in vec4 inColor;
+layout (location = 4) in vec2 inUv;
 
 layout (location = 0) out vec4 outAlbedo;
 layout (location = 1) out vec3 outNormal;
 layout (location = 2) out vec2 outMaterialProperties;
+layout (location = 3) out vec3 outWorldPosition;
 
 void main() {
 	// compute baseColor or diffuse
@@ -65,13 +67,13 @@ void main() {
 
 	outMaterialProperties = vec2(roughness, metallic);
 
+	outWorldPosition = inPosition;
 	
-	if(length(material.emissiveFactor.xyz) > 0.0){
+	if (length(material.emissiveFactor.xyz) > 0.0) {
 		// Emissive material
 		outAlbedo.xyz = material.emissiveFactor.xyz;
 		outAlbedo.w = 1.0;
-	}else{
+	} else {
 		outAlbedo.w = 0.0;
 	}
-	
 }

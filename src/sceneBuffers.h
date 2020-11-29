@@ -68,7 +68,7 @@ public:
 		std::vector<shader::pointLight> pointLights = collectPointLightsFromScene(scene);
 		std::vector<shader::triLight> triangleLights = collectTriangleLightsFromScene(scene);
 		if (pointLights.empty() && triangleLights.empty()) {
-			pointLights = generateRandomPointLights(20, scene.m_dimensions.min, scene.m_dimensions.max);
+			pointLights = generateRandomPointLights(200, scene.m_dimensions.min, scene.m_dimensions.max);
 		}
 
 		SceneBuffers result;
