@@ -40,7 +40,6 @@ public:
 	RtPass() = default;
 	RtPass(RtPass&&) = default;
 	RtPass& operator=(RtPass&&) = default;
-
 	struct cameraUniforms 
 	{
 		nvmath::mat4 viewInverse;
@@ -52,6 +51,14 @@ public:
 		float tanHalfFovY;
 		float aspectRatio;
 	};
+
+	void freeDeviceMemory(vk::Device dev) 
+	{
+		for (int i = 0; i < memories.size(); i++) 
+		{
+			dev.freeMemory(memories.at(i));
+		}
+	}
 
 	GBuffer* _gBuffer = nullptr;
 
@@ -223,6 +230,7 @@ public:
 			.setMemoryTypeIndex(FindMemoryType(physicalDev, memoryRequirements.memoryTypeBits, vk::MemoryPropertyFlagBits::eHostVisible));
 
 		_shaderBindingTable.memory = dev.allocateMemory(memAllocInfo);
+		memories.push_back(_shaderBindingTable.memory);
 
 		dev.bindBufferMemory(_shaderBindingTable.buffer.get(), _shaderBindingTable.memory, {});
 
@@ -422,10 +430,10 @@ public:
 
 		_topLevelAS = dev.createAccelerationStructureKHRUnique(tlasAccelerationInfo, nullptr, dynamicDispatcher);
 
-		AccelerationMemory objectMemory = CreateAccelerationScratchBuffer(dev, pd, allocator,
+		toplevelAsMemory = CreateAccelerationScratchBuffer(dev, pd, allocator,
 			_topLevelAS.get(), vk::AccelerationStructureMemoryRequirementsTypeKHR::eObject, dynamicDispatcher);
 
-		BindAccelerationMemory(dev, _topLevelAS.get(), objectMemory.memory, dynamicDispatcher);
+		BindAccelerationMemory(dev, _topLevelAS.get(), toplevelAsMemory.memory, dynamicDispatcher);
 
 		AccelerationMemory buildScratchMemory = CreateAccelerationScratchBuffer(dev, pd, allocator,
 			_topLevelAS.get(), vk::AccelerationStructureMemoryRequirementsTypeKHR::eBuildScratch, dynamicDispatcher);
@@ -716,6 +724,8 @@ private:
 	AccelerationMemory instance;
 	vma::UniqueBuffer cameraUniformBuffer;
 	vma::UniqueBuffer lightsUniformBuffer;
+	AccelerationMemory toplevelAsMemory;
+	std::vector<vk::DeviceMemory> memories;
 
 	// Acceleration Structure
 	vk::UniqueHandle<vk::AccelerationStructureKHR, vk::DispatchLoaderDynamic> _bottomLevelAS;
@@ -802,6 +812,7 @@ private:
 
 		dev.allocateMemory(&memAllocInfo, nullptr, &(out.memory));
 		dev.bindBufferMemory(out.buffer.get(), out.memory, {});
+		memories.push_back(out.memory);
 
 		out.memoryAddress = GetBufferAddress(dev, out.buffer.get(), dynamicDispatcher);
 
@@ -852,6 +863,8 @@ private:
 
 		dev.allocateMemory(&memAllocInfo, nullptr, &(out.memory));
 		dev.bindBufferMemory(out.buffer.get(), out.memory, {});
+
+		memories.push_back(out.memory);
 
 		out.memoryAddress = GetBufferAddress(dev, out.buffer.get(), dynamicDispatcher);
 
@@ -930,6 +943,8 @@ private:
 		memAllocInfo.memoryTypeIndex =
 			FindMemoryType(pd, memoryRequirements.memoryTypeBits, (vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent));
 		out.memory = dev.allocateMemory(memAllocInfo);
+
+		memories.push_back(out.memory);
 
 		dev.bindBufferMemory(out.buffer.get(), out.memory, {});
 
