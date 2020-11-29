@@ -23,7 +23,7 @@ layout (binding = 6) buffer Resultreservoirs
 	Reservoir resultReservoirs[];
 };
 
-#define RAND_NEIGHBOURS 3
+#define RAND_NEIGHBOURS 5
 #define RAND_RADIUS 30.0
 
 void main() {
@@ -49,9 +49,8 @@ void main() {
 		float radius = randFloat(rand) * RAND_RADIUS;
 
 		ivec2 randNeighborOffset = ivec2(floor(cos(angle) * radius), floor(sin(angle) * radius));
-		randNeighbor = ivec2(pixelCoord.x + randNeighborOffset.x, pixelCoord.y + randNeighborOffset.y);
-		clamp(randNeighbor.x, 0, uniforms.screenSize.x - 1);
-		clamp(randNeighbor.y, 0, uniforms.screenSize.y - 1);
+		randNeighbor.x = clamp(int(pixelCoord.x) + randNeighborOffset.x, 0, int(uniforms.screenSize.x) - 1);
+		randNeighbor.y = clamp(int(pixelCoord.y) + randNeighborOffset.y, 0, int(uniforms.screenSize.y) - 1);
 
 		uint randIndex = randNeighbor.y * uniforms.screenSize.x + randNeighbor.x;
 		Reservoir randRes = reservoirs[randIndex];
@@ -60,11 +59,11 @@ void main() {
 		for(int j = 0; j < RESERVOIR_SIZE; j++)
 		{
 			vec3 newPHat = evaluatePHat(
-			worldPos, randRes.samples[i].position.xyz, uniforms.cameraPos.xyz, normal,
-			albedo, randRes.samples[i].emission.xyz, roughnessMetallic.x, roughnessMetallic.y);
+			worldPos, randRes.samples[j].position.xyz, uniforms.cameraPos.xyz, normal,
+			albedo, randRes.samples[j].emission.xyz, roughnessMetallic.x, roughnessMetallic.y);
 			float pHatLum = luminance(newPHat.r, newPHat.g, newPHat.b);
 			vec4 newPHat4 = vec4(newPHat, pHatLum);
-			newPHats[i] = newPHat4;
+			newPHats[j] = newPHat4;
 		}		
 		combineReservoirs(res, randRes, newPHats, rand);
 	}

@@ -1,6 +1,6 @@
 #include "app.h"
 
-/*#define RENDERDOC_CAPTURE*/
+//#define RENDERDOC_CAPTURE
 
 #include <sstream>
 
@@ -485,7 +485,6 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 	_rtPass.createAccelerationStructure(_device.get(), _physicalDevice, _allocator, _dynamicDispatcher,
 		_commandPool.get(), _graphicsComputeQueue, _sceneBuffers, _gltfScene);
 	_rtPass.createShaderBindingTable(_device.get(), _allocator, _physicalDevice, _dynamicDispatcher);
-
 
 	_updateRestirBuffers();
 

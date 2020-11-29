@@ -49,7 +49,7 @@ void main() {
 		);
 		float pHatLum = luminance(pHat.r, pHat.g, pHat.b);
 
-		addSampleToReservoir(res, light.pos.xyz, vec4(pHat, pHatLum), 1.0f / pointLights.count, light.color, rand);
+		addSampleToReservoir(res, light.pos.xyz, vec4(pHat, pHatLum), 1.0f / pointLights.count, vec4(light.color.xyz, 1.0), rand);
 	}
 
 	uint reservoirIndex = pixelCoord.y * uniforms.screenSize.x + pixelCoord.x;

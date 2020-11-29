@@ -8,7 +8,7 @@ void updateReservoir(inout Reservoir res, float weight, vec3 position, vec4 pHat
 		res.samples[i].sumWeights += weight;
 		float replacePossibility = weight / res.samples[i].sumWeights;
 		if (randFloat(rand) < replacePossibility) {
-			res.samples[i].position.xyz = position;
+			res.samples[i].position = vec4(position, 1.0);
 			res.samples[i].pHat = pHat;
 			res.samples[i].emission = lightColor;
 		}
@@ -17,7 +17,7 @@ void updateReservoir(inout Reservoir res, float weight, vec3 position, vec4 pHat
 
 void addSampleToReservoir(inout Reservoir res, vec3 position, vec4 pHat, float sampleP, vec4 lightColor, inout Rand rand) {
 	float weight = pHat.w / sampleP;
-	++res.numStreamSamples;
+	res.numStreamSamples += 1;
 
 	updateReservoir(res, weight, position, pHat, lightColor, rand);
 }
