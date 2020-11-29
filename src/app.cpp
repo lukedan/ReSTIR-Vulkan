@@ -1,7 +1,5 @@
 #include "app.h"
 
-/*#define RENDERDOC_CAPTURE*/
-
 #include <sstream>
 
 #include <imgui.h>
@@ -397,6 +395,7 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 	for (GBuffer &gbuf : _gBuffers) {
 		gbuf = GBuffer::create(_allocator, _device.get(), _swapchain.getImageExtent(), _gBufferPass);
 	}
+	_transitionGBufferLayouts();
 
 
 	_restirUniformBuffer = _allocator.createTypedBuffer<shader::RestirUniforms>(
@@ -439,11 +438,27 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 	_swVisibilityTestPass.screenSize = _swapchain.getImageExtent();
 
 
+#ifndef RENDERDOC_CAPTURE
 	// Hardware RT pass for visibility test
 	_rtPass = RtPass::create(_device.get(), _dynamicDispatcher);
 	_rtPass.createAccelerationStructure(_device.get(), _physicalDevice, _allocator, _dynamicDispatcher,
 		_commandPool.get(), _graphicsComputeQueue, _sceneBuffers, _gltfScene);
 	_rtPass.createShaderBindingTable(_device.get(), _allocator, _physicalDevice, _dynamicDispatcher);
+#endif
+
+
+	_temporalReusePass = Pass::create<TemporalReusePass>(_device.get());
+	{
+		std::array<vk::DescriptorSetLayout, numGBuffers> setLayouts;
+		std::fill(setLayouts.begin(), setLayouts.end(), _temporalReusePass.getDescriptorSetLayout());
+		vk::DescriptorSetAllocateInfo allocInfo;
+		allocInfo
+			.setDescriptorPool(_staticDescriptorPool.get())
+			.setSetLayouts(setLayouts);
+		auto newSets = _device->allocateDescriptorSetsUnique(allocInfo);
+		std::move(newSets.begin(), newSets.end(), _temporalReuseDescriptors.begin());
+	}
+	_temporalReusePass.screenSize = _swapchain.getImageExtent();
 
 
 	_updateRestirBuffers();
@@ -538,7 +553,8 @@ void App::updateGui() {
 	};
 	_debugModeChanged = ImGui::Combo("Debug Mode", &_debugMode, items, IM_ARRAYSIZE(items));
 
-	_useHardwareRtChanged = ImGui::Checkbox("Use Hardware Ray Tracing", &_useHardwareRt);
+	_renderPathChanged = ImGui::Checkbox("Use Hardware Ray Tracing", &_useHardwareRt) || _renderPathChanged;
+	_renderPathChanged = ImGui::Checkbox("Use Temporal Reuse", &_enableTemporalReuse) || _renderPathChanged;
 
 	ImGui::Render();
 }
@@ -548,6 +564,8 @@ void App::mainLoop() {
 	std::size_t currentGBufferFrame = 0;
 	bool needsResize = false;
 	vk::Extent2D windowSize = _window.getFramebufferSize();
+	nvmath::mat4 prevFrameProjectionView = _camera.projectionViewMatrix;
+
 	while (!_window.shouldClose()) {
 		glfwPollEvents();
 
@@ -571,9 +589,12 @@ void App::mainLoop() {
 
 			_swapchain = Swapchain::create(_device.get(), _swapchainInfo);
 
+			currentGBufferFrame = 0;
+
 			for (GBuffer &gbuf : _gBuffers) {
 				gbuf.resize(_allocator, _device.get(), _swapchain.getImageExtent(), _gBufferPass);
 			}
+			_transitionGBufferLayouts();
 			_gBufferPass.onResized(_device.get(), _swapchain.getImageExtent());
 
 			auto *restirUniforms = _restirUniformBuffer.mapAs<shader::RestirUniforms>();
@@ -583,9 +604,8 @@ void App::mainLoop() {
 			_restirUniformBuffer.flush();
 
 			_lightSamplePass.screenSize = windowSize;
-
 			_swVisibilityTestPass.screenSize = windowSize;
-
+			_temporalReusePass.screenSize = windowSize;
 			_updateRestirBuffers();
 
 			_initializeLightingPassResources();
@@ -627,6 +647,7 @@ void App::mainLoop() {
 
 			auto *restirUniforms = _restirUniformBuffer.mapAs<shader::RestirUniforms>();
 			++restirUniforms->frame;
+			restirUniforms->prevFrameProjectionViewMatrix = prevFrameProjectionView;
 
 			if (_cameraUpdated || _debugModeChanged) {
 				_graphicsComputeQueue.waitIdle();
@@ -647,7 +668,7 @@ void App::mainLoop() {
 
 				_cameraUpdated = false;
 				_debugModeChanged = false;
-			} else if (_useHardwareRtChanged) {
+			} else if (_renderPathChanged) {
 				_recordMainCommandBuffers();
 			}
 
@@ -659,6 +680,8 @@ void App::mainLoop() {
 			submitInfo
 				.setCommandBuffers(gBufferCommandBuffers);
 			_graphicsComputeQueue.submit(submitInfo, _mainFence.get());
+
+			prevFrameProjectionView = _camera.projectionViewMatrix;
 		}
 
 		while (_device->waitForFences(
@@ -724,6 +747,7 @@ void App::mainLoop() {
 		}
 
 		currentPresentFrame = (currentPresentFrame + 1) % maxFramesInFlight;
+		currentGBufferFrame = (currentGBufferFrame + 1) % numGBuffers;
 	}
 }
 

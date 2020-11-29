@@ -1,6 +1,7 @@
 #pragma once
 
-//#define SOFTWARE_RT
+#define RENDERDOC_CAPTURE
+
 #define VK_ENABLE_BETA_EXTENSIONS
 #include "misc.h"
 #include "vma.h"
@@ -136,6 +137,9 @@ protected:
 	SoftwareVisibilityTestPass _swVisibilityTestPass;
 	std::array<vk::UniqueDescriptorSet, numGBuffers> _swVisibilityTestDescriptors;
 
+	TemporalReusePass _temporalReusePass;
+	std::array<vk::UniqueDescriptorSet, numGBuffers> _temporalReuseDescriptors;
+
 	LightingPass _lightingPass;
 	vma::UniqueBuffer _lightingPassUniformBuffer;
 	std::array<vk::UniqueDescriptorSet, numGBuffers> _lightingPassDescriptorSets;
@@ -161,9 +165,11 @@ protected:
 
 	// ui
 	int _debugMode = GBUFFER_DEBUG_NONE;
-	bool _debugModeChanged = false;
 	bool _useHardwareRt = true;
-	bool _useHardwareRtChanged = false;
+	bool _enableTemporalReuse = true;
+
+	bool _debugModeChanged = false;
+	bool _renderPathChanged = false;
 
 
 	nvmath::vec2f _lastMouse;
@@ -180,11 +186,29 @@ protected:
 		_swapchainBuffers = _swapchain.getBuffers(_device.get(), _lightingPass.getPass(), _commandPool.get());
 	}
 
+	void _transitionGBufferLayouts() {
+		TransientCommandBuffer cmdBuf = _transientCommandBufferPool.begin(_graphicsComputeQueue);
+		for (std::size_t i = 1; i < numGBuffers; ++i) {
+			transitionImageLayout(
+				cmdBuf.get(), _gBuffers[i].getAlbedoBuffer(), GBuffer::Formats::get().albedo,
+				vk::ImageLayout::eUndefined, vk::ImageLayout::eShaderReadOnlyOptimal
+			);
+			transitionImageLayout(
+				cmdBuf.get(), _gBuffers[i].getNormalBuffer(), GBuffer::Formats::get().normal,
+				vk::ImageLayout::eUndefined, vk::ImageLayout::eShaderReadOnlyOptimal
+			);
+			transitionImageLayout(
+				cmdBuf.get(), _gBuffers[i].getDepthBuffer(), GBuffer::Formats::get().depth,
+				vk::ImageLayout::eUndefined, vk::ImageLayout::eShaderReadOnlyOptimal
+			);
+		}
+	}
+
 	void _recordMainCommandBuffers() {
 		for (std::size_t i = 0; i < numGBuffers; ++i) {
 			_lightSamplePass.descriptorSet = _lightSampleDescriptors[i].get();
 			_swVisibilityTestPass.descriptorSet = _swVisibilityTestDescriptors[i].get();
-
+			_temporalReusePass.descriptorSet = _temporalReuseDescriptors[i].get();
 
 			vk::CommandBufferBeginInfo beginInfo;
 			_mainCommandBuffers[i]->begin(beginInfo);
@@ -195,6 +219,9 @@ protected:
 				/*_rtPass.issueCommands(_mainCommandBuffers[i].get(), _swapchain.getImageExtent(), _dynamicDispatcher);*/
 			} else {
 				_swVisibilityTestPass.issueCommands(_mainCommandBuffers[i].get(), nullptr);
+			}
+			if (_enableTemporalReuse) {
+				_temporalReusePass.issueCommands(_mainCommandBuffers[i].get(), nullptr);
 			}
 
 			_mainCommandBuffers[i]->end();
@@ -230,6 +257,12 @@ protected:
 
 			/*_rtPass.createDescriptorSetForRayTracing(_device.get(), _staticDescriptorPool.get(),
 				_restirUniformBuffer.get(), _reservoirBuffers[i].get(), _reservoirBufferSize, _dynamicDispatcher);*/
+
+			_temporalReusePass.initializeDescriptorSetFor(
+				_gBuffers[i], _gBuffers[(i + numGBuffers - 1) % numGBuffers], _restirUniformBuffer.get(),
+				_reservoirBuffers[i].get(), _reservoirBuffers[(i + numGBuffers - 1) % numGBuffers].get(), _reservoirBufferSize,
+				_device.get(), _temporalReuseDescriptors[i].get()
+			);
 		}
 	}
 
