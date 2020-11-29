@@ -22,6 +22,9 @@ public:
 	[[nodiscard]] vk::Image getMaterialPropertiesBuffer() const {
 		return _materialPropertiesBuffer.get();
 	}
+	[[nodiscard]] vk::Image getWorldPositionBuffer() const {
+		return _worldPosBuffer.get();
+	}
 	[[nodiscard]] vk::Image getDepthBuffer() const {
 		return _depthBuffer.get();
 	}
@@ -34,6 +37,9 @@ public:
 	}
 	[[nodiscard]] vk::ImageView getMaterialPropertiesView() const {
 		return _materialPropertiesView.get();
+	}
+	[[nodiscard]] vk::ImageView getWorldPositionView() const {
+		return _worldPosView.get();
 	}
 	[[nodiscard]] vk::ImageView getDepthView() const {
 		return _depthView.get();
@@ -58,6 +64,7 @@ public:
 		vk::Format normal;
 		vk::Format depth;
 		vk::Format materialProperties;
+		vk::Format worldPosition;
 		vk::ImageAspectFlags depthAspect;
 
 		[[nodiscard]] static void initialize(vk::PhysicalDevice);
@@ -67,11 +74,13 @@ private:
 	vma::UniqueImage _albedoBuffer;
 	vma::UniqueImage _normalBuffer;
 	vma::UniqueImage _materialPropertiesBuffer;
+	vma::UniqueImage _worldPosBuffer;
 	vma::UniqueImage _depthBuffer;
 
 	vk::UniqueImageView _albedoView;
 	vk::UniqueImageView _normalView;
 	vk::UniqueImageView _materialPropertiesView;
+	vk::UniqueImageView _worldPosView;
 	vk::UniqueImageView _depthView;
 
 	vk::UniqueFramebuffer _framebuffer;

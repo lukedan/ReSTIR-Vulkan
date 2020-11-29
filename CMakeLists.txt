@@ -26,7 +26,11 @@ target_sources(restir
 		"src/passes/gBufferPass.cpp"
 		"src/passes/gBufferPass.h"
 		"src/passes/lightingPass.h"
+		"src/passes/lightSamplePass.h"
 		"src/passes/pass.h"
+		"src/passes/softwareVisibilityTestPass.h"
+		"src/passes/spatialReusePass.h"
+		"src/passes/temporalReusePass.h"
 		"src/aabbTreeBuilder.cpp"
 		"src/aabbTreeBuilder.h"
 		"src/app.cpp"
@@ -67,6 +71,10 @@ add_shader(restir "src/shaders/simple.frag")
 
 add_shader(restir "src/shaders/gBuffer.vert")
 add_shader(restir "src/shaders/gBuffer.frag")
+
+add_shader(restir "src/shaders/lightSample.comp")
+
+add_shader(restir "src/shaders/softwareVisibilityTest.comp")
 
 add_shader(restir "src/shaders/quad.vert")
 add_shader(restir "src/shaders/lighting.frag")

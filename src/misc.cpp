@@ -1,11 +1,12 @@
 #include "misc.h"
 
+#include <cstdlib>
+#include <ctime>
 #include <fstream>
+#include <random>
 
 #include "vma.h"
 
-#include <cstdlib>
-#include <ctime>
 
 std::vector<char> readFile(const std::filesystem::path &path) {
 	std::ifstream fin(path, std::ios::ate | std::ios::binary);
@@ -23,7 +24,7 @@ void vkCheck(vk::Result res) {
 	}
 }
 
-[[nodiscard]] vk::Format findSupportedFormat(
+vk::Format findSupportedFormat(
 	const std::vector<vk::Format> &candidates, vk::PhysicalDevice physicalDevice,
 	vk::ImageTiling requiredTiling, vk::FormatFeatureFlags requiredFeatures
 ) {
@@ -295,7 +296,7 @@ vma::UniqueImage loadTexture(
 }
 
 bool hasEmissiveMaterial(const nvh::GltfScene& m_gltfScene) {
-	
+
 	for (auto tmp_mat : m_gltfScene.m_materials) {
 		if (tmp_mat.emissiveFactor.norm() != 0.0 || tmp_mat.emissiveTexture != -1) {
 			return true;
@@ -337,54 +338,60 @@ void loadScene(const std::string& filename, nvh::GltfScene& m_gltfScene) {
 		<< m_gltfScene.m_dimensions.size.z << "]" << std::endl;
 
 	std::cout << "vertex num:" << m_gltfScene.m_positions.size() << std::endl;
+}
 
-	if (!hasEmissiveMaterial(m_gltfScene)) {
-		std::cout << "This model/gltf scene doesn't have emissive material." << std::endl;
-		// Init point lights
-		srand((unsigned int)time(NULL));
-		for (int i = 0; i < 18; ++i) {
-			float r = float(rand()) / float((RAND_MAX));
-			float g = float(rand()) / float((RAND_MAX));
-			float b = float(rand()) / float((RAND_MAX));
-			float rand_x = float(rand()) / float((RAND_MAX));
-			float rand_z = float(rand()) / float((RAND_MAX));
-			float tempRadius = m_gltfScene.m_dimensions.radius;
-			m_gltfScene.m_pointLights.push_back(shader::pointLight{ m_gltfScene.m_dimensions.center + vec3((rand_x-0.5) * tempRadius, 0.0, (rand_z-0.5) * tempRadius), 50, vec3(r, g, b) });
-		}
-		m_gltfScene.m_ptLightsNum = 18;
-
-		// Push a default triangle light
-		m_gltfScene.m_triLights.push_back(shader::triLight{ vec3(0.0, 0.0, 0.0), vec3(0.0, 0.0, 0.0), vec3(0.0, 0.0, 0.0), vec3(0.0, 0.0, 0.0) });
-		m_gltfScene.m_triLightsNum = 0;
+std::vector<shader::pointLight> collectPointLightsFromScene(const nvh::GltfScene &scene) {
+	std::vector<shader::pointLight> result;
+	result.reserve(scene.m_lights.size());
+	for (const nvh::GltfLight &light : scene.m_lights) {
+		shader::pointLight &addedLight = result.emplace_back(shader::pointLight{
+			.pos = light.worldMatrix.col(3),
+			.color = nvmath::vec3(light.light.color[0], light.light.color[1], light.light.color[2])
+			});
+		addedLight.intensity = shader::luminance(addedLight.color.x, addedLight.color.y, addedLight.color.z);
 	}
-	else {
-		// Push a default point light
-		m_gltfScene.m_pointLights.push_back(shader::pointLight{ vec3(0.0, 0.0, 0.0), 0.0, vec3(0.0, 0.0, 0.0) });
-		m_gltfScene.m_ptLightsNum = 0;
+	return result;
+}
 
-		// Init triangle light -- Temparory don't consider the light texture
-		m_gltfScene.m_triLightsNum = 0;
-		for (const nvh::GltfNode& node : m_gltfScene.m_nodes) {
-			const nvh::GltfPrimMesh& mesh = m_gltfScene.m_primMeshes[node.primMesh];
-			auto& tmp_mat = m_gltfScene.m_materials[mesh.materialIndex];
-			if (tmp_mat.emissiveFactor.norm() != 0.0) {
-				const uint32_t* indices = m_gltfScene.m_indices.data() + mesh.firstIndex;
-				const nvmath::vec3* pos = m_gltfScene.m_positions.data() + mesh.vertexOffset;
-				for (uint32_t i = 0; i < mesh.indexCount; i += 3, indices += 3) {
-					// triangle
-					vec4 p1 = node.worldMatrix * nvmath::vec4(pos[indices[0]], 1.0f);
-					vec4 p2 = node.worldMatrix * nvmath::vec4(pos[indices[1]], 1.0f);
-					vec4 p3 = node.worldMatrix * nvmath::vec4(pos[indices[2]], 1.0f);
-					vec3 p1_vec3(p1.x, p1.y, p1.z), p2_vec3(p2.x, p2.y, p2.z), p3_vec3(p3.x, p3.y, p3.z);
-					float area = nvmath::cross(p2_vec3 - p1_vec3, p3_vec3 - p1_vec3).norm() / 2.f;
-					shader::triLight tmpTriLight{ p1, p2, p3, vec4(tmp_mat.emissiveFactor, 0.0), area};
-					m_gltfScene.m_triLights.push_back(tmpTriLight);
-					m_gltfScene.m_triLightsNum++;
-				}
+std::vector<shader::pointLight> generateRandomPointLights(std::size_t count, nvmath::vec3 min, nvmath::vec3 max) {
+	std::uniform_real_distribution<float> distX(min.x, max.x);
+	std::uniform_real_distribution<float> distY(min.y, max.y);
+	std::uniform_real_distribution<float> distZ(min.z, max.z);
+	std::uniform_real_distribution<float> distRgb(5.0f, 10.0f);
+	std::default_random_engine rand;
+
+	std::vector<shader::pointLight> result(count);
+	for (shader::pointLight &light : result) {
+		light.pos = nvmath::vec4(distX(rand), distY(rand), distZ(rand), 1.0f);
+		light.color = nvmath::vec4(distRgb(rand), distRgb(rand), distRgb(rand), 1.0f);
+		light.intensity = shader::luminance(light.color.x, light.color.y, light.color.z);
+	}
+	return result;
+}
+
+std::vector<shader::triLight> collectTriangleLightsFromScene(const nvh::GltfScene &scene) {
+	std::vector<shader::triLight> result;
+	for (const nvh::GltfNode &node : scene.m_nodes) {
+		const nvh::GltfPrimMesh &mesh = scene.m_primMeshes[node.primMesh];
+		const nvh::GltfMaterial &material = scene.m_materials[mesh.materialIndex];
+		if (material.emissiveFactor.sq_norm() > 1e-6) {
+			const uint32_t *indices = scene.m_indices.data() + mesh.firstIndex;
+			const nvmath::vec3* pos = scene.m_positions.data() + mesh.vertexOffset;
+			for (uint32_t i = 0; i < mesh.indexCount; i += 3, indices += 3) {
+				// triangle
+				vec4 p1 = node.worldMatrix * nvmath::vec4(pos[indices[0]], 1.0f);
+				vec4 p2 = node.worldMatrix * nvmath::vec4(pos[indices[1]], 1.0f);
+				vec4 p3 = node.worldMatrix * nvmath::vec4(pos[indices[2]], 1.0f);
+				vec3 p1_vec3(p1.x, p1.y, p1.z), p2_vec3(p2.x, p2.y, p2.z), p3_vec3(p3.x, p3.y, p3.z);
+				float area = nvmath::cross(p2_vec3 - p1_vec3, p3_vec3 - p1_vec3).norm() / 2.f;
+				shader::triLight tmpTriLight{ p1, p2, p3, vec4(material.emissiveFactor, 0.0), area };
+				result.emplace_back(shader::triLight{
+					.p1 = p1, .p2 = p2, .p3 = p3,
+					.emissiveFactor = material.emissiveFactor,
+					.area = area
+					});
 			}
 		}
-		if (m_gltfScene.m_triLightsNum == 0) {
-			assert("This scene should have triangle lights!");
-		}
 	}
+	return result;
 }

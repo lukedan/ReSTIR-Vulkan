@@ -65,6 +65,12 @@ public:
 		vk::Device l_device,
 		vk::Queue graphicsQueue
 	) {
+		std::vector<shader::pointLight> pointLights = collectPointLightsFromScene(scene);
+		std::vector<shader::triLight> triangleLights = collectTriangleLightsFromScene(scene);
+		if (pointLights.empty() && triangleLights.empty()) {
+			pointLights = generateRandomPointLights(200, scene.m_dimensions.min, scene.m_dimensions.max);
+		}
+
 		SceneBuffers result;
 
 		result._vertices = allocator.createTypedBuffer<Vertex>(
@@ -81,12 +87,12 @@ public:
 			);
 		// Lights
 		// Point lights
-		result._ptLightsBufferSize = 16 + sizeof(shader::pointLight) * scene.m_pointLights.size();
+		result._ptLightsBufferSize = 16 + sizeof(shader::pointLight) * pointLights.size();
 		result._ptLightsBuffer = allocator.createBuffer(
 			result._ptLightsBufferSize, vk::BufferUsageFlagBits::eStorageBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU
 		);
 		// Triangle lights
-		result._triLightsBufferSize = 16 + sizeof(shader::triLight) * scene.m_triLights.size();
+		result._triLightsBufferSize = 16 + sizeof(shader::triLight) * triangleLights.size();
 		result._triLightsBuffer = allocator.createBuffer(
 			result._triLightsBufferSize, vk::BufferUsageFlagBits::eStorageBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU
 		);
@@ -208,17 +214,17 @@ public:
 		// Lights
 		// Point lights
 		int32_t* pointLightPtr = result._ptLightsBuffer.mapAs<int32_t>();
-		*pointLightPtr = scene.m_ptLightsNum;
+		*pointLightPtr = pointLights.size();
 		auto* ptLights = reinterpret_cast<shader::pointLight*>(reinterpret_cast<uintptr_t>(pointLightPtr) + 16);
-		std::memcpy(ptLights, scene.m_pointLights.data(), sizeof(shader::pointLight) * scene.m_pointLights.size());
+		std::memcpy(ptLights, pointLights.data(), sizeof(shader::pointLight) * pointLights.size());
 		result._ptLightsBuffer.unmap();
 		result._ptLightsBuffer.flush();
 		
 		// Tri lights
 		int32_t* triLightsPtr = result._triLightsBuffer.mapAs<int32_t>();
-		*triLightsPtr = scene.m_triLightsNum;
+		*triLightsPtr = triangleLights.size();
 		auto* triLights = reinterpret_cast<shader::triLight*>(reinterpret_cast<uintptr_t>(triLightsPtr) + 16);
-		std::memcpy(triLights, scene.m_triLights.data(), sizeof(shader::triLight) * scene.m_triLights.size());
+		std::memcpy(triLights, triangleLights.data(), sizeof(shader::triLight) * triangleLights.size());
 		result._triLightsBuffer.unmap();
 		result._triLightsBuffer.flush();
 

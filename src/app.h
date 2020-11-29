@@ -7,16 +7,19 @@
 #include "swapchain.h"
 #include "transientCommandBuffer.h"
 #include "sceneBuffers.h"
-#include "passes/demoPass.h"
-#include "passes/gBufferPass.h"
-#include "passes/lightingPass.h"
-#include "passes/rtPass.h"
-#include "passes/imguiPass.h"
 #include "camera.h"
 #include "fpsCounter.h"
 
-struct PhysicalDeviceInfo
-{
+#include "passes/gBufferPass.h"
+#include "passes/lightSamplePass.h"
+#include "passes/softwareVisibilityTestPass.h"
+#include "passes/temporalReusePass.h"
+#include "passes/spatialReusePass.h"
+#include "passes/lightingPass.h"
+#include "passes/rtPass.h"
+#include "passes/imguiPass.h"
+
+struct PhysicalDeviceInfo {
 	vk::PhysicalDeviceMemoryProperties     memoryProperties{};
 	std::vector<vk::QueueFamilyProperties> queueProperties;
 
@@ -116,15 +119,25 @@ protected:
 	std::vector<Swapchain::BufferSet> _swapchainBuffers;
 
 	// passes & resources
+	vk::UniqueCommandBuffer _mainCommandBuffer;
+
 	GBuffer _gBuffer;
 	GBufferPass _gBufferPass;
-	vk::UniqueCommandBuffer _gBufferCommandBuffer;
 	GBufferPass::Resources _gBufferResources;
+
+	vma::UniqueBuffer _restirUniformBuffer;
+	vma::UniqueBuffer _reservoirBuffer1;
+	vma::UniqueBuffer _reservoirBuffer2;
+	vk::DeviceSize _reservoirBufferSize;
+
+	LightSamplePass _lightSamplePass;
+	vk::UniqueDescriptorSet _lightSampleDescriptors;
+
+	SoftwareVisibilityTestPass _swVisibilityTestPass;
+	vk::UniqueDescriptorSet _swVisibilityTestDescriptors;
 
 	LightingPass _lightingPass;
 	LightingPass::Resources _lightingPassResources;
-
-	/*DemoPass _demoPass;*/
 
 	RtPass _rtPass;
 
@@ -186,20 +199,22 @@ protected:
 		}
 	}
 
-	void _createAndRecordGBufferCommandBuffer() {
-		_gBufferCommandBuffer.reset();
+	void _createAndRecordMainCommandBuffer() {
+		_mainCommandBuffer.reset();
 
 		vk::CommandBufferAllocateInfo bufferInfo;
 		bufferInfo
 			.setCommandPool(_commandPool.get())
 			.setCommandBufferCount(1)
 			.setLevel(vk::CommandBufferLevel::ePrimary);
-		_gBufferCommandBuffer = std::move(_device->allocateCommandBuffersUnique(bufferInfo)[0]);
+		_mainCommandBuffer = std::move(_device->allocateCommandBuffersUnique(bufferInfo)[0]);
 
 		vk::CommandBufferBeginInfo beginInfo;
-		_gBufferCommandBuffer->begin(beginInfo);
-		_gBufferPass.issueCommands(_gBufferCommandBuffer.get(), _gBuffer.getFramebuffer());
-		_gBufferCommandBuffer->end();
+		_mainCommandBuffer->begin(beginInfo);
+		_gBufferPass.issueCommands(_mainCommandBuffer.get(), _gBuffer.getFramebuffer());
+		_lightSamplePass.issueCommands(_mainCommandBuffer.get(), nullptr);
+		_swVisibilityTestPass.issueCommands(_mainCommandBuffer.get(), nullptr);
+		_mainCommandBuffer->end();
 	}
 
 	void _createImguiCommandBuffers() {
@@ -212,12 +227,36 @@ protected:
 		_imguiCommandBuffers = _device->allocateCommandBuffersUnique(cmdBufInfo);
 	}
 
+	void _updateRestirBuffers() {
+		_reservoirBuffer1.reset();
+		_reservoirBuffer2.reset();
+
+		uint32_t numPixels = _swapchain.getImageExtent().width * _swapchain.getImageExtent().height;
+		_reservoirBufferSize = numPixels * sizeof(shader::Reservoir);
+		_reservoirBuffer1 = _allocator.createTypedBuffer<shader::Reservoir>(
+			numPixels, vk::BufferUsageFlagBits::eStorageBuffer, VMA_MEMORY_USAGE_GPU_ONLY
+			);
+		_reservoirBuffer2 = _allocator.createTypedBuffer<shader::Reservoir>(
+			numPixels, vk::BufferUsageFlagBits::eStorageBuffer, VMA_MEMORY_USAGE_GPU_ONLY
+			);
+
+
+		_lightSamplePass.initializeDescriptorSetFor(
+			_gBuffer, _sceneBuffers, _restirUniformBuffer.get(), _reservoirBuffer1.get(), _reservoirBufferSize,
+			_device.get(), _lightSampleDescriptors.get()
+		);
+
+		_swVisibilityTestPass.initializeDescriptorSetFor(
+			_gBuffer, _aabbTreeBuffers, _restirUniformBuffer.get(), _reservoirBuffer1.get(), _reservoirBufferSize,
+			_device.get(), _swVisibilityTestDescriptors.get()
+		);
+	}
+
 
 	void _initializeLightingPassResources() {
 		_lightingPassResources = LightingPass::Resources();
 
 		_lightingPassResources.gBuffer = &_gBuffer;
-		_lightingPassResources.aabbTreeBuffers = &_aabbTreeBuffers;
 
 		_lightingPassResources.uniformBuffer = _allocator.createTypedBuffer<shader::LightingPassUniforms>(
 			1, vk::BufferUsageFlagBits::eUniformBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU
@@ -231,7 +270,9 @@ protected:
 			.setSetLayouts(lightingPassDescLayout);
 		_lightingPassResources.descriptorSet = std::move(_device->allocateDescriptorSetsUnique(lightingPassDescAlloc)[0]);
 
-		_lightingPass.initializeDescriptorSetFor(_lightingPassResources, _device.get());
+		_lightingPass.initializeDescriptorSetFor(
+			_lightingPassResources, _sceneBuffers, _reservoirBuffer1.get(), _reservoirBufferSize, _device.get()
+		);
 	}
 
 	void createAndRecordRTSwapchainBuffers(
@@ -246,8 +287,7 @@ protected:
 		std::vector<vk::UniqueCommandBuffer> commandBuffers = device.allocateCommandBuffersUnique(allocInfo);
 		_swapchainBuffers.resize(imageSize);
 
-		for (std::size_t i = 0; i < imageSize; i++)
-		{
+		for (std::size_t i = 0; i < imageSize; i++) {
 			_swapchainBuffers[i].commandBuffer = std::move(commandBuffers[i]);
 			vk::CommandBufferBeginInfo beginInfo;
 			_swapchainBuffers[i].commandBuffer->begin(beginInfo);

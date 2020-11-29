@@ -10,10 +10,14 @@ void GBuffer::resize(vma::Allocator &allocator, vk::Device device, vk::Extent2D 
 
 	_albedoView.reset();
 	_normalView.reset();
+	_materialPropertiesView.reset();
+	_worldPosView.reset();
 	_depthView.reset();
 
 	_albedoBuffer.reset();
 	_normalBuffer.reset();
+	_materialPropertiesBuffer.reset();
+	_worldPosBuffer.reset();
 	_depthBuffer.reset();
 
 	const Formats &formats = Formats::get();
@@ -30,6 +34,10 @@ void GBuffer::resize(vma::Allocator &allocator, vk::Device device, vk::Extent2D 
 		extent, formats.materialProperties,
 		vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled
 	);
+	_worldPosBuffer = allocator.createImage2D(
+		extent, formats.worldPosition,
+		vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled
+	);
 	_depthBuffer = allocator.createImage2D(
 		extent, formats.depth,
 		vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eSampled
@@ -44,12 +52,15 @@ void GBuffer::resize(vma::Allocator &allocator, vk::Device device, vk::Extent2D 
 	_materialPropertiesView = createImageView2D(
 		device, _materialPropertiesBuffer.get(), formats.materialProperties, vk::ImageAspectFlagBits::eColor
 	);
+	_worldPosView = createImageView2D(
+		device, _worldPosBuffer.get(), formats.worldPosition, vk::ImageAspectFlagBits::eColor
+	);
 	_depthView = createImageView2D(
 		device, _depthBuffer.get(), formats.depth, formats.depthAspect
 	);
 
-	std::array<vk::ImageView, 4> attachments{
-		_albedoView.get(), _normalView.get(), _materialPropertiesView.get(), _depthView.get()
+	std::array<vk::ImageView, 5> attachments{
+		_albedoView.get(), _normalView.get(), _materialPropertiesView.get(), _worldPosView.get(), _depthView.get()
 	};
 	vk::FramebufferCreateInfo framebufferInfo;
 	framebufferInfo
@@ -85,6 +96,10 @@ void GBuffer::Formats::initialize(vk::PhysicalDevice physicalDevice) {
 		{ vk::Format::eR16G16Unorm },
 		physicalDevice, vk::ImageTiling::eOptimal, vk::FormatFeatureFlagBits::eColorAttachment
 	);
+	_gBufferFormats.worldPosition = findSupportedFormat(
+		{ vk::Format::eR32G32B32Sfloat, vk::Format::eR32G32B32A32Sfloat },
+		physicalDevice, vk::ImageTiling::eOptimal, vk::FormatFeatureFlagBits::eColorAttachment
+	);
 	_gBufferFormats.depthAspect = vk::ImageAspectFlagBits::eDepth;
 	if (_gBufferFormats.depth != vk::Format::eD32Sfloat) {
 		_gBufferFormats.depthAspect |= vk::ImageAspectFlagBits::eStencil;
@@ -99,7 +114,8 @@ const GBuffer::Formats &GBuffer::Formats::get() {
 
 
 void GBufferPass::issueCommands(vk::CommandBuffer commandBuffer, vk::Framebuffer framebuffer) const {
-	std::array<vk::ClearValue, 4> clearValues{
+	std::array<vk::ClearValue, 5> clearValues{
+		vk::ClearColorValue(std::array<float, 4>{ 0.0f, 0.0f, 0.0f, 1.0f }),
 		vk::ClearColorValue(std::array<float, 4>{ 0.0f, 0.0f, 0.0f, 1.0f }),
 		vk::ClearColorValue(std::array<float, 4>{ 0.0f, 0.0f, 0.0f, 1.0f }),
 		vk::ClearColorValue(std::array<float, 4>{ 0.0f, 0.0f, 0.0f, 1.0f }),
@@ -246,6 +262,15 @@ vk::UniqueRenderPass GBufferPass::_createPass(vk::Device device) {
 		.setInitialLayout(vk::ImageLayout::eUndefined)
 		.setFinalLayout(vk::ImageLayout::eShaderReadOnlyOptimal);
 	attachments.emplace_back()
+		.setFormat(formats.worldPosition)
+		.setSamples(vk::SampleCountFlagBits::e1)
+		.setLoadOp(vk::AttachmentLoadOp::eClear)
+		.setStoreOp(vk::AttachmentStoreOp::eStore)
+		.setStencilLoadOp(vk::AttachmentLoadOp::eDontCare)
+		.setStencilStoreOp(vk::AttachmentStoreOp::eDontCare)
+		.setInitialLayout(vk::ImageLayout::eUndefined)
+		.setFinalLayout(vk::ImageLayout::eShaderReadOnlyOptimal);
+	attachments.emplace_back()
 		.setFormat(formats.depth)
 		.setSamples(vk::SampleCountFlagBits::e1)
 		.setLoadOp(vk::AttachmentLoadOp::eClear)
@@ -255,15 +280,16 @@ vk::UniqueRenderPass GBufferPass::_createPass(vk::Device device) {
 		.setInitialLayout(vk::ImageLayout::eUndefined)
 		.setFinalLayout(vk::ImageLayout::eShaderReadOnlyOptimal);
 
-	std::array<vk::AttachmentReference, 3> colorAttachmentReferences{
+	std::array<vk::AttachmentReference, 4> colorAttachmentReferences{
 		vk::AttachmentReference(0, vk::ImageLayout::eColorAttachmentOptimal),
 		vk::AttachmentReference(1, vk::ImageLayout::eColorAttachmentOptimal),
-		vk::AttachmentReference(2, vk::ImageLayout::eColorAttachmentOptimal)
+		vk::AttachmentReference(2, vk::ImageLayout::eColorAttachmentOptimal),
+		vk::AttachmentReference(3, vk::ImageLayout::eColorAttachmentOptimal)
 	};
 
 	vk::AttachmentReference depthAttachmentReference;
 	depthAttachmentReference
-		.setAttachment(3)
+		.setAttachment(4)
 		.setLayout(vk::ImageLayout::eDepthStencilAttachmentOptimal);
 
 	std::vector<vk::SubpassDescription> subpasses;
@@ -321,6 +347,7 @@ std::vector<Pass::PipelineCreationInfo> GBufferPass::_getPipelineCreationInfo() 
 
 	info.multisampleState = GraphicsPipelineCreationInfo::getNoMultisampleState();
 
+	info.attachmentColorBlendStorage.emplace_back(GraphicsPipelineCreationInfo::getNoBlendAttachment());
 	info.attachmentColorBlendStorage.emplace_back(GraphicsPipelineCreationInfo::getNoBlendAttachment());
 	info.attachmentColorBlendStorage.emplace_back(GraphicsPipelineCreationInfo::getNoBlendAttachment());
 	info.attachmentColorBlendStorage.emplace_back(GraphicsPipelineCreationInfo::getNoBlendAttachment());

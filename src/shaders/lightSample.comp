@@ -1,0 +1,59 @@
+#version 450
+
+#include "include/restirUtils.glsl"
+#include "include/reservoir.glsl"
+#include "include/structs/light.glsl"
+
+layout (local_size_x = LIGHT_SAMPLE_GROUP_SIZE_X, local_size_y = LIGHT_SAMPLE_GROUP_SIZE_Y, local_size_z = 1) in;
+
+layout (binding = 0) uniform Uniforms {
+	RestirUniforms uniforms;
+};
+
+layout (binding = 1) uniform sampler2D uniAlbedo;
+layout (binding = 2) uniform sampler2D uniNormal;
+layout (binding = 3) uniform sampler2D uniMaterialProperties;
+layout (binding = 4) uniform sampler2D uniWorldPosition;
+
+layout (binding = 5) buffer Reservoirs {
+	Reservoir reservoirs[];
+};
+layout (binding = 6) buffer PointLights {
+	int count;
+	pointLight lights[];
+} pointLights;
+layout (binding = 7) buffer TriangleLights {
+	int count;
+	triLight lights[];
+} triangleLights;
+
+void main() {
+	uvec2 pixelCoord = gl_GlobalInvocationID.xy;
+	if (any(greaterThanEqual(pixelCoord, uniforms.screenSize))) {
+		return;
+	}
+
+	vec3 albedo = texelFetch(uniAlbedo, ivec2(pixelCoord), 0).xyz;
+	vec3 normal = texelFetch(uniNormal, ivec2(pixelCoord), 0).xyz;
+	vec2 roughnessMetallic = texelFetch(uniMaterialProperties, ivec2(pixelCoord), 0).xy;
+	vec3 worldPos = texelFetch(uniWorldPosition, ivec2(pixelCoord), 0).xyz;
+
+	Reservoir res = newReservoir();
+	Rand rand;
+	rand.context = uniforms.frame + pixelCoord.y * 10007 + pixelCoord.x * 13;
+	randUint16(rand);
+	for (int i = 0; i < 32; ++i) {
+		pointLight light = pointLights.lights[int(randFloat(rand) * pointLights.count)];
+
+		vec3 pHat = evaluatePHat(
+			worldPos, light.pos.xyz, uniforms.cameraPos.xyz, normal,
+			albedo, light.color.xyz, roughnessMetallic.x, roughnessMetallic.y
+		);
+		float pHatLum = luminance(pHat.r, pHat.g, pHat.b);
+
+		addSampleToReservoir(res, light.pos.xyz, vec4(pHat, pHatLum), 1.0f / pointLights.count, rand);
+	}
+
+	uint reservoirIndex = pixelCoord.y * uniforms.screenSize.x + pixelCoord.x;
+	reservoirs[reservoirIndex] = res;
+}

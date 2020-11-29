@@ -1,5 +1,7 @@
 #define M_PI 3.1415926535897932384626433832795
 
+#include "common.glsl"
+
 float schlickFresnel(float cos) 
 {
 	float m = clamp(1 - cos, 0.0, 1.0);
@@ -35,7 +37,7 @@ vec3 disneyBrdfDiffuse(float cosIn, float cosOut, float cosInHalf, vec3 albedo, 
 vec3 disneyBrdfSpecular(float cosIn, float cosOut, float cosHalf, float cosInHalf, vec3 albedo, float roughness, float metallic)
 {
 	// Fresnel specular (Fs)
-	float albedoLum = 0.2126 * albedo.r + 0.7152 * albedo.g + 0.0722 * albedo.b;
+	float albedoLum = luminance(albedo.r, albedo.g, albedo.b);
 	vec3 colorTint = albedo / albedoLum;
 	float specularTint = 0.0f;
 	float specular = 0.5f;

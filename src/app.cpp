@@ -228,31 +228,27 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 		vk::PhysicalDeviceFeatures2 features2;
 		features2.features = physicalDeviceInfo.features10;
 		features2.features
-            .setSamplerAnisotropy(true)
-            .setShaderInt64(true);
+			.setSamplerAnisotropy(true)
+			.setShaderInt64(true);
 		features2.pNext = &physicalDeviceInfo.features11;
 		physicalDeviceInfo.features11.pNext = &physicalDeviceInfo.features12;
 		physicalDeviceInfo.features12.pNext = nullptr;
-			
+
 
 		// Set Queue Info Based on Physical Device Info
 		bool queueFamilyGeneralPurpose = false;
-		for (auto& it : physicalDeviceInfo.queueProperties)
-		{
+		for (auto& it : physicalDeviceInfo.queueProperties) {
 			if ((it.queueFlags & (vk::QueueFlagBits::eGraphics | vk::QueueFlagBits::eCompute | vk::QueueFlagBits::eTransfer))
-				== (vk::QueueFlagBits::eGraphics | vk::QueueFlagBits::eCompute | vk::QueueFlagBits::eTransfer))
-			{
+				== (vk::QueueFlagBits::eGraphics | vk::QueueFlagBits::eCompute | vk::QueueFlagBits::eTransfer)) {
 				queueFamilyGeneralPurpose = true;
 			}
 
-			if (it.queueCount > queuePriorities.size())
-			{
+			if (it.queueCount > queuePriorities.size()) {
 				queuePriorities.resize(it.queueCount, 1.0f);
 			}
 		}
 
-		for (int i = 0; i < physicalDeviceInfo.queueProperties.size(); i++)
-		{
+		for (int i = 0; i < physicalDeviceInfo.queueProperties.size(); i++) {
 			vk::DeviceQueueCreateInfo queueInfo;
 			queueInfo.setQueueFamilyIndex(i);
 			queueInfo.queueCount = physicalDeviceInfo.queueProperties[i].queueCount;
@@ -273,17 +269,14 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 		};
 
 		// Use the feature2 chain to append extensions
-		if (!featureStructs.empty())
-		{
-			for (size_t i = 0; i < featureStructs.size(); i++)
-			{
+		if (!featureStructs.empty()) {
+			for (size_t i = 0; i < featureStructs.size(); i++) {
 				auto* header = reinterpret_cast<ExtensionHeader*>(featureStructs[i]);
 				header->pNext = i < featureStructs.size() - 1 ? featureStructs[i + 1] : nullptr;
 			}
 
 			ExtensionHeader* lastCoreFeature = (ExtensionHeader*)&features2;
-			while (lastCoreFeature->pNext != nullptr)
-			{
+			while (lastCoreFeature->pNext != nullptr) {
 				lastCoreFeature = (ExtensionHeader*)lastCoreFeature->pNext;
 			}
 			lastCoreFeature->pNext = featureStructs[0];
@@ -346,26 +339,26 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 
 	/** NOTE: A scene without emissive materials will be given 8 point lights and scenes with lightning material won't have point lights **/
 	/** cornellBox has emissive materials and others don't have **/
-	loadScene("../../../scenes/cornellBox/cornellBox.gltf", _gltfScene);
+	/*loadScene("../../../scenes/cornellBox/cornellBox.gltf", _gltfScene);*/
 	// loadScene("../../../scenes/boxTextured/boxTextured.gltf", _gltfScene);
 	// loadScene("../../../scenes/duck/Duck.gltf", _gltfScene);
 	// loadScene("../../../scenes/fish/BarramundiFish.gltf", _gltfScene);
-	// loadScene("../../../scenes/Sponza/glTF/Sponza.gltf", _gltfScene);
+	loadScene("../../../scenes/Sponza/glTF/Sponza.gltf", _gltfScene);
 
 	{ // create descriptor pools
 		std::array<vk::DescriptorPoolSize, 6> staticPoolSizes{
-			vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, 3),
-			vk::DescriptorPoolSize(vk::DescriptorType::eStorageBuffer, 4),
-			vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, 3),
-			vk::DescriptorPoolSize(vk::DescriptorType::eUniformBufferDynamic, 2),
-			vk::DescriptorPoolSize(vk::DescriptorType::eAccelerationStructureKHR, 1),
-			vk::DescriptorPoolSize(vk::DescriptorType::eStorageImage, 1)
+			vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, 100),
+			vk::DescriptorPoolSize(vk::DescriptorType::eStorageBuffer, 100),
+			vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, 100),
+			vk::DescriptorPoolSize(vk::DescriptorType::eUniformBufferDynamic, 100),
+			vk::DescriptorPoolSize(vk::DescriptorType::eAccelerationStructureKHR, 100),
+			vk::DescriptorPoolSize(vk::DescriptorType::eStorageImage, 100)
 		};
 		vk::DescriptorPoolCreateInfo staticPoolInfo;
 		staticPoolInfo
 			.setFlags(vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet)
 			.setPoolSizes(staticPoolSizes)
-			.setMaxSets(4);
+			.setMaxSets(100);
 		_staticDescriptorPool = _device->createDescriptorPoolUnique(staticPoolInfo);
 
 		std::array<vk::DescriptorPoolSize, 1> texturePoolSizes{
@@ -466,12 +459,50 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 
 	_gBuffer = GBuffer::create(_allocator, _device.get(), _swapchain.getImageExtent(), _gBufferPass);
 
+
+	_restirUniformBuffer = _allocator.createTypedBuffer<shader::RestirUniforms>(
+		1, vk::BufferUsageFlagBits::eUniformBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU
+		);
+	{
+		auto *restirUniforms = _restirUniformBuffer.mapAs<shader::RestirUniforms>();
+		restirUniforms->screenSize = nvmath::uvec2(_swapchain.getImageExtent().width, _swapchain.getImageExtent().height);
+		restirUniforms->frame = 0;
+		_restirUniformBuffer.unmap();
+		_restirUniformBuffer.flush();
+	}
+
+
+	_lightSamplePass = Pass::create<LightSamplePass>(_device.get());
+	{
+		std::array<vk::DescriptorSetLayout, 1> setLayouts{ _lightSamplePass.getDescriptorSetLayout() };
+		vk::DescriptorSetAllocateInfo allocInfo;
+		allocInfo
+			.setDescriptorPool(_staticDescriptorPool.get())
+			.setSetLayouts(setLayouts);
+		_lightSampleDescriptors = std::move(_device->allocateDescriptorSetsUnique(allocInfo)[0]);
+	}
+	_lightSamplePass.descriptorSet = _lightSampleDescriptors.get();
+	_lightSamplePass.screenSize = _swapchain.getImageExtent();
+
+
+	_swVisibilityTestPass = Pass::create<SoftwareVisibilityTestPass>(_device.get());
+	{
+		std::array<vk::DescriptorSetLayout, 1> setLayouts{ _swVisibilityTestPass.getDescriptorSetLayout() };
+		vk::DescriptorSetAllocateInfo allocInfo;
+		allocInfo
+			.setDescriptorPool(_staticDescriptorPool.get())
+			.setSetLayouts(setLayouts);
+		_swVisibilityTestDescriptors = std::move(_device->allocateDescriptorSetsUnique(allocInfo)[0]);
+	}
+	_swVisibilityTestPass.descriptorSet = _swVisibilityTestDescriptors.get();
+	_swVisibilityTestPass.screenSize = _swapchain.getImageExtent();
+
+	_updateRestirBuffers();
+
+
 #if defined(SOFTWARE_RT)
 	// create lighting pass
 	_lightingPass = Pass::create<LightingPass>(_device.get(), _swapchain.getImageFormat());
-	_lightingPass.scene = &_gltfScene;
-	_lightingPass.sceneBuffers = &_sceneBuffers;
-
 	_initializeLightingPassResources();
 
 	_lightingPass.imageExtent = _swapchain.getImageExtent();
@@ -481,8 +512,8 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 	// Rt pass initialization
 	_rtPass = RtPass::create(_device.get(), _dynamicDispatcher);
 	_rtPass._gBuffer = &_gBuffer;
-	_rtPass.createAccelerationStructure(_device.get(), _physicalDevice, _allocator, _dynamicDispatcher, 
-		                                _commandPool.get(), _graphicsQueue, _sceneBuffers, _gltfScene);
+	_rtPass.createAccelerationStructure(_device.get(), _physicalDevice, _allocator, _dynamicDispatcher,
+		_commandPool.get(), _graphicsQueue, _sceneBuffers, _gltfScene);
 	_rtPass.createOffscreenBuffer(_device.get(), _allocator, _swapchain.getImageExtent());
 	_rtPass.createDescriptorSetForRayTracing(_device.get(), _staticDescriptorPool.get(), _dynamicDispatcher);
 	_rtPass.createShaderBindingTable(_device.get(), _allocator, _physicalDevice, _dynamicDispatcher);
@@ -510,7 +541,7 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 		ImGui_ImplVulkan_CreateFontsTexture(cmdBuffer.get());
 	}
 
-	_createAndRecordGBufferCommandBuffer();
+	_createAndRecordMainCommandBuffer();
 	_createImguiCommandBuffers();
 
 
@@ -556,6 +587,7 @@ void App::updateGui() {
 		"Albedo",
 		"Normal",
 		"MaterialProperties",
+		"WorldPosition",
 		"DisneyBRDF"
 	};
 	_debugModeChanged = ImGui::Combo("Debug Mode", &_debugMode, items, IM_ARRAYSIZE(items));
@@ -593,7 +625,17 @@ void App::mainLoop() {
 			_gBuffer.resize(_allocator, _device.get(), _swapchain.getImageExtent(), _gBufferPass);
 			_gBufferPass.onResized(_device.get(), _swapchain.getImageExtent());
 
-			/*_demoPass.imageExtent = _swapchain.getImageExtent();*/
+			auto *restirUniforms = _restirUniformBuffer.mapAs<shader::RestirUniforms>();
+			restirUniforms->screenSize = nvmath::uvec2(windowSize.width, windowSize.height);
+			restirUniforms->frame = 0;
+			_restirUniformBuffer.unmap();
+			_restirUniformBuffer.flush();
+
+			_lightSamplePass.screenSize = windowSize;
+
+			_swVisibilityTestPass.screenSize = windowSize;
+
+			_updateRestirBuffers();
 
 			_initializeLightingPassResources();
 
@@ -602,7 +644,7 @@ void App::mainLoop() {
 
 			_imguiPass.imageExtent = _swapchain.getImageExtent();
 
-			_createAndRecordGBufferCommandBuffer();
+			_createAndRecordMainCommandBuffer();
 			_createAndRecordSwapchainBuffers();
 
 			_camera.aspectRatio = _swapchain.getImageExtent().width / static_cast<float>(_swapchain.getImageExtent().height);
@@ -662,11 +704,18 @@ void App::mainLoop() {
 				_gBufferResources.uniformBuffer.unmap();
 				_gBufferResources.uniformBuffer.flush();
 
+				auto *restirUniforms = _restirUniformBuffer.mapAs<shader::RestirUniforms>();
+				restirUniforms->cameraPos = _camera.position;
+				++restirUniforms->frame;
+				_restirUniformBuffer.unmap();
+				_restirUniformBuffer.flush();
+
 #if defined(SOFTWARE_RT)
 				auto *lightingPassUniforms = _lightingPassResources.uniformBuffer.mapAs<shader::LightingPassUniforms>();
 				lightingPassUniforms->inverseViewMatrix = _camera.inverseViewMatrix;
 				lightingPassUniforms->tempLightPoint = _camera.lookAt;
 				lightingPassUniforms->cameraPos = _camera.position;
+				lightingPassUniforms->bufferSize = nvmath::uvec2(_swapchain.getImageExtent().width, _swapchain.getImageExtent().height);
 				lightingPassUniforms->cameraNear = _camera.zNear;
 				lightingPassUniforms->cameraFar = _camera.zFar;
 				lightingPassUniforms->tanHalfFovY = std::tan(0.5f * _camera.fovYRadians);
@@ -682,7 +731,7 @@ void App::mainLoop() {
 				_debugModeChanged = false;
 			}
 
-			std::array<vk::CommandBuffer, 1> gBufferCommandBuffers{ _gBufferCommandBuffer.get() };
+			std::array<vk::CommandBuffer, 1> gBufferCommandBuffers{ _mainCommandBuffer.get() };
 			vk::SubmitInfo submitInfo;
 			submitInfo
 				.setCommandBuffers(gBufferCommandBuffers);

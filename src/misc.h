@@ -11,6 +11,7 @@
 #include <gltfscene.h>
 
 #include "transientCommandBuffer.h"
+#include "shaderIncludes.h"
 
 
 namespace vma {
@@ -18,6 +19,10 @@ namespace vma {
 	struct UniqueImage;
 }
 
+
+[[nodiscard]] constexpr int ceilDiv(int a, int b) {
+	return (a + b - 1) / b;
+}
 
 [[nodiscard]] std::vector<char> readFile(const std::filesystem::path&);
 
@@ -116,5 +121,12 @@ vma::UniqueImage loadTexture(
 );
 
 
-// Load a gltf scene
+// gltf utilities
 void loadScene(const std::string& filename, nvh::GltfScene& m_gltfScene);
+
+[[nodiscard]] std::vector<shader::pointLight> collectPointLightsFromScene(const nvh::GltfScene&);
+[[nodiscard]] std::vector<shader::pointLight> generateRandomPointLights(
+	std::size_t count, nvmath::vec3 min, nvmath::vec3 max
+);
+
+[[nodiscard]] std::vector<shader::triLight> collectTriangleLightsFromScene(const nvh::GltfScene&);
