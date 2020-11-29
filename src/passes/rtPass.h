@@ -584,13 +584,7 @@ public:
 	void updateCameraUniform(Camera& _camera) 
 	{
 		auto* cameraUniformBegin = cameraUniformBuffer.mapAs<shader::LightingPassUniforms>();
-		cameraUniformBegin->inverseViewMatrix = _camera.inverseViewMatrix;
 		cameraUniformBegin->cameraPos = _camera.position;
-		cameraUniformBegin->aspectRatio = _camera.aspectRatio;
-		cameraUniformBegin->cameraFar = _camera.zFar;
-		cameraUniformBegin->cameraNear = _camera.zNear;
-		cameraUniformBegin->tempLightPoint = _camera.lookAt;
-		cameraUniformBegin->tanHalfFovY = std::tan(0.5f * _camera.fovYRadians);
 		cameraUniformBuffer.unmap();
 		cameraUniformBuffer.flush();
 	}

@@ -158,19 +158,19 @@ protected:
 	std::vector<vk::UniqueFence> _inFlightFences;
 	std::vector<vk::UniqueFence> _inFlightImageFences;
 
-	vk::UniqueFence _gBufferFence;
+	vk::UniqueFence _mainFence;
 
 	// ui
 	int _debugMode = GBUFFER_DEBUG_NONE;
 	bool _debugModeChanged = false;
+	bool _useHardwareRt = true;
+	bool _useHardwareRtChanged = false;
 
 
 	nvmath::vec2f _lastMouse;
 	int _pressedMouseButton = -1;
 	bool _cameraUpdated = true;
 
-	// Time
-	std::clock_t app_start;
 
 	void _onMouseMoveEvent(double x, double y);
 	void _onMouseButtonEvent(int button, int action, int mods);
@@ -212,14 +212,15 @@ protected:
 
 		vk::CommandBufferBeginInfo beginInfo;
 		_mainCommandBuffer->begin(beginInfo);
+
 		_gBufferPass.issueCommands(_mainCommandBuffer.get(), _gBuffer.getFramebuffer());
 		_lightSamplePass.issueCommands(_mainCommandBuffer.get(), nullptr);
-#ifdef SOFTWARE_RT
-		_swVisibilityTestPass.issueCommands(_mainCommandBuffer.get(), nullptr);
-#else
-		//createAndRecordRTSwapchainBuffers(_swapchain, _device.get(), _commandPool.get(), _rtPass, _dynamicDispatcher);
-		_rtPass.issueCommands(_mainCommandBuffer.get(), _swapchain.getImageExtent(), _dynamicDispatcher);
-#endif
+		if (_useHardwareRt) {
+			_rtPass.issueCommands(_mainCommandBuffer.get(), _swapchain.getImageExtent(), _dynamicDispatcher);
+		} else {
+			_swVisibilityTestPass.issueCommands(_mainCommandBuffer.get(), nullptr);
+		}
+
 		_mainCommandBuffer->end();
 	}
 
@@ -251,15 +252,14 @@ protected:
 			_gBuffer, _sceneBuffers, _restirUniformBuffer.get(), _reservoirBuffer1.get(), _reservoirBufferSize,
 			_device.get(), _lightSampleDescriptors.get()
 		);
-#ifdef SOFTWARE_RT
+
 		_swVisibilityTestPass.initializeDescriptorSetFor(
 			_gBuffer, _aabbTreeBuffers, _restirUniformBuffer.get(), _reservoirBuffer1.get(), _reservoirBufferSize,
 			_device.get(), _swVisibilityTestDescriptors.get()
 		);
-#else
+
 		_rtPass.createDescriptorSetForRayTracing(_device.get(), _staticDescriptorPool.get(),
 			_restirUniformBuffer.get(), _reservoirBuffer1.get(), _reservoirBufferSize, _dynamicDispatcher);
-#endif
 	}
 
 
@@ -283,28 +283,5 @@ protected:
 		_lightingPass.initializeDescriptorSetFor(
 			_lightingPassResources, _sceneBuffers, _reservoirBuffer1.get(), _reservoirBufferSize, _device.get()
 		);
-	}
-
-	void createAndRecordRTSwapchainBuffers(
-		const Swapchain& swapchain, vk::Device device, vk::CommandPool commandPool, RtPass& rtPass, vk::DispatchLoaderDynamic dld
-	) {
-		std::size_t imageSize = swapchain.getNumImages();
-		vk::CommandBufferAllocateInfo allocInfo;
-		allocInfo
-			.setCommandPool(commandPool)
-			.setLevel(vk::CommandBufferLevel::ePrimary)
-			.setCommandBufferCount(static_cast<uint32_t>(imageSize));
-		std::vector<vk::UniqueCommandBuffer> commandBuffers = device.allocateCommandBuffersUnique(allocInfo);
-		_swapchainBuffers.resize(imageSize);
-
-		for (std::size_t i = 0; i < imageSize; i++) {
-			_swapchainBuffers[i].commandBuffer = std::move(commandBuffers[i]);
-			vk::CommandBufferBeginInfo beginInfo;
-			_swapchainBuffers[i].commandBuffer->begin(beginInfo);
-			rtPass.issueCommands(_swapchainBuffers[i].commandBuffer.get(),
-				swapchain.getImageExtent(),
-				dld);
-			_swapchainBuffers[i].commandBuffer->end();
-		}
 	}
 };

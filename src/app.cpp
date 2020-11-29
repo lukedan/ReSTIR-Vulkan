@@ -1,6 +1,5 @@
 #include "app.h"
 
-
 /*#define RENDERDOC_CAPTURE*/
 
 #include <sstream>
@@ -51,8 +50,6 @@ void App::initPhysicalInfo(PhysicalDeviceInfo& info, vk::PhysicalDevice physical
 }
 
 App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
-	app_start = std::clock();
-
 	IMGUI_CHECKVERSION();
 	ImGui::CreateContext();
 	// the callbacks are installed here but they're overriden below, so we still need to manually call those
@@ -484,7 +481,7 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 	_lightSamplePass.descriptorSet = _lightSampleDescriptors.get();
 	_lightSamplePass.screenSize = _swapchain.getImageExtent();
 
-#ifdef SOFTWARE_RT
+
 	_swVisibilityTestPass = Pass::create<SoftwareVisibilityTestPass>(_device.get());
 	{
 		std::array<vk::DescriptorSetLayout, 1> setLayouts{ _swVisibilityTestPass.getDescriptorSetLayout() };
@@ -497,9 +494,7 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 	_swVisibilityTestPass.descriptorSet = _swVisibilityTestDescriptors.get();
 	_swVisibilityTestPass.screenSize = _swapchain.getImageExtent();
 
-	_updateRestirBuffers();
 
-#else
 	// Hardware RT pass for visibility test
 	_rtPass = RtPass::create(_device.get(), _dynamicDispatcher);
 	_rtPass._gBuffer = &_gBuffer;
@@ -507,8 +502,9 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 		_commandPool.get(), _graphicsQueue, _sceneBuffers, _gltfScene);
 	_rtPass.createShaderBindingTable(_device.get(), _allocator, _physicalDevice, _dynamicDispatcher);
 
+
 	_updateRestirBuffers();
-#endif
+
 
 	// create lighting pass
 	_lightingPass = Pass::create<LightingPass>(_device.get(), _swapchain.getImageFormat());
@@ -564,7 +560,7 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 		vk::FenceCreateInfo fenceInfo;
 		fenceInfo
 			.setFlags(vk::FenceCreateFlagBits::eSignaled);
-		_gBufferFence = _device->createFenceUnique(fenceInfo);
+		_mainFence = _device->createFenceUnique(fenceInfo);
 	}
 }
 
@@ -591,6 +587,8 @@ void App::updateGui() {
 		"DisneyBRDF"
 	};
 	_debugModeChanged = ImGui::Combo("Debug Mode", &_debugMode, items, IM_ARRAYSIZE(items));
+
+	_useHardwareRtChanged = ImGui::Checkbox("Use Hardware Ray Tracing", &_useHardwareRt);
 
 	ImGui::Render();
 }
@@ -684,16 +682,18 @@ void App::mainLoop() {
 
 		auto* lightingPassUniforms = _lightingPassResources.uniformBuffer.mapAs<shader::LightingPassUniforms>();
 		std::clock_t app_time_now = std::clock();
-		lightingPassUniforms->sysTime = int(1000.0 * (app_time_now - app_start) / CLOCKS_PER_SEC);
 		_lightingPassResources.uniformBuffer.unmap();
 		_lightingPassResources.uniformBuffer.flush();
 
 		_device->resetFences({ _inFlightFences[currentFrame].get() });
 
 		{
-			while (_device->waitForFences(_gBufferFence.get(), true, std::numeric_limits<uint64_t>::max()) == vk::Result::eTimeout) {
+			while (_device->waitForFences(_mainFence.get(), true, std::numeric_limits<uint64_t>::max()) == vk::Result::eTimeout) {
 			}
-			_device->resetFences(_gBufferFence.get());
+			_device->resetFences(_mainFence.get());
+
+			auto *restirUniforms = _restirUniformBuffer.mapAs<shader::RestirUniforms>();
+			++restirUniforms->frame;
 
 			if (_cameraUpdated || _debugModeChanged) {
 				_graphicsQueue.waitIdle();
@@ -703,35 +703,29 @@ void App::mainLoop() {
 				_gBufferResources.uniformBuffer.unmap();
 				_gBufferResources.uniformBuffer.flush();
 
-				auto *restirUniforms = _restirUniformBuffer.mapAs<shader::RestirUniforms>();
 				restirUniforms->cameraPos = _camera.position;
-				++restirUniforms->frame;
-				_restirUniformBuffer.unmap();
-				_restirUniformBuffer.flush();
 
 				auto *lightingPassUniforms = _lightingPassResources.uniformBuffer.mapAs<shader::LightingPassUniforms>();
-				lightingPassUniforms->inverseViewMatrix = _camera.inverseViewMatrix;
-				lightingPassUniforms->tempLightPoint = _camera.lookAt;
 				lightingPassUniforms->cameraPos = _camera.position;
 				lightingPassUniforms->bufferSize = nvmath::uvec2(_swapchain.getImageExtent().width, _swapchain.getImageExtent().height);
-				lightingPassUniforms->cameraNear = _camera.zNear;
-				lightingPassUniforms->cameraFar = _camera.zFar;
-				lightingPassUniforms->tanHalfFovY = std::tan(0.5f * _camera.fovYRadians);
-				lightingPassUniforms->aspectRatio = _camera.aspectRatio;
 				lightingPassUniforms->debugMode = _debugMode;
-				lightingPassUniforms->sampleNum = this->sampleNum;
 				_lightingPassResources.uniformBuffer.unmap();
 				_lightingPassResources.uniformBuffer.flush();
 
 				_cameraUpdated = false;
 				_debugModeChanged = false;
+			} else if (_useHardwareRtChanged) {
+				_createAndRecordMainCommandBuffer();
 			}
+
+			_restirUniformBuffer.unmap();
+			_restirUniformBuffer.flush();
 
 			std::array<vk::CommandBuffer, 1> gBufferCommandBuffers{ _mainCommandBuffer.get() };
 			vk::SubmitInfo submitInfo;
 			submitInfo
 				.setCommandBuffers(gBufferCommandBuffers);
-			_graphicsQueue.submit(submitInfo, _gBufferFence.get());
+			_graphicsQueue.submit(submitInfo, _mainFence.get());
 		}
 
 		updateGui();

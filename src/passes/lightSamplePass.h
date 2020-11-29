@@ -94,7 +94,7 @@ protected:
 	vk::UniquePipelineLayout _layout;
 	vk::UniqueSampler _sampler;
 
-	vk::UniqueRenderPass _createPass(vk::Device device) override {
+	vk::UniqueRenderPass _createPass(vk::Device) override {
 		return {};
 	}
 

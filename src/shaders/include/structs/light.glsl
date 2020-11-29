@@ -1,8 +1,8 @@
 
 struct pointLight {
 	vec4 pos;
-	float intensity;
 	vec4 color;
+	float intensity;
 };
 
 struct triLight {
