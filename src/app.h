@@ -137,6 +137,9 @@ protected:
 	SoftwareVisibilityTestPass _swVisibilityTestPass;
 	vk::UniqueDescriptorSet _swVisibilityTestDescriptors;
 
+	SpatialReusePass _spatialReusePass;
+	vk::UniqueDescriptorSet _spatialReuseDescriptors;
+
 	LightingPass _lightingPass;
 	LightingPass::Resources _lightingPassResources;
 
@@ -165,6 +168,8 @@ protected:
 	bool _debugModeChanged = false;
 	bool _useHardwareRt = true;
 	bool _useHardwareRtChanged = false;
+	bool _useSpatialReuse = true;
+	bool _useSpatialReuseChanged = false;
 
 
 	nvmath::vec2f _lastMouse;
@@ -221,6 +226,11 @@ protected:
 			_swVisibilityTestPass.issueCommands(_mainCommandBuffer.get(), nullptr);
 		}
 
+		if (_useSpatialReuse) 
+		{
+			_spatialReusePass.issueCommands(_mainCommandBuffer.get(), nullptr);
+		}
+		
 		_mainCommandBuffer->end();
 	}
 
@@ -260,8 +270,28 @@ protected:
 
 		_rtPass.createDescriptorSetForRayTracing(_device.get(), _staticDescriptorPool.get(),
 			_restirUniformBuffer.get(), _reservoirBuffer1.get(), _reservoirBufferSize, _dynamicDispatcher);
+
+		_spatialReusePass.initializeDescriptorSetFor(
+			_gBuffer, _restirUniformBuffer.get(), _reservoirBuffer1.get(), _reservoirBufferSize,
+			_reservoirBuffer2.get(), _device.get(), _spatialReuseDescriptors.get()
+		);
 	}
 
+	void _updateLightingPassDescriptor() 
+	{
+		if (_useSpatialReuse)
+		{
+			_lightingPass.initializeDescriptorSetFor(
+				_lightingPassResources, _sceneBuffers, _reservoirBuffer2.get(), _reservoirBufferSize, _device.get()
+			);
+		}
+		else
+		{
+			_lightingPass.initializeDescriptorSetFor(
+				_lightingPassResources, _sceneBuffers, _reservoirBuffer1.get(), _reservoirBufferSize, _device.get()
+			);
+		}
+	}
 
 	void _initializeLightingPassResources() {
 		_lightingPassResources = LightingPass::Resources();
@@ -280,8 +310,17 @@ protected:
 			.setSetLayouts(lightingPassDescLayout);
 		_lightingPassResources.descriptorSet = std::move(_device->allocateDescriptorSetsUnique(lightingPassDescAlloc)[0]);
 
-		_lightingPass.initializeDescriptorSetFor(
-			_lightingPassResources, _sceneBuffers, _reservoirBuffer1.get(), _reservoirBufferSize, _device.get()
-		);
+		if (_useSpatialReuse)
+		{
+			_lightingPass.initializeDescriptorSetFor(
+				_lightingPassResources, _sceneBuffers, _reservoirBuffer2.get(), _reservoirBufferSize, _device.get()
+			);
+		}
+		else
+		{
+			_lightingPass.initializeDescriptorSetFor(
+				_lightingPassResources, _sceneBuffers, _reservoirBuffer1.get(), _reservoirBufferSize, _device.get()
+			);
+		}
 	}
 };

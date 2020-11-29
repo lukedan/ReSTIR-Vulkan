@@ -467,6 +467,17 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 	_swVisibilityTestPass.descriptorSet = _swVisibilityTestDescriptors.get();
 	_swVisibilityTestPass.screenSize = _swapchain.getImageExtent();
 
+	_spatialReusePass = Pass::create<SpatialReusePass>(_device.get());
+	{
+		std::array<vk::DescriptorSetLayout, 1> setLayouts{ _spatialReusePass.getDescriptorSetLayout() };
+		vk::DescriptorSetAllocateInfo allocInfo;
+		allocInfo
+			.setDescriptorPool(_staticDescriptorPool.get())
+			.setSetLayouts(setLayouts);
+		_spatialReuseDescriptors = std::move(_device->allocateDescriptorSetsUnique(allocInfo)[0]);
+	}
+	_spatialReusePass.descriptorSet = _spatialReuseDescriptors.get();
+	_spatialReusePass.screenSize = _swapchain.getImageExtent();
 
 	// Hardware RT pass for visibility test
 	_rtPass = RtPass::create(_device.get(), _dynamicDispatcher);
@@ -562,6 +573,7 @@ void App::updateGui() {
 	_debugModeChanged = ImGui::Combo("Debug Mode", &_debugMode, items, IM_ARRAYSIZE(items));
 
 	_useHardwareRtChanged = ImGui::Checkbox("Use Hardware Ray Tracing", &_useHardwareRt);
+	_useSpatialReuseChanged = ImGui::Checkbox("Use Spatial Resuing", &_useSpatialReuse);
 
 	ImGui::Render();
 }
@@ -605,6 +617,8 @@ void App::mainLoop() {
 			_lightSamplePass.screenSize = windowSize;
 
 			_swVisibilityTestPass.screenSize = windowSize;
+
+			_spatialReusePass.screenSize = windowSize;
 
 			_updateRestirBuffers();
 
@@ -689,6 +703,9 @@ void App::mainLoop() {
 				_debugModeChanged = false;
 			} else if (_useHardwareRtChanged) {
 				_createAndRecordMainCommandBuffer();
+			} else if (_useSpatialReuseChanged) {
+				_createAndRecordMainCommandBuffer();
+				_updateLightingPassDescriptor();
 			}
 
 			_restirUniformBuffer.unmap();

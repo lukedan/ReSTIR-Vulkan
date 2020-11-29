@@ -11,6 +11,7 @@ struct LightSample {
 	vec4 pHat; // first three components are rgb, last component is luminance
 	vec4 position;
 	float sumWeights; // setting W to 0 is equivalent to setting sumWeights to 0
+	vec4 emission;
 };
 
 struct Reservoir {

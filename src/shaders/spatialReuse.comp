@@ -1,0 +1,72 @@
+#version 450
+
+#include "include/reservoir.glsl"
+#include "include/restirUtils.glsl"
+
+layout (local_size_x = SW_VISIBILITY_TEST_GROUP_SIZE_X, local_size_y = SW_VISIBILITY_TEST_GROUP_SIZE_Y, local_size_z = 1) in;
+
+layout (binding = 0) uniform Uniforms {
+	RestirUniforms uniforms;
+};
+
+layout (binding = 1) uniform sampler2D uniWorldPosition;
+layout (binding = 2) uniform sampler2D uniAlbedo;
+layout (binding = 3) uniform sampler2D uniNormal;
+layout (binding = 4) uniform sampler2D uniMaterialProperties;
+
+layout (binding = 5) buffer Reservoirs {
+	Reservoir reservoirs[];
+};
+
+layout (binding = 6) buffer Resultreservoirs
+{
+	Reservoir resultReservoirs[];
+};
+
+#define RAND_NEIGHBOURS 3
+#define RAND_RADIUS 30.0
+
+void main() {
+	uvec2 pixelCoord = gl_GlobalInvocationID.xy;
+	if (any(greaterThanEqual(pixelCoord, uniforms.screenSize))) {
+		return;
+	}
+
+	vec3 albedo = texelFetch(uniAlbedo, ivec2(pixelCoord), 0).xyz;
+	vec3 normal = texelFetch(uniNormal, ivec2(pixelCoord), 0).xyz;
+	vec2 roughnessMetallic = texelFetch(uniMaterialProperties, ivec2(pixelCoord), 0).xy;
+	vec3 worldPos = texelFetch(uniWorldPosition, ivec2(pixelCoord), 0).xyz;
+
+	uint reservoirIndex = pixelCoord.y * uniforms.screenSize.x + pixelCoord.x;
+	Reservoir res = reservoirs[reservoirIndex];
+
+	Rand rand = seedRand(uniforms.frame * 31, pixelCoord.y * 10007 + pixelCoord.x);
+	for(int i = 0; i < RAND_NEIGHBOURS; i++)
+	{
+		ivec2 randNeighbor = ivec2(0, 0);
+	
+		float angle = randFloat(rand) * 2.0 * M_PI;
+		float radius = randFloat(rand) * RAND_RADIUS;
+
+		ivec2 randNeighborOffset = ivec2(floor(cos(angle) * radius), floor(sin(angle) * radius));
+		randNeighbor = ivec2(pixelCoord.x + randNeighborOffset.x, pixelCoord.y + randNeighborOffset.y);
+		clamp(randNeighbor.x, 0, uniforms.screenSize.x - 1);
+		clamp(randNeighbor.y, 0, uniforms.screenSize.y - 1);
+
+		uint randIndex = randNeighbor.y * uniforms.screenSize.x + randNeighbor.x;
+		Reservoir randRes = reservoirs[randIndex];
+		vec4 newPHats[RESERVOIR_SIZE];
+
+		for(int j = 0; j < RESERVOIR_SIZE; j++)
+		{
+			vec3 newPHat = evaluatePHat(
+			worldPos, randRes.samples[i].position.xyz, uniforms.cameraPos.xyz, normal,
+			albedo, randRes.samples[i].emission.xyz, roughnessMetallic.x, roughnessMetallic.y);
+			float pHatLum = luminance(newPHat.r, newPHat.g, newPHat.b);
+			vec4 newPHat4 = vec4(newPHat, pHatLum);
+			newPHats[i] = newPHat4;
+		}		
+		combineReservoirs(res, randRes, newPHats, rand);
+	}
+	resultReservoirs[reservoirIndex] = res;
+}
