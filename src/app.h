@@ -38,6 +38,7 @@ class App {
 public:
 	constexpr static uint32_t vulkanApiVersion = VK_MAKE_VERSION(1, 2, 0);
 	constexpr static std::size_t maxFramesInFlight = 2;
+	constexpr static std::size_t numGBuffers = 2;
 
 	App();
 	~App();
@@ -107,7 +108,6 @@ protected:
 
 	vma::Allocator _allocator;
 	vk::UniqueCommandPool _commandPool;
-	vk::UniqueCommandPool _imguiCommandPool;
 	vk::UniqueDescriptorPool _staticDescriptorPool;
 	vk::UniqueDescriptorPool _textureDescriptorPool;
 	vk::UniqueDescriptorPool _imguiDescriptorPool;
@@ -120,30 +120,29 @@ protected:
 	std::vector<Swapchain::BufferSet> _swapchainBuffers;
 
 	// passes & resources
-	vk::UniqueCommandBuffer _mainCommandBuffer;
+	std::array<vk::UniqueCommandBuffer, numGBuffers> _mainCommandBuffers;
 
-	GBuffer _gBuffer;
+	GBuffer _gBuffers[2];
 	GBufferPass _gBufferPass;
 	GBufferPass::Resources _gBufferResources;
 
 	vma::UniqueBuffer _restirUniformBuffer;
-	vma::UniqueBuffer _reservoirBuffer1;
-	vma::UniqueBuffer _reservoirBuffer2;
+	std::array<vma::UniqueBuffer, 2> _reservoirBuffers;
 	vk::DeviceSize _reservoirBufferSize;
 
 	LightSamplePass _lightSamplePass;
-	vk::UniqueDescriptorSet _lightSampleDescriptors;
+	std::array<vk::UniqueDescriptorSet, numGBuffers> _lightSampleDescriptors;
 
 	SoftwareVisibilityTestPass _swVisibilityTestPass;
-	vk::UniqueDescriptorSet _swVisibilityTestDescriptors;
+	std::array<vk::UniqueDescriptorSet, numGBuffers> _swVisibilityTestDescriptors;
 
 	LightingPass _lightingPass;
-	LightingPass::Resources _lightingPassResources;
+	vma::UniqueBuffer _lightingPassUniformBuffer;
+	std::array<vk::UniqueDescriptorSet, numGBuffers> _lightingPassDescriptorSets;
 
 	RtPass _rtPass;
 
 	ImGuiPass _imguiPass;
-	std::vector<vk::UniqueCommandBuffer> _imguiCommandBuffers;
 
 	nvh::GltfScene _gltfScene;
 	SceneBuffers _sceneBuffers;
@@ -176,112 +175,85 @@ protected:
 	void _onMouseButtonEvent(int button, int action, int mods);
 	void _onScrollEvent(double x, double y);
 
-	void initPhysicalInfo(PhysicalDeviceInfo& info, vk::PhysicalDevice physicalDevice);
-
-	void _createAndRecordSwapchainBuffers() {
+	void _createSwapchainBuffers() {
 		_swapchainBuffers.clear();
 		_swapchainBuffers = _swapchain.getBuffers(_device.get(), _lightingPass.getPass(), _commandPool.get());
+	}
 
-		// record command buffers
-		for (std::size_t i = 0; i < _swapchainBuffers.size(); ++i) {
-			const Swapchain::BufferSet &bufferSet = _swapchainBuffers[i];
+	void _recordMainCommandBuffers() {
+		for (std::size_t i = 0; i < numGBuffers; ++i) {
+			_lightSamplePass.descriptorSet = _lightSampleDescriptors[i].get();
+			_swVisibilityTestPass.descriptorSet = _swVisibilityTestDescriptors[i].get();
+
 
 			vk::CommandBufferBeginInfo beginInfo;
-			bufferSet.commandBuffer->begin(beginInfo);
+			_mainCommandBuffers[i]->begin(beginInfo);
 
-			transitionImageLayout(
-				bufferSet.commandBuffer.get(), _swapchain.getImages()[i], _swapchain.getImageFormat(),
-				vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal
-			);
+			_gBufferPass.issueCommands(_mainCommandBuffers[i].get(), _gBuffers[i].getFramebuffer());
+			_lightSamplePass.issueCommands(_mainCommandBuffers[i].get(), nullptr);
+			if (_useHardwareRt) {
+				/*_rtPass.issueCommands(_mainCommandBuffers[i].get(), _swapchain.getImageExtent(), _dynamicDispatcher);*/
+			} else {
+				_swVisibilityTestPass.issueCommands(_mainCommandBuffers[i].get(), nullptr);
+			}
 
-			_lightingPass.issueCommands(bufferSet.commandBuffer.get(), bufferSet.framebuffer.get());
-
-			bufferSet.commandBuffer->end();
+			_mainCommandBuffers[i]->end();
 		}
-	}
-
-	void _createAndRecordMainCommandBuffer() {
-		_mainCommandBuffer.reset();
-
-		vk::CommandBufferAllocateInfo bufferInfo;
-		bufferInfo
-			.setCommandPool(_commandPool.get())
-			.setCommandBufferCount(1)
-			.setLevel(vk::CommandBufferLevel::ePrimary);
-		_mainCommandBuffer = std::move(_device->allocateCommandBuffersUnique(bufferInfo)[0]);
-
-		vk::CommandBufferBeginInfo beginInfo;
-		_mainCommandBuffer->begin(beginInfo);
-
-		_gBufferPass.issueCommands(_mainCommandBuffer.get(), _gBuffer.getFramebuffer());
-		_lightSamplePass.issueCommands(_mainCommandBuffer.get(), nullptr);
-		if (_useHardwareRt) {
-			_rtPass.issueCommands(_mainCommandBuffer.get(), _swapchain.getImageExtent(), _dynamicDispatcher);
-		} else {
-			_swVisibilityTestPass.issueCommands(_mainCommandBuffer.get(), nullptr);
-		}
-
-		_mainCommandBuffer->end();
-	}
-
-	void _createImguiCommandBuffers() {
-		_imguiCommandBuffers.clear();
-		vk::CommandBufferAllocateInfo cmdBufInfo;
-		cmdBufInfo
-			.setCommandPool(_imguiCommandPool.get())
-			.setCommandBufferCount(static_cast<uint32_t>(_swapchainBuffers.size()))
-			.setLevel(vk::CommandBufferLevel::ePrimary);
-		_imguiCommandBuffers = _device->allocateCommandBuffersUnique(cmdBufInfo);
 	}
 
 	void _updateRestirBuffers() {
-		_reservoirBuffer1.reset();
-		_reservoirBuffer2.reset();
-
 		uint32_t numPixels = _swapchain.getImageExtent().width * _swapchain.getImageExtent().height;
 		_reservoirBufferSize = numPixels * sizeof(shader::Reservoir);
-		_reservoirBuffer1 = _allocator.createTypedBuffer<shader::Reservoir>(
-			numPixels, vk::BufferUsageFlagBits::eStorageBuffer, VMA_MEMORY_USAGE_GPU_ONLY
+		{
+			TransientCommandBuffer cmdBuf = _transientCommandBufferPool.begin(_graphicsComputeQueue);
+			for (std::size_t i = 0; i < numGBuffers; ++i) {
+				_reservoirBuffers[i] = _allocator.createTypedBuffer<shader::Reservoir>(
+					numPixels,
+					vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst,
+					VMA_MEMORY_USAGE_GPU_ONLY
+					);
+				// zero-initialize reservoir buffers
+				cmdBuf->fillBuffer(_reservoirBuffers[i].get(), 0, VK_WHOLE_SIZE, 0);
+			}
+		}
+
+		for (std::size_t i = 0; i < numGBuffers; ++i) {
+			_lightSamplePass.initializeDescriptorSetFor(
+				_gBuffers[i], _sceneBuffers, _restirUniformBuffer.get(), _reservoirBuffers[i].get(), _reservoirBufferSize,
+				_device.get(), _lightSampleDescriptors[i].get()
 			);
-		_reservoirBuffer2 = _allocator.createTypedBuffer<shader::Reservoir>(
-			numPixels, vk::BufferUsageFlagBits::eStorageBuffer, VMA_MEMORY_USAGE_GPU_ONLY
+
+			_swVisibilityTestPass.initializeDescriptorSetFor(
+				_gBuffers[i], _aabbTreeBuffers, _restirUniformBuffer.get(), _reservoirBuffers[i].get(), _reservoirBufferSize,
+				_device.get(), _swVisibilityTestDescriptors[i].get()
 			);
 
-
-		_lightSamplePass.initializeDescriptorSetFor(
-			_gBuffer, _sceneBuffers, _restirUniformBuffer.get(), _reservoirBuffer1.get(), _reservoirBufferSize,
-			_device.get(), _lightSampleDescriptors.get()
-		);
-
-		_swVisibilityTestPass.initializeDescriptorSetFor(
-			_gBuffer, _aabbTreeBuffers, _restirUniformBuffer.get(), _reservoirBuffer1.get(), _reservoirBufferSize,
-			_device.get(), _swVisibilityTestDescriptors.get()
-		);
-
-		_rtPass.createDescriptorSetForRayTracing(_device.get(), _staticDescriptorPool.get(),
-			_restirUniformBuffer.get(), _reservoirBuffer1.get(), _reservoirBufferSize, _dynamicDispatcher);
+			/*_rtPass.createDescriptorSetForRayTracing(_device.get(), _staticDescriptorPool.get(),
+				_restirUniformBuffer.get(), _reservoirBuffers[i].get(), _reservoirBufferSize, _dynamicDispatcher);*/
+		}
 	}
 
 
 	void _initializeLightingPassResources() {
-		_lightingPassResources = LightingPass::Resources();
-
-		_lightingPassResources.gBuffer = &_gBuffer;
-
-		_lightingPassResources.uniformBuffer = _allocator.createTypedBuffer<shader::LightingPassUniforms>(
+		_lightingPassUniformBuffer = _allocator.createTypedBuffer<shader::LightingPassUniforms>(
 			1, vk::BufferUsageFlagBits::eUniformBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU
 			);
 
-		std::array<vk::DescriptorSetLayout, 1> lightingPassDescLayout{ _lightingPass.getDescriptorSetLayout() };
+		std::array<vk::DescriptorSetLayout, numGBuffers> lightingPassDescLayout;
+		std::fill(lightingPassDescLayout.begin(), lightingPassDescLayout.end(), _lightingPass.getDescriptorSetLayout());
 		vk::DescriptorSetAllocateInfo lightingPassDescAlloc;
 		lightingPassDescAlloc
 			.setDescriptorPool(_staticDescriptorPool.get())
-			.setDescriptorSetCount(1)
 			.setSetLayouts(lightingPassDescLayout);
-		_lightingPassResources.descriptorSet = std::move(_device->allocateDescriptorSetsUnique(lightingPassDescAlloc)[0]);
+		auto descriptorSets = _device->allocateDescriptorSetsUnique(lightingPassDescAlloc);
+		std::move(descriptorSets.begin(), descriptorSets.end(), _lightingPassDescriptorSets.begin());
 
-		_lightingPass.initializeDescriptorSetFor(
-			_lightingPassResources, _sceneBuffers, _reservoirBuffer1.get(), _reservoirBufferSize, _device.get()
-		);
+		for (std::size_t i = 0; i < numGBuffers; ++i) {
+			_lightingPass.initializeDescriptorSetFor(
+				_gBuffers[i], _sceneBuffers,
+				_lightingPassUniformBuffer.get(), _reservoirBuffers[i].get(), _reservoirBufferSize,
+				_device.get(), _lightingPassDescriptorSets[i].get()
+			);
+		}
 	}
 };

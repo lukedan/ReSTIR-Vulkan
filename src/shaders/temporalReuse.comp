@@ -1,0 +1,49 @@
+#version 450
+
+layout (local_size_x = TEMPORAL_REUSE_GROUP_SIZE_X, local_size_y = TEMPORAL_REUSE_GROUP_SIZE_Y, local_size_z = 1) in;
+
+layout (binding = 0) uniform Uniforms {
+	RestirUniforms uniforms;
+};
+
+layout (binding = 1) uniform sampler2D uniWorldPosition;
+layout (binding = 2) uniform sampler2D uniPrevFrameDepth;
+
+layout (binding = 3) buffer PrevFrameReservoirs {
+	Reservoir prevFrameReservoirs[];
+};
+layout (binding = 4) buffer Reservoirs {
+	Reservoir reservoirs[];
+};
+
+void main() {
+	uvec2 pixelCoord = gl_GlobalInvocationID.xy;
+	if (any(greaterThanEqual(pixelCoord, uniforms.screenSize))) {
+		return;
+	}
+
+	vec3 worldPos = texelFetch(uniWorldPosition, ivec2(pixelCoord), 0).xyz;
+
+	vec4 prevFramePos = prevFrameProjectionViewMatrix * vec4(worldPos, 1.0f);
+	prevFramePos.xyz /= prevFramePos.w;
+	prevFramePos.xy = (prevFramePos.xy + 1.0f) * 0.5f * vec2(uniforms.screenSize);
+	if (
+		any(lessThan(prevFramePos.xy, vec2(0.0f))) ||
+		any(greaterThan(prevFramePos.xy, vec2(uniforms.screenSize)))
+	) {
+		return;
+	}
+	ivec2 prevFrag = ivec2(prevFramePos.xy);
+	float prevFrameDepth = texelFetch(uniPrevFrameDepth, prevFrag, 0).x;
+
+	uint reservoirIndex = pixelCoord.y * uniforms.screenSize.x + pixelCoord.x;
+	Reservoir res = reservoirs[reservoirIndex];
+	for (int i = 0; i < RESERVOIR_SIZE; ++i) {
+		vec3 dir = res.samples[i].position.xyz - worldPos;
+		vec3 offset = 0.001f * normalize(dir);
+		if (!raytrace(worldPos + offset, dir - 2 * offset)) {
+			res.samples[i].sumWeights = 0.0f;
+		}
+	}
+	reservoirs[reservoirIndex] = res;
+}
