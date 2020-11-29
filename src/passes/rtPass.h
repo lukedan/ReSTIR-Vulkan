@@ -605,15 +605,12 @@ public:
 		dev.freeCommandBuffers(commandPool, tlasCommandBuffers);
 	}
 
-	void createOffscreenBuffer(vk::Device& dev, vk::PhysicalDevice& pd, vma::Allocator& allocator, vk::Extent2D extent)
+	void createOffscreenBuffer(vk::Device& dev, vma::Allocator& allocator, vk::Extent2D extent)
 	{
-		vk::Format offscreenImageFormat = findSupportedFormat({ vk::Format::eB8G8R8A8Unorm }, pd, vk::ImageTiling::eOptimal,
-			vk::FormatFeatureFlagBits::eStorageImage | vk::FormatFeatureFlagBits::eTransferSrc);
-
 		// Offscreen buffer
 		vk::ImageCreateInfo imageInfo;
 		imageInfo.imageType = vk::ImageType::e2D;
-		imageInfo.format = offscreenImageFormat;
+		imageInfo.format = vk::Format::eB8G8R8A8Unorm;
 		imageInfo.extent = vk::Extent3D(extent, 1);
 		imageInfo.mipLevels = 1;
 		imageInfo.arrayLayers = 1;
@@ -630,7 +627,7 @@ public:
 
 		vk::ImageViewCreateInfo imageViewInfo;
 		imageViewInfo.viewType = vk::ImageViewType::e2D;
-		imageViewInfo.format = offscreenImageFormat;
+		imageViewInfo.format = vk::Format::eB8G8R8A8Unorm;
 		imageViewInfo.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
 		imageViewInfo.subresourceRange.baseMipLevel = 0;
 		imageViewInfo.subresourceRange.levelCount = 1;
