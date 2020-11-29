@@ -89,12 +89,14 @@ public:
 		// Point lights
 		result._ptLightsBufferSize = 16 + sizeof(shader::pointLight) * pointLights.size();
 		result._ptLightsBuffer = allocator.createBuffer(
-			result._ptLightsBufferSize, vk::BufferUsageFlagBits::eStorageBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU
+			static_cast<uint32_t>(result._ptLightsBufferSize),
+			vk::BufferUsageFlagBits::eStorageBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU
 		);
 		// Triangle lights
 		result._triLightsBufferSize = 16 + sizeof(shader::triLight) * triangleLights.size();
 		result._triLightsBuffer = allocator.createBuffer(
-			result._triLightsBufferSize, vk::BufferUsageFlagBits::eStorageBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU
+			static_cast<uint32_t>(result._triLightsBufferSize),
+			vk::BufferUsageFlagBits::eStorageBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU
 		);
 
 		vk::Format format = vk::Format::eR8G8B8A8Unorm;
