@@ -77,23 +77,18 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 	requiredExtensions.emplace_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 	requiredExtensions.emplace_back(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME);
 	std::vector<const char*> requiredDeviceExtensions{
-		VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME,
 		VK_KHR_SWAPCHAIN_EXTENSION_NAME,
-		VK_KHR_DEDICATED_ALLOCATION_EXTENSION_NAME,
-		VK_KHR_GET_MEMORY_REQUIREMENTS_2_EXTENSION_NAME,
-		VK_KHR_MAINTENANCE3_EXTENSION_NAME,
 #ifndef RENDERDOC_CAPTURE
 		VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME,
-		VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
+		VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME
 #endif
-		VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
-		VK_KHR_SHADER_CLOCK_EXTENSION_NAME
 	};
 	std::vector<const char*> requiredLayers{
 		"VK_LAYER_KHRONOS_validation"
 	};
 
 	vk::PhysicalDeviceRayTracingFeaturesKHR raytracingFeature;
+	raytracingFeature.setRayTracing(true);
 	std::vector<const char*> requiredDeviceRayTracingExtensions{
 #ifndef RENDERDOC_CAPTURE
 		VK_KHR_RAY_TRACING_EXTENSION_NAME
@@ -199,8 +194,8 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 		for (std::size_t i = 0; i < queueFamilyProps.size(); ++i) {
 			const vk::QueueFamilyProperties &props = queueFamilyProps[i];
 			std::cout << "    " << i << ": " << vk::to_string(props.queueFlags);
-			if (props.queueFlags & vk::QueueFlagBits::eGraphics) {
-				_graphicsQueueIndex = static_cast<uint32_t>(i);
+			if (props.queueFlags & (vk::QueueFlagBits::eGraphics | vk::QueueFlagBits::eCompute)) {
+				_graphicsComputeQueueIndex = static_cast<uint32_t>(i);
 			}
 			if (_physicalDevice.getSurfaceSupportKHR(static_cast<uint32_t>(i), _surface.get())) {
 				_presentQueueIndex = static_cast<uint32_t>(i);
@@ -209,58 +204,28 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 			std::cout << "\n";
 		}
 		std::cout << "\n";
-		_graphicsQueueIndex = static_cast<uint32_t>(std::find_if(
+		_graphicsComputeQueueIndex = static_cast<uint32_t>(std::find_if(
 			queueFamilyProps.begin(), queueFamilyProps.end(),
 			[](const vk::QueueFamilyProperties &props) {
 				return props.queueFlags & vk::QueueFlagBits::eGraphics;
 			}
 		) - queueFamilyProps.begin());
 
-		std::vector<vk::DeviceQueueCreateInfo> queueInfos;
-		std::vector<float> queuePriorities;
-
 		// Setup Vulkan 1.2 Physical Device Info
 		PhysicalDeviceInfo physicalDeviceInfo;
 		initPhysicalInfo(physicalDeviceInfo, _physicalDevice);
-		vk::PhysicalDeviceFeatures2 features2;
-		features2.features = physicalDeviceInfo.features10;
-		features2.features
+		vk::PhysicalDeviceFeatures2 features10;
+		vk::PhysicalDeviceVulkan11Features features11;
+		vk::PhysicalDeviceVulkan12Features features12;
+		features10.features
 			.setSamplerAnisotropy(true)
 			.setShaderInt64(true);
-		features2.pNext = &physicalDeviceInfo.features11;
-		physicalDeviceInfo.features11.pNext = &physicalDeviceInfo.features12;
-		physicalDeviceInfo.features12.pNext = nullptr;
+		features12
+			.setBufferDeviceAddress(true);
+		features10.pNext = &features11;
+		features11.pNext = &features12;
 
-
-		// Set Queue Info Based on Physical Device Info
-		bool queueFamilyGeneralPurpose = false;
-		for (auto& it : physicalDeviceInfo.queueProperties) {
-			if ((it.queueFlags & (vk::QueueFlagBits::eGraphics | vk::QueueFlagBits::eCompute | vk::QueueFlagBits::eTransfer))
-				== (vk::QueueFlagBits::eGraphics | vk::QueueFlagBits::eCompute | vk::QueueFlagBits::eTransfer)) {
-				queueFamilyGeneralPurpose = true;
-			}
-
-			if (it.queueCount > queuePriorities.size()) {
-				queuePriorities.resize(it.queueCount, 1.0f);
-			}
-		}
-
-		for (int i = 0; i < physicalDeviceInfo.queueProperties.size(); i++) {
-			vk::DeviceQueueCreateInfo queueInfo;
-			queueInfo.setQueueFamilyIndex(i);
-			queueInfo.queueCount = physicalDeviceInfo.queueProperties[i].queueCount;
-			queueInfo.pQueuePriorities = queuePriorities.data();
-
-			queueInfos.push_back(queueInfo);
-		}
-
-		vk::DeviceCreateInfo deviceInfo;
-		deviceInfo
-			.setQueueCreateInfos(queueInfos)
-			.setPEnabledExtensionNames(requiredDeviceExtensions);
-
-		struct ExtensionHeader  // Helper struct to link extensions together
-		{
+		struct ExtensionHeader { // Helper struct to link extensions together
 			vk::StructureType sType;
 			void* pNext;
 		};
@@ -272,17 +237,25 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 				header->pNext = i < featureStructs.size() - 1 ? featureStructs[i + 1] : nullptr;
 			}
 
-			ExtensionHeader* lastCoreFeature = (ExtensionHeader*)&features2;
+			ExtensionHeader* lastCoreFeature = (ExtensionHeader*)&features12;
 			while (lastCoreFeature->pNext != nullptr) {
 				lastCoreFeature = (ExtensionHeader*)lastCoreFeature->pNext;
 			}
 			lastCoreFeature->pNext = featureStructs[0];
 		}
 
-		_physicalDevice.getFeatures2(&features2);
-		features2.features.robustBufferAccess = VK_FALSE;
 
-		deviceInfo.setPNext(&features2);
+		std::array<float, 1> queuePriorities{ 1.0f };
+		std::vector<vk::DeviceQueueCreateInfo> queueInfos{
+			vk::DeviceQueueCreateInfo({}, _graphicsComputeQueueIndex, queuePriorities),
+			vk::DeviceQueueCreateInfo({}, _presentQueueIndex, queuePriorities)
+		};
+
+		vk::DeviceCreateInfo deviceInfo;
+		deviceInfo
+			.setQueueCreateInfos(queueInfos)
+			.setPEnabledExtensionNames(requiredDeviceExtensions)
+			.setPNext(&features10);
 		_device = _physicalDevice.createDeviceUnique(deviceInfo);
 		_dynamicDispatcher.init(_device.get());
 	}
@@ -294,19 +267,19 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 	{
 		vk::CommandPoolCreateInfo poolInfo;
 		poolInfo
-			.setQueueFamilyIndex(_graphicsQueueIndex);
+			.setQueueFamilyIndex(_graphicsComputeQueueIndex);
 		_commandPool = _device->createCommandPoolUnique(poolInfo);
 
 		vk::CommandPoolCreateInfo imguiPoolInfo;
 		imguiPoolInfo
-			.setQueueFamilyIndex(_graphicsQueueIndex)
+			.setQueueFamilyIndex(_graphicsComputeQueueIndex)
 			.setFlags(vk::CommandPoolCreateFlagBits::eResetCommandBuffer);
 		_imguiCommandPool = _device->createCommandPoolUnique(imguiPoolInfo);
 	}
-	_transientCommandBufferPool = TransientCommandBufferPool(_device.get(), _graphicsQueueIndex);
+	_transientCommandBufferPool = TransientCommandBufferPool(_device.get(), _graphicsComputeQueueIndex);
 
 	{
-		_swapchainSharedQueues = { _graphicsQueueIndex, _presentQueueIndex };
+		_swapchainSharedQueues = { _graphicsComputeQueueIndex, _presentQueueIndex };
 		vk::SurfaceCapabilitiesKHR capabilities = _physicalDevice.getSurfaceCapabilitiesKHR(_surface.get());
 		vk::SurfaceFormatKHR surfaceFormat = chooseSurfaceFormat(_physicalDevice, _surface.get());
 
@@ -323,7 +296,7 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 			.setClipped(true)
 			.setImageUsage(vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eTransferDst);
 
-		if (_graphicsQueueIndex == _presentQueueIndex) {
+		if (_graphicsComputeQueueIndex == _presentQueueIndex) {
 			_swapchainInfo.setImageSharingMode(vk::SharingMode::eExclusive);
 		} else {
 			_swapchainInfo
@@ -394,14 +367,14 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 	}
 
 
-	_graphicsQueue = _device->getQueue(_graphicsQueueIndex, 0);
+	_graphicsComputeQueue = _device->getQueue(_graphicsComputeQueueIndex, 0);
 	_presentQueue = _device->getQueue(_presentQueueIndex, 0);
 
 
 	_sceneBuffers = SceneBuffers::create(
 		_gltfScene,
 		_allocator, _transientCommandBufferPool,
-		_device.get(), _graphicsQueue
+		_device.get(), _graphicsComputeQueue
 	);
 	std::cout << "Building AABB tree...";
 	_aabbTree = AabbTree::build(_gltfScene);
@@ -499,7 +472,7 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 	_rtPass = RtPass::create(_device.get(), _dynamicDispatcher);
 	_rtPass._gBuffer = &_gBuffer;
 	_rtPass.createAccelerationStructure(_device.get(), _physicalDevice, _allocator, _dynamicDispatcher,
-		_commandPool.get(), _graphicsQueue, _sceneBuffers, _gltfScene);
+		_commandPool.get(), _graphicsComputeQueue, _sceneBuffers, _gltfScene);
 	_rtPass.createShaderBindingTable(_device.get(), _allocator, _physicalDevice, _dynamicDispatcher);
 
 
@@ -524,15 +497,15 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 		imguiInit.Instance = _instance.get();
 		imguiInit.PhysicalDevice = _physicalDevice;
 		imguiInit.Device = _device.get();
-		imguiInit.QueueFamily = _graphicsQueueIndex;
-		imguiInit.Queue = _graphicsQueue;
+		imguiInit.QueueFamily = _graphicsComputeQueueIndex;
+		imguiInit.Queue = _graphicsComputeQueue;
 		imguiInit.DescriptorPool = _imguiDescriptorPool.get();
 		imguiInit.MinImageCount = _swapchainInfo.minImageCount;
 		imguiInit.ImageCount = static_cast<uint32_t>(_swapchain.getImages().size());
 		ImGui_ImplVulkan_Init(&imguiInit, _imguiPass.getPass());
 	}
 	{
-		TransientCommandBuffer cmdBuffer = _transientCommandBufferPool.begin(_graphicsQueue);
+		TransientCommandBuffer cmdBuffer = _transientCommandBufferPool.begin(_graphicsComputeQueue);
 		ImGui_ImplVulkan_CreateFontsTexture(cmdBuffer.get());
 	}
 
@@ -695,7 +668,7 @@ void App::mainLoop() {
 			++restirUniforms->frame;
 
 			if (_cameraUpdated || _debugModeChanged) {
-				_graphicsQueue.waitIdle();
+				_graphicsComputeQueue.waitIdle();
 
 				auto *gBufferUniforms = _gBufferResources.uniformBuffer.mapAs<GBufferPass::Uniforms>();
 				gBufferUniforms->projectionViewMatrix = _camera.projectionViewMatrix;
@@ -724,7 +697,7 @@ void App::mainLoop() {
 			vk::SubmitInfo submitInfo;
 			submitInfo
 				.setCommandBuffers(gBufferCommandBuffers);
-			_graphicsQueue.submit(submitInfo, _mainFence.get());
+			_graphicsComputeQueue.submit(submitInfo, _mainFence.get());
 		}
 
 		updateGui();
@@ -752,7 +725,7 @@ void App::mainLoop() {
 				.setWaitDstStageMask(waitStages)
 				.setCommandBuffers(cmdBuffers)
 				.setSignalSemaphores(signalSemaphores);
-			_graphicsQueue.submit(submitInfo, _inFlightFences[currentFrame].get());
+			_graphicsComputeQueue.submit(submitInfo, _inFlightFences[currentFrame].get());
 		}
 
 		std::vector<vk::SwapchainKHR> swapchains{ _swapchain.getSwapchain().get() };

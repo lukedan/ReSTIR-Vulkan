@@ -92,10 +92,10 @@ protected:
 	Camera _camera;
 	FpsCounter _fpsCounter;
 
-	uint32_t _graphicsQueueIndex = 0;
+	uint32_t _graphicsComputeQueueIndex = 0;
 	uint32_t _presentQueueIndex = 0;
 
-	vk::Queue _graphicsQueue;
+	vk::Queue _graphicsComputeQueue;
 	vk::Queue _presentQueue;
 
 	vk::UniqueInstance _instance;

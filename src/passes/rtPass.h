@@ -735,7 +735,7 @@ private:
 		vk::BufferDeviceAddressInfoKHR bufferAddressInfo;
 		bufferAddressInfo.setBuffer(buffer);
 
-		return dev.getBufferAddressKHR(bufferAddressInfo, dld);
+		return dev.getBufferAddress(bufferAddressInfo, dld);
 	}
 
 	vk::MemoryRequirements GetAccelerationStructureMemoryRequirements(
