@@ -54,19 +54,13 @@ void main() {
 	vec2 roughnessMetallic = texelFetch(uniMaterialProperties, ivec2(pixelCoord), 0).xy;
 	vec3 worldPos = texelFetch(uniWorldPosition, ivec2(pixelCoord), 0).xyz;
 
-	// RIS -- TODO: w needs to adopt triangle lights.
-	lightSample xSet[32];
-	float wSet[32];
-	float wSum = 0.f;
-	for (int i = 0; i < 32; ++i) {
-		Rand rand_light_sample1;
-		rand_light_sample1.context = uniforms.frame + i * 17 + pixelCoord.y * 99997913 + pixelCoord.x * 29;
-		randUint16(rand_light_sample1);
-		Rand rand_light_sample2;
-		rand_light_sample2.context = uniforms.frame * 3 + i * 5 + pixelCoord.y * 11 + pixelCoord.x * 10002871;
-		randUint16(rand_light_sample2);
-		
-		int selected_idx = aliasTableSample(randFloat(rand_light_sample1), randFloat(rand_light_sample2));
+	/* Streaming RIS using WRS -- TODO: w needs to adopt triangle lights. */
+	Reservoir res = newReservoir();
+	Rand rand;
+	rand.context = uniforms.frame + pixelCoord.y * 10007 + pixelCoord.x * 13;
+	randUint16(rand);
+	for (int i = 0; i < 32; ++i) {			
+		int selected_idx = aliasTableSample(randFloat(rand), randFloat(rand));
 
 		pointLight light = pointLights.lights[selected_idx];
 
@@ -76,35 +70,9 @@ void main() {
 		);
 		float pHatLum = luminance(pHat.r, pHat.g, pHat.b);
 
-		xSet[i].pos = light.pos.xyz;
-		xSet[i].pHat = pHat;
-		xSet[i].pHatLum = pHatLum;
-		xSet[i].p = aliasTable.aliasCol[selected_idx].oriPrab;
-		wSet[i] = pHatLum / aliasTable.aliasCol[selected_idx].oriPrab;
-		wSum += wSet[i];
+		addSampleToReservoir(res, light.pos.xyz, vec4(pHat, pHatLum), 1.0f / pointLights.count, rand);
 	}
-	// Select from candidate
-	Rand rand_sele_cand;
-	rand_sele_cand.context = uniforms.frame * 5 + pixelCoord.y * 1543 + pixelCoord.x * 12043;
-	randUint16(rand_sele_cand);
-	float cumulated_weight = 0.0;
-	float rand_cand_float = randFloat(rand_sele_cand);
-	int z = 31;
-	for(int i = 0; i < 32; ++i){
-		cumulated_weight += wSet[i];
-		if(rand_cand_float < (cumulated_weight / wSum)){
-			z = i;
-			break;
-		}
-	}
-	// Give the sample to reservior
-	Reservoir res = newReservoir();
-	Rand rand;
-	rand.context = uniforms.frame * 13 + pixelCoord.y * 10007 + pixelCoord.x * 13;
-	randUint16(rand);
-
-	lightSample y = xSet[z];
-	addSampleToReservoir(res, y.pos, vec4(y.pHat, y.pHatLum), y.p, rand);
+	
 
 	uint reservoirIndex = pixelCoord.y * uniforms.screenSize.x + pixelCoord.x;
 	reservoirs[reservoirIndex] = res;
