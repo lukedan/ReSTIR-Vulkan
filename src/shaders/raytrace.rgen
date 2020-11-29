@@ -7,24 +7,15 @@
 
 layout(location = 0) rayPayloadEXT bool isShadowed;
 
-layout(binding = 0, set = 0) uniform accelerationStructureEXT acc;
+layout(binding = 0) uniform accelerationStructureEXT acc;
 
-layout(binding = 1, rgba32f) uniform image2D img;
+layout (binding = 1) uniform sampler2D uniWorldPosition;
 
-layout (binding = 2, set = 0) uniform sampler2D uniAlbedo;
-layout (binding = 3, set = 0) uniform sampler2D uniNormal;
-layout (binding = 4, set = 0) uniform sampler2D uniWorldPosition;
-layout (binding = 5) uniform sampler2D uniMaterialProperties;
-
-layout (binding = 6, set = 0) uniform Uniforms {
-	LightingPassUniforms uniforms;
-};
-
-layout (binding = 7, set = 0) buffer Reservoirs {
+layout (binding = 2) buffer Reservoirs {
     Reservoir reservoirs[];
 };
 
-layout (binding = 8, set = 0) uniform Restiruniforms {
+layout (binding = 3) uniform Restiruniforms {
 	RestirUniforms restirUniforms;
 };
 

@@ -133,7 +133,7 @@ public:
 		vk::Buffer reservoirBuffer, vk::DeviceSize reservoirBufferSize,
 		vk::DispatchLoaderDynamic& dld)
 	{
-		std::array<vk::WriteDescriptorSet, 9> descriptorWrite;
+		std::array<vk::WriteDescriptorSet, 4> descriptorWrite;
 
 		vk::DescriptorSetAllocateInfo setInfo;
 		setInfo
@@ -159,69 +159,37 @@ public:
 			.setDescriptorCount(1);
 		descriptorWrite[0] = accelerationStructureWrite;
 
-		vk::DescriptorImageInfo storageImageInfo;
-		storageImageInfo.imageView = _offscreenBufferView.get();
-		storageImageInfo.imageLayout = vk::ImageLayout::eGeneral;
-
-		vk::WriteDescriptorSet outputImageWrite;
-		outputImageWrite
-			.setDstSet(_descriptorSet.get())
-			.setDstBinding(1)
-			.setDescriptorType(vk::DescriptorType::eStorageImage)
-			.setDescriptorCount(1)
-			.setDstArrayElement(0)
-			.setImageInfo(storageImageInfo);
-		descriptorWrite[1] = outputImageWrite;
 
 		// GBuffer Data
-		std::array<vk::DescriptorImageInfo, 4> imageInfo{
-			vk::DescriptorImageInfo(_sampler.get(), _gBuffer->getAlbedoView(), vk::ImageLayout::eShaderReadOnlyOptimal),
-			vk::DescriptorImageInfo(_sampler.get(), _gBuffer->getNormalView(), vk::ImageLayout::eShaderReadOnlyOptimal),
-			vk::DescriptorImageInfo(_sampler.get(), _gBuffer->getWorldPositionView(), vk::ImageLayout::eShaderReadOnlyOptimal),
-			vk::DescriptorImageInfo(_sampler.get(), _gBuffer->getMaterialPropertiesView(), vk::ImageLayout::eShaderReadOnlyOptimal)
+		std::array<vk::DescriptorImageInfo, 1> imageInfo{
+			vk::DescriptorImageInfo(_sampler.get(), _gBuffer->getWorldPositionView(), vk::ImageLayout::eShaderReadOnlyOptimal)
 		};
 
-		for (std::size_t i = 2; i < 6; ++i) {
-			descriptorWrite[i]
-				.setDstSet(_descriptorSet.get())
-				.setDstBinding(i)
-				.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
-				.setPImageInfo(&imageInfo[i - 2])
-				.setDescriptorCount(1);
-		}
-
-
-		std::array<vk::DescriptorBufferInfo, 1> cameraBufferInfo
-		{
-			vk::DescriptorBufferInfo(cameraUniformBuffer.get(), 0, sizeof(shader::LightingPassUniforms))
-		};
-
-		vk::WriteDescriptorSet cameraWrite;
-		cameraWrite
+		descriptorWrite[1]
 			.setDstSet(_descriptorSet.get())
-			.setDstBinding(6)
-			.setDescriptorType(vk::DescriptorType::eUniformBuffer)
-			.setBufferInfo(cameraBufferInfo);
-		descriptorWrite[6] = cameraWrite;
+			.setDstBinding(1)
+			.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
+			.setPImageInfo(&imageInfo[0])
+			.setDescriptorCount(1);
 
-		std::array<vk::DescriptorBufferInfo, 1> lightsBufferInfo
+		std::array<vk::DescriptorBufferInfo, 1> reservoirsBufferInfo
 		{
 			vk::DescriptorBufferInfo(reservoirBuffer, 0, reservoirBufferSize)
 		};
 
-		vk::WriteDescriptorSet lightsWrite;
-		lightsWrite
+		vk::WriteDescriptorSet reservoirsWrite;
+		reservoirsWrite
 			.setDstSet(_descriptorSet.get())
-			.setDstBinding(7)
+			.setDstBinding(2)
 			.setDescriptorType(vk::DescriptorType::eStorageBuffer)
-			.setBufferInfo(lightsBufferInfo);
-		descriptorWrite[7] = lightsWrite;
+			.setBufferInfo(reservoirsBufferInfo);
+		descriptorWrite[2] = reservoirsWrite;
 
 		vk::DescriptorBufferInfo restirUniformInfo(uniformBuffer, 0, sizeof(shader::RestirUniforms));
 
-		descriptorWrite[8]
+		descriptorWrite[3]
 			.setDstSet(_descriptorSet.get())
-			.setDstBinding(8)
+			.setDstBinding(3)
 			.setDescriptorType(vk::DescriptorType::eUniformBuffer)
 			.setBufferInfo(restirUniformInfo);
 
@@ -722,16 +690,11 @@ protected:
 
 		
 
-		std::array<vk::DescriptorSetLayoutBinding, 9> bindings{ 
+		std::array<vk::DescriptorSetLayoutBinding, 4> bindings{ 
 			accelerationStructureLayoutBinding,
-			storageImageLayoutBinding,
-			vk::DescriptorSetLayoutBinding(2, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eRaygenKHR),
-			vk::DescriptorSetLayoutBinding(3, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eRaygenKHR),
-			vk::DescriptorSetLayoutBinding(4, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eRaygenKHR),
-			vk::DescriptorSetLayoutBinding(5, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eRaygenKHR),
-			vk::DescriptorSetLayoutBinding(6, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eRaygenKHR),
-			vk::DescriptorSetLayoutBinding(7, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eRaygenKHR),
-			vk::DescriptorSetLayoutBinding(8, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eRaygenKHR)
+			vk::DescriptorSetLayoutBinding(1, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eRaygenKHR),
+			vk::DescriptorSetLayoutBinding(2, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eRaygenKHR),
+			vk::DescriptorSetLayoutBinding(3, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eRaygenKHR)
 		};
 
 		vk::DescriptorSetLayoutCreateInfo layoutInfo;
