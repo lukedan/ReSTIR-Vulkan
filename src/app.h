@@ -139,6 +139,7 @@ protected:
 
 	SpatialReusePass _spatialReusePass;
 	std::array<vk::UniqueDescriptorSet, numGBuffers> _spatialReuseDescriptors;
+	std::array<vk::UniqueDescriptorSet, numGBuffers> _spatialReuseSecondDescriptors;
 
 	TemporalReusePass _temporalReusePass;
 	std::array<vk::UniqueDescriptorSet, numGBuffers> _temporalReuseDescriptors;
@@ -171,6 +172,7 @@ protected:
 	int _debugMode = GBUFFER_DEBUG_NONE;
 	bool _useHardwareRt = true;
 	bool _enableTemporalReuse = true;
+	bool _enableSpatialReuse = true;
 
 	bool _debugModeChanged = false;
 	bool _renderPathChanged = false;
@@ -231,8 +233,13 @@ protected:
 			if (_enableTemporalReuse) {
 				_temporalReusePass.issueCommands(_mainCommandBuffers[i].get(), nullptr);
 			}
-
-			_spatialReusePass.issueCommands(_mainCommandBuffers[i].get(), nullptr);
+			if (_enableSpatialReuse) 
+			{
+				_spatialReusePass.issueCommands(_mainCommandBuffers[i].get(), nullptr);
+				_spatialReusePass.descriptorSet = _spatialReuseSecondDescriptors[i].get();
+				_spatialReusePass.issueCommands(_mainCommandBuffers[i].get(), nullptr);
+				_spatialReusePass.descriptorSet = _spatialReuseDescriptors[i].get();
+			}
 
 			_mainCommandBuffers[i]->end();
 		}
@@ -284,6 +291,11 @@ protected:
 				_gBuffers[i], _restirUniformBuffer.get(), _reservoirBuffers[i].get(), _reservoirBufferSize,
 				_reservoirBuffers[(i + numGBuffers - 1) % numGBuffers].get(), _device.get(), _spatialReuseDescriptors[i].get()
 			);
+
+			_spatialReusePass.initializeDescriptorSetFor(
+				_gBuffers[i], _restirUniformBuffer.get(), _reservoirBuffers[(i + numGBuffers - 1) % numGBuffers].get(), _reservoirBufferSize,
+				_reservoirBuffers[i].get(), _device.get(), _spatialReuseSecondDescriptors[i].get()
+			);
 		}
 	}
 
@@ -304,7 +316,7 @@ protected:
 		for (std::size_t i = 0; i < numGBuffers; ++i) {
 			_lightingPass.initializeDescriptorSetFor(
 				_gBuffers[i], _sceneBuffers,
-				_lightingPassUniformBuffer.get(), _reservoirBuffers[(i + numGBuffers - 1) % numGBuffers].get(), _reservoirBufferSize,
+				_lightingPassUniformBuffer.get(), _reservoirBuffers[i].get(), _reservoirBufferSize,
 				_device.get(), _lightingPassDescriptorSets[i].get()
 			);
 		}

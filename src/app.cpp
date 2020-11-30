@@ -448,6 +448,16 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 		auto newSets = _device->allocateDescriptorSetsUnique(allocInfo);
 		std::move(newSets.begin(), newSets.end(), _spatialReuseDescriptors.begin());
 	}
+	{
+		std::array<vk::DescriptorSetLayout, numGBuffers> setLayouts;
+		std::fill(setLayouts.begin(), setLayouts.end(), _spatialReusePass.getDescriptorSetLayout());
+		vk::DescriptorSetAllocateInfo allocInfo;
+		allocInfo
+			.setDescriptorPool(_staticDescriptorPool.get())
+			.setSetLayouts(setLayouts);
+		auto newSets = _device->allocateDescriptorSetsUnique(allocInfo);
+		std::move(newSets.begin(), newSets.end(), _spatialReuseSecondDescriptors.begin());
+	}
 	_spatialReusePass.screenSize = _swapchain.getImageExtent();
 
 #ifndef RENDERDOC_CAPTURE
@@ -577,6 +587,7 @@ void App::updateGui() {
 
 	_renderPathChanged = ImGui::Checkbox("Use Hardware Ray Tracing", &_useHardwareRt) || _renderPathChanged;
 	_renderPathChanged = ImGui::Checkbox("Use Temporal Reuse", &_enableTemporalReuse) || _renderPathChanged;
+	_renderPathChanged = ImGui::Checkbox("Use Spatial Reuse", &_enableSpatialReuse) || _renderPathChanged;
 
 	ImGui::Render();
 }
