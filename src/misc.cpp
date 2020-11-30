@@ -175,11 +175,10 @@ void transitionImageLayout(
 	}
 
 	vk::ImageAspectFlags aspectMask;
-	if (newImageLayout == vk::ImageLayout::eDepthStencilAttachmentOptimal) {
+	if (format == vk::Format::eD32Sfloat || format == vk::Format::eD16Unorm) {
 		aspectMask = vk::ImageAspectFlagBits::eDepth;
-		if (format == vk::Format::eD32SfloatS8Uint || format == vk::Format::eD24UnormS8Uint) {
-			aspectMask |= vk::ImageAspectFlagBits::eStencil;
-		}
+	} else if (format == vk::Format::eD32SfloatS8Uint || format == vk::Format::eD24UnormS8Uint) {
+		aspectMask = vk::ImageAspectFlagBits::eDepth | vk::ImageAspectFlagBits::eStencil;
 	} else {
 		aspectMask = vk::ImageAspectFlagBits::eColor;
 	}

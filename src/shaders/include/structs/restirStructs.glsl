@@ -1,8 +1,11 @@
-#define LIGHT_SAMPLE_GROUP_SIZE_X 8
-#define LIGHT_SAMPLE_GROUP_SIZE_Y 8
+#define LIGHT_SAMPLE_GROUP_SIZE_X 64
+#define LIGHT_SAMPLE_GROUP_SIZE_Y 1
 
-#define SW_VISIBILITY_TEST_GROUP_SIZE_X 8
-#define SW_VISIBILITY_TEST_GROUP_SIZE_Y 8
+#define SW_VISIBILITY_TEST_GROUP_SIZE_X 64
+#define SW_VISIBILITY_TEST_GROUP_SIZE_Y 1
+
+#define TEMPORAL_REUSE_GROUP_SIZE_X 64
+#define TEMPORAL_REUSE_GROUP_SIZE_Y 1
 
 
 #define RESERVOIR_SIZE 4
@@ -21,6 +24,7 @@ struct Reservoir {
 
 
 struct RestirUniforms {
+	mat4 prevFrameProjectionViewMatrix;
 	vec4 cameraPos;
 	uvec2 screenSize;
 	uint frame;

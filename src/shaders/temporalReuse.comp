@@ -1,0 +1,84 @@
+#version 450
+
+#include "include/reservoir.glsl"
+
+layout (local_size_x = TEMPORAL_REUSE_GROUP_SIZE_X, local_size_y = TEMPORAL_REUSE_GROUP_SIZE_Y, local_size_z = 1) in;
+
+layout (binding = 0) uniform Uniforms {
+	RestirUniforms uniforms;
+};
+
+layout (binding = 1) uniform sampler2D uniWorldPosition;
+layout (binding = 2) uniform sampler2D uniAlbedo;
+layout (binding = 3) uniform sampler2D uniNormal;
+layout (binding = 4) uniform sampler2D uniPrevFrameDepth;
+layout (binding = 5) uniform sampler2D uniPrevFrameAlbedo;
+layout (binding = 6) uniform sampler2D uniPrevFrameNormal;
+
+layout (binding = 7) buffer PrevFrameReservoirs {
+	Reservoir prevFrameReservoirs[];
+};
+layout (binding = 8) buffer Reservoirs {
+	Reservoir reservoirs[];
+};
+
+void main() {
+	uvec2 pixelCoord = gl_GlobalInvocationID.xy;
+	if (any(greaterThanEqual(pixelCoord, uniforms.screenSize))) {
+		return;
+	}
+
+	vec3 worldPos = texelFetch(uniWorldPosition, ivec2(pixelCoord), 0).xyz;
+
+	vec4 prevFramePos = uniforms.prevFrameProjectionViewMatrix * vec4(worldPos, 1.0f);
+	prevFramePos.xyz /= prevFramePos.w;
+	prevFramePos.xy = (prevFramePos.xy + 1.0f) * 0.5f * vec2(uniforms.screenSize);
+	if (
+		any(lessThan(prevFramePos.xy, vec2(0.0f))) ||
+		any(greaterThan(prevFramePos.xy, vec2(uniforms.screenSize)))
+	) {
+		return;
+	}
+
+	ivec2 prevFrag = ivec2(prevFramePos.xy);
+	float prevFrameDepth = texelFetch(uniPrevFrameDepth, prevFrag, 0).x;
+	if (abs(prevFrameDepth - prevFramePos.z) > 0.001 * prevFrameDepth) {
+		return;
+	}
+
+	vec3 albedoDiff =
+		texelFetch(uniAlbedo, ivec2(pixelCoord), 0).xyz - texelFetch(uniPrevFrameAlbedo, prevFrag, 0).xyz;
+	if (dot(albedoDiff, albedoDiff) > 0.01f) {
+		return;
+	}
+
+	vec3 normalDiff =
+		texelFetch(uniNormal, ivec2(pixelCoord), 0).xyz - texelFetch(uniPrevFrameNormal, prevFrag, 0).xyz;
+	if (dot(normalDiff, normalDiff) > 0.01f) {
+		return;
+	}
+
+	uint reservoirIndex = pixelCoord.y * uniforms.screenSize.x + pixelCoord.x;
+	Rand rand = seedRand(uniforms.frame * 17, reservoirIndex);
+	Reservoir res = reservoirs[reservoirIndex];
+	Reservoir prevRes = prevFrameReservoirs[prevFrag.y * uniforms.screenSize.x + prevFrag.x];
+
+	// TODO clamp number of samples
+	/*if (prevRes.numStreamSamples > 20 * res.numStreamSamples) {
+		return;
+	}*/
+
+	/*uint clampedSampleCount = min(prevRes.numStreamSamples, 20 * res.numStreamSamples);
+	float weightMultiplier = clampedSampleCount / prevRes.numStreamSamples;*/
+
+	vec4 pHat[RESERVOIR_SIZE];
+	for (int i = 0; i < RESERVOIR_SIZE; ++i) {
+		/*prevRes.samples[i].sumWeights *= weightMultiplier;*/
+		pHat[i] = prevRes.samples[i].pHat; // TODO maybe recompute phat?
+	}
+	/*prevRes.numStreamSamples = clampedSampleCount;*/
+
+	combineReservoirs(res, prevRes, pHat, rand);
+
+	reservoirs[reservoirIndex] = res;
+}

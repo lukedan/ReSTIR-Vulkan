@@ -1,7 +1,5 @@
 #include "app.h"
 
-//#define RENDERDOC_CAPTURE
-
 #include <sstream>
 
 #include <imgui.h>
@@ -21,32 +19,6 @@ VKAPI_ATTR VkBool32 VKAPI_CALL _debugCallback(
 #endif
 	}
 	return VK_FALSE;
-}
-
-void App::initPhysicalInfo(PhysicalDeviceInfo& info, vk::PhysicalDevice physicalDevice) {
-	vk::PhysicalDeviceFeatures2   features2;
-	vk::PhysicalDeviceProperties2 properties2;
-
-	info.memoryProperties = physicalDevice.getMemoryProperties();
-	info.queueProperties = physicalDevice.getQueueFamilyProperties();
-
-	features2.pNext = &info.features11;
-	info.features11.pNext = &info.features12;
-	info.features12.pNext = nullptr;
-
-	info.properties12.driverID = vk::DriverId::eNvidiaProprietary;
-	info.properties12.supportedDepthResolveModes = vk::ResolveModeFlagBits::eMax;
-	info.properties12.supportedStencilResolveModes = vk::ResolveModeFlagBits::eMax;
-
-	properties2.pNext = &info.properties11;
-	info.properties11.pNext = &info.properties12;
-	info.properties12.pNext = nullptr;
-
-	physicalDevice.getFeatures2(&features2);
-	physicalDevice.getProperties2(&properties2);
-
-	info.properties10 = properties2.properties;
-	info.features10 = features2.features;
 }
 
 App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
@@ -212,8 +184,6 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 		) - queueFamilyProps.begin());
 
 		// Setup Vulkan 1.2 Physical Device Info
-		PhysicalDeviceInfo physicalDeviceInfo;
-		initPhysicalInfo(physicalDeviceInfo, _physicalDevice);
 		vk::PhysicalDeviceFeatures2 features10;
 		vk::PhysicalDeviceVulkan11Features features11;
 		vk::PhysicalDeviceVulkan12Features features12;
@@ -267,14 +237,9 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 	{
 		vk::CommandPoolCreateInfo poolInfo;
 		poolInfo
-			.setQueueFamilyIndex(_graphicsComputeQueueIndex);
-		_commandPool = _device->createCommandPoolUnique(poolInfo);
-
-		vk::CommandPoolCreateInfo imguiPoolInfo;
-		imguiPoolInfo
 			.setQueueFamilyIndex(_graphicsComputeQueueIndex)
 			.setFlags(vk::CommandPoolCreateFlagBits::eResetCommandBuffer);
-		_imguiCommandPool = _device->createCommandPoolUnique(imguiPoolInfo);
+		_commandPool = _device->createCommandPoolUnique(poolInfo);
 	}
 	_transientCommandBufferPool = TransientCommandBufferPool(_device.get(), _graphicsComputeQueueIndex);
 
@@ -427,7 +392,10 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 	_gBufferPass.scene = &_gltfScene;
 	_gBufferPass.sceneBuffers = &_sceneBuffers;
 
-	_gBuffer = GBuffer::create(_allocator, _device.get(), _swapchain.getImageExtent(), _gBufferPass);
+	for (GBuffer &gbuf : _gBuffers) {
+		gbuf = GBuffer::create(_allocator, _device.get(), _swapchain.getImageExtent(), _gBufferPass);
+	}
+	_transitionGBufferLayouts();
 
 
 	_restirUniformBuffer = _allocator.createTypedBuffer<shader::RestirUniforms>(
@@ -444,47 +412,76 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 
 	_lightSamplePass = Pass::create<LightSamplePass>(_device.get());
 	{
-		std::array<vk::DescriptorSetLayout, 1> setLayouts{ _lightSamplePass.getDescriptorSetLayout() };
+		std::array<vk::DescriptorSetLayout, numGBuffers> setLayouts;
+		std::fill(setLayouts.begin(), setLayouts.end(), _lightSamplePass.getDescriptorSetLayout());
 		vk::DescriptorSetAllocateInfo allocInfo;
 		allocInfo
 			.setDescriptorPool(_staticDescriptorPool.get())
 			.setSetLayouts(setLayouts);
-		_lightSampleDescriptors = std::move(_device->allocateDescriptorSetsUnique(allocInfo)[0]);
+		auto newSets = _device->allocateDescriptorSetsUnique(allocInfo);
+		std::move(newSets.begin(), newSets.end(), _lightSampleDescriptors.begin());
 	}
-	_lightSamplePass.descriptorSet = _lightSampleDescriptors.get();
 	_lightSamplePass.screenSize = _swapchain.getImageExtent();
 
 
 	_swVisibilityTestPass = Pass::create<SoftwareVisibilityTestPass>(_device.get());
 	{
-		std::array<vk::DescriptorSetLayout, 1> setLayouts{ _swVisibilityTestPass.getDescriptorSetLayout() };
+		std::array<vk::DescriptorSetLayout, numGBuffers> setLayouts;
+		std::fill(setLayouts.begin(), setLayouts.end(), _swVisibilityTestPass.getDescriptorSetLayout());
 		vk::DescriptorSetAllocateInfo allocInfo;
 		allocInfo
 			.setDescriptorPool(_staticDescriptorPool.get())
 			.setSetLayouts(setLayouts);
-		_swVisibilityTestDescriptors = std::move(_device->allocateDescriptorSetsUnique(allocInfo)[0]);
+		auto newSets = _device->allocateDescriptorSetsUnique(allocInfo);
+		std::move(newSets.begin(), newSets.end(), _swVisibilityTestDescriptors.begin());
 	}
-	_swVisibilityTestPass.descriptorSet = _swVisibilityTestDescriptors.get();
 	_swVisibilityTestPass.screenSize = _swapchain.getImageExtent();
 
 	_spatialReusePass = Pass::create<SpatialReusePass>(_device.get());
 	{
-		std::array<vk::DescriptorSetLayout, 1> setLayouts{ _spatialReusePass.getDescriptorSetLayout() };
+		std::array<vk::DescriptorSetLayout, numGBuffers> setLayouts;
+		std::fill(setLayouts.begin(), setLayouts.end(), _spatialReusePass.getDescriptorSetLayout());
 		vk::DescriptorSetAllocateInfo allocInfo;
 		allocInfo
 			.setDescriptorPool(_staticDescriptorPool.get())
 			.setSetLayouts(setLayouts);
-		_spatialReuseDescriptors = std::move(_device->allocateDescriptorSetsUnique(allocInfo)[0]);
+		auto newSets = _device->allocateDescriptorSetsUnique(allocInfo);
+		std::move(newSets.begin(), newSets.end(), _spatialReuseDescriptors.begin());
 	}
-	_spatialReusePass.descriptorSet = _spatialReuseDescriptors.get();
 	_spatialReusePass.screenSize = _swapchain.getImageExtent();
 
+#ifndef RENDERDOC_CAPTURE
 	// Hardware RT pass for visibility test
 	_rtPass = RtPass::create(_device.get(), _dynamicDispatcher);
-	_rtPass._gBuffer = &_gBuffer;
 	_rtPass.createAccelerationStructure(_device.get(), _physicalDevice, _allocator, _dynamicDispatcher,
 		_commandPool.get(), _graphicsComputeQueue, _sceneBuffers, _gltfScene);
 	_rtPass.createShaderBindingTable(_device.get(), _allocator, _physicalDevice, _dynamicDispatcher);
+	{
+		std::array<vk::DescriptorSetLayout, numGBuffers> setLayouts;
+		std::fill(setLayouts.begin(), setLayouts.end(), _rtPass.getDescriptorSetLayout());
+		vk::DescriptorSetAllocateInfo allocInfo;
+		allocInfo
+			.setDescriptorPool(_staticDescriptorPool.get())
+			.setSetLayouts(setLayouts);
+		auto newSets = _device->allocateDescriptorSetsUnique(allocInfo);
+		std::move(newSets.begin(), newSets.end(), _rtPassDescriptors.begin());
+	}
+#endif
+
+
+	_temporalReusePass = Pass::create<TemporalReusePass>(_device.get());
+	{
+		std::array<vk::DescriptorSetLayout, numGBuffers> setLayouts;
+		std::fill(setLayouts.begin(), setLayouts.end(), _temporalReusePass.getDescriptorSetLayout());
+		vk::DescriptorSetAllocateInfo allocInfo;
+		allocInfo
+			.setDescriptorPool(_staticDescriptorPool.get())
+			.setSetLayouts(setLayouts);
+		auto newSets = _device->allocateDescriptorSetsUnique(allocInfo);
+		std::move(newSets.begin(), newSets.end(), _temporalReuseDescriptors.begin());
+	}
+	_temporalReusePass.screenSize = _swapchain.getImageExtent();
+
 
 	_updateRestirBuffers();
 
@@ -494,8 +491,6 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 	_initializeLightingPassResources();
 
 	_lightingPass.imageExtent = _swapchain.getImageExtent();
-	_lightingPass.descriptorSet = _lightingPassResources.descriptorSet.get();
-	_createAndRecordSwapchainBuffers();
 
 
 	_imguiPass = Pass::create<ImGuiPass>(_device.get(), _swapchain.getImageFormat());
@@ -519,8 +514,17 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 		ImGui_ImplVulkan_CreateFontsTexture(cmdBuffer.get());
 	}
 
-	_createAndRecordMainCommandBuffer();
-	_createImguiCommandBuffers();
+	{ // create main command buffers
+		vk::CommandBufferAllocateInfo bufferInfo;
+		bufferInfo
+			.setCommandPool(_commandPool.get())
+			.setCommandBufferCount(_mainCommandBuffers.size())
+			.setLevel(vk::CommandBufferLevel::ePrimary);
+		auto newBuffers = std::move(_device->allocateCommandBuffersUnique(bufferInfo));
+		std::move(newBuffers.begin(), newBuffers.end(), _mainCommandBuffers.begin());
+	}
+	_recordMainCommandBuffers();
+	_createSwapchainBuffers();
 
 
 	// semaphores & fences
@@ -571,16 +575,19 @@ void App::updateGui() {
 	};
 	_debugModeChanged = ImGui::Combo("Debug Mode", &_debugMode, items, IM_ARRAYSIZE(items));
 
-	_useHardwareRtChanged = ImGui::Checkbox("Use Hardware Ray Tracing", &_useHardwareRt);
-	_useSpatialReuseChanged = ImGui::Checkbox("Use Spatial Resuing", &_useSpatialReuse);
+	_renderPathChanged = ImGui::Checkbox("Use Hardware Ray Tracing", &_useHardwareRt) || _renderPathChanged;
+	_renderPathChanged = ImGui::Checkbox("Use Temporal Reuse", &_enableTemporalReuse) || _renderPathChanged;
 
 	ImGui::Render();
 }
 
 void App::mainLoop() {
-	std::size_t currentFrame = 0;
+	std::size_t currentPresentFrame = 0;
+	std::size_t currentGBufferFrame = 0;
 	bool needsResize = false;
 	vk::Extent2D windowSize = _window.getFramebufferSize();
+	nvmath::mat4 prevFrameProjectionView = _camera.projectionViewMatrix;
+
 	while (!_window.shouldClose()) {
 		glfwPollEvents();
 
@@ -604,7 +611,12 @@ void App::mainLoop() {
 
 			_swapchain = Swapchain::create(_device.get(), _swapchainInfo);
 
-			_gBuffer.resize(_allocator, _device.get(), _swapchain.getImageExtent(), _gBufferPass);
+			currentGBufferFrame = 0;
+
+			for (GBuffer &gbuf : _gBuffers) {
+				gbuf.resize(_allocator, _device.get(), _swapchain.getImageExtent(), _gBufferPass);
+			}
+			_transitionGBufferLayouts();
 			_gBufferPass.onResized(_device.get(), _swapchain.getImageExtent());
 
 			auto *restirUniforms = _restirUniformBuffer.mapAs<shader::RestirUniforms>();
@@ -614,31 +626,24 @@ void App::mainLoop() {
 			_restirUniformBuffer.flush();
 
 			_lightSamplePass.screenSize = windowSize;
-
 			_swVisibilityTestPass.screenSize = windowSize;
 
 			_spatialReusePass.screenSize = windowSize;
 
+			_temporalReusePass.screenSize = windowSize;
 			_updateRestirBuffers();
 
 			_initializeLightingPassResources();
-
 			_lightingPass.imageExtent = _swapchain.getImageExtent();
-			_lightingPass.descriptorSet = _lightingPassResources.descriptorSet.get();
 
 			_imguiPass.imageExtent = _swapchain.getImageExtent();
 
-			_createAndRecordMainCommandBuffer();
-			_createAndRecordSwapchainBuffers();
+			_recordMainCommandBuffers();
+			_createSwapchainBuffers();
 
 			_camera.aspectRatio = _swapchain.getImageExtent().width / static_cast<float>(_swapchain.getImageExtent().height);
 			_camera.recomputeAttributes();
 			_cameraUpdated = true;
-		}
-
-		while (_device->waitForFences(
-			{ _inFlightFences[currentFrame].get() }, true, std::numeric_limits<std::uint64_t>::max()
-		) == vk::Result::eTimeout) {
 		}
 
 		_fpsCounter.tick();
@@ -651,27 +656,14 @@ void App::mainLoop() {
 
 		auto [result, imageIndex] = _device->acquireNextImageKHR(
 			_swapchain.getSwapchain().get(), std::numeric_limits<std::uint64_t>::max(),
-			_imageAvailableSemaphore[currentFrame].get(), nullptr
+			_imageAvailableSemaphore[currentPresentFrame].get(), nullptr
 		);
-
 		if (result == vk::Result::eErrorOutOfDateKHR || result == vk::Result::eSuboptimalKHR) {
 			needsResize = true;
 			continue;
 		}
 
-		if (_inFlightImageFences[imageIndex]) {
-			while (_device->waitForFences(
-				{ _inFlightImageFences[imageIndex].get() }, true, std::numeric_limits<std::uint64_t>::max()
-			) == vk::Result::eTimeout) {
-			}
-		}
-
-		auto* lightingPassUniforms = _lightingPassResources.uniformBuffer.mapAs<shader::LightingPassUniforms>();
-		std::clock_t app_time_now = std::clock();
-		_lightingPassResources.uniformBuffer.unmap();
-		_lightingPassResources.uniformBuffer.flush();
-
-		_device->resetFences({ _inFlightFences[currentFrame].get() });
+		updateGui();
 
 		{
 			while (_device->waitForFences(_mainFence.get(), true, std::numeric_limits<uint64_t>::max()) == vk::Result::eTimeout) {
@@ -680,6 +672,7 @@ void App::mainLoop() {
 
 			auto *restirUniforms = _restirUniformBuffer.mapAs<shader::RestirUniforms>();
 			++restirUniforms->frame;
+			restirUniforms->prevFrameProjectionViewMatrix = prevFrameProjectionView;
 
 			if (_cameraUpdated || _debugModeChanged) {
 				_graphicsComputeQueue.waitIdle();
@@ -691,58 +684,75 @@ void App::mainLoop() {
 
 				restirUniforms->cameraPos = _camera.position;
 
-				auto *lightingPassUniforms = _lightingPassResources.uniformBuffer.mapAs<shader::LightingPassUniforms>();
+				auto *lightingPassUniforms = _lightingPassUniformBuffer.mapAs<shader::LightingPassUniforms>();
 				lightingPassUniforms->cameraPos = _camera.position;
 				lightingPassUniforms->bufferSize = nvmath::uvec2(_swapchain.getImageExtent().width, _swapchain.getImageExtent().height);
 				lightingPassUniforms->debugMode = _debugMode;
-				_lightingPassResources.uniformBuffer.unmap();
-				_lightingPassResources.uniformBuffer.flush();
+				_lightingPassUniformBuffer.unmap();
+				_lightingPassUniformBuffer.flush();
 
 				_cameraUpdated = false;
 				_debugModeChanged = false;
-			} else if (_useHardwareRtChanged) {
-				_createAndRecordMainCommandBuffer();
-			} else if (_useSpatialReuseChanged) {
-				_createAndRecordMainCommandBuffer();
-				_updateLightingPassDescriptor();
+			} else if (_renderPathChanged) {
+				_recordMainCommandBuffers();
 			}
 
 			_restirUniformBuffer.unmap();
 			_restirUniformBuffer.flush();
 
-			std::array<vk::CommandBuffer, 1> gBufferCommandBuffers{ _mainCommandBuffer.get() };
+			std::array<vk::CommandBuffer, 1> gBufferCommandBuffers{ _mainCommandBuffers[currentGBufferFrame].get() };
 			vk::SubmitInfo submitInfo;
 			submitInfo
 				.setCommandBuffers(gBufferCommandBuffers);
 			_graphicsComputeQueue.submit(submitInfo, _mainFence.get());
+
+			prevFrameProjectionView = _camera.projectionViewMatrix;
 		}
 
-		updateGui();
-		{ // re-record imgui command buffer
-			vk::CommandBuffer buffer = _imguiCommandBuffers[imageIndex].get();
+		while (_device->waitForFences(
+			{ _inFlightFences[currentPresentFrame].get() }, true, std::numeric_limits<std::uint64_t>::max()
+		) == vk::Result::eTimeout) {
+		}
+		if (_inFlightImageFences[imageIndex]) {
+			while (_device->waitForFences(
+				{ _inFlightImageFences[imageIndex].get() }, true, std::numeric_limits<std::uint64_t>::max()
+			) == vk::Result::eTimeout) {
+			}
+		}
+		_device->resetFences({ _inFlightFences[currentPresentFrame].get() });
+
+		{ // record present command buffer
+			vk::CommandBuffer commandBuffer = _swapchainBuffers[imageIndex].commandBuffer.get();
+			vk::Framebuffer frameBuffer = _swapchainBuffers[imageIndex].framebuffer.get();
+
 			vk::CommandBufferBeginInfo beginInfo;
-			buffer.begin(beginInfo);
+			commandBuffer.begin(beginInfo);
 
-			_imguiPass.issueCommands(buffer, _swapchainBuffers[imageIndex].framebuffer.get());
+			transitionImageLayout(
+				commandBuffer, _swapchain.getImages()[imageIndex], _swapchain.getImageFormat(),
+				vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal
+			);
 
-			buffer.end();
+			_lightingPass.descriptorSet = _lightingPassDescriptorSets[currentGBufferFrame].get();
+			_lightingPass.issueCommands(commandBuffer, frameBuffer);
+
+			_imguiPass.issueCommands(commandBuffer, frameBuffer);
+
+			commandBuffer.end();
 		}
 
-		std::array<vk::Semaphore, 1> signalSemaphores{ _renderFinishedSemaphore[currentFrame].get() };
+		std::array<vk::Semaphore, 1> signalSemaphores{ _renderFinishedSemaphore[currentPresentFrame].get() };
 		{
-			std::array<vk::Semaphore, 1> waitSemaphores{ _imageAvailableSemaphore[currentFrame].get() };
+			std::array<vk::Semaphore, 1> waitSemaphores{ _imageAvailableSemaphore[currentPresentFrame].get() };
 			std::array<vk::PipelineStageFlags, 1> waitStages{ vk::PipelineStageFlagBits::eColorAttachmentOutput };
-			std::array<vk::CommandBuffer, 2> cmdBuffers{
-				_swapchainBuffers[imageIndex].commandBuffer.get(),
-				_imguiCommandBuffers[imageIndex].get()
-			};
+			std::array<vk::CommandBuffer, 1> cmdBuffers{ _swapchainBuffers[imageIndex].commandBuffer.get() };
 			vk::SubmitInfo submitInfo;
 			submitInfo
 				.setWaitSemaphores(waitSemaphores)
 				.setWaitDstStageMask(waitStages)
 				.setCommandBuffers(cmdBuffers)
 				.setSignalSemaphores(signalSemaphores);
-			_graphicsComputeQueue.submit(submitInfo, _inFlightFences[currentFrame].get());
+			_graphicsComputeQueue.submit(submitInfo, _inFlightFences[currentPresentFrame].get());
 		}
 
 		std::vector<vk::SwapchainKHR> swapchains{ _swapchain.getSwapchain().get() };
@@ -761,7 +771,8 @@ void App::mainLoop() {
 			needsResize = true;
 		}
 
-		currentFrame = (currentFrame + 1) % maxFramesInFlight;
+		currentPresentFrame = (currentPresentFrame + 1) % maxFramesInFlight;
+		currentGBufferFrame = (currentGBufferFrame + 1) % numGBuffers;
 	}
 }
 

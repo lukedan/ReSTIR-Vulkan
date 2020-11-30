@@ -77,6 +77,8 @@ add_shader(restir "src/shaders/lightSample.comp")
 add_shader(restir "src/shaders/softwareVisibilityTest.comp")
 add_shader(restir "src/shaders/spatialReuse.comp")
 
+add_shader(restir "src/shaders/temporalReuse.comp")
+
 add_shader(restir "src/shaders/quad.vert")
 add_shader(restir "src/shaders/lighting.frag")
 

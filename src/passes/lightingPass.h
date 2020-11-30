@@ -9,13 +9,6 @@
 class LightingPass : public Pass {
 	friend Pass;
 public:
-	struct Resources {
-		vma::UniqueBuffer uniformBuffer;
-		GBuffer *gBuffer = nullptr;
-
-		vk::UniqueDescriptorSet descriptorSet;
-	};
-
 	LightingPass() = default;
 
 	void issueCommands(vk::CommandBuffer commandBuffer, vk::Framebuffer framebuffer) const override {
@@ -53,40 +46,42 @@ public:
 	}
 
 	void initializeDescriptorSetFor(
-		Resources &rsrc, const SceneBuffers &sceneBuffers, vk::Buffer reservoirBuffer, vk::DeviceSize reservoirBufferSize, vk::Device device
+		const GBuffer &gBuffer, const SceneBuffers &sceneBuffers,
+		vk::Buffer uniformBuffer, vk::Buffer reservoirBuffer, vk::DeviceSize reservoirBufferSize,
+		vk::Device device, vk::DescriptorSet descriptorSet
 	) {
 		std::vector<vk::WriteDescriptorSet> descriptorWrite;
 
 		std::array<vk::DescriptorImageInfo, 4> imageInfo{
-			vk::DescriptorImageInfo(_sampler.get(), rsrc.gBuffer->getAlbedoView(), vk::ImageLayout::eShaderReadOnlyOptimal),
-			vk::DescriptorImageInfo(_sampler.get(), rsrc.gBuffer->getNormalView(), vk::ImageLayout::eShaderReadOnlyOptimal),
-			vk::DescriptorImageInfo(_sampler.get(), rsrc.gBuffer->getMaterialPropertiesView(), vk::ImageLayout::eShaderReadOnlyOptimal),
-			vk::DescriptorImageInfo(_sampler.get(), rsrc.gBuffer->getWorldPositionView(), vk::ImageLayout::eShaderReadOnlyOptimal),
+			vk::DescriptorImageInfo(_sampler.get(), gBuffer.getAlbedoView(), vk::ImageLayout::eShaderReadOnlyOptimal),
+			vk::DescriptorImageInfo(_sampler.get(), gBuffer.getNormalView(), vk::ImageLayout::eShaderReadOnlyOptimal),
+			vk::DescriptorImageInfo(_sampler.get(), gBuffer.getMaterialPropertiesView(), vk::ImageLayout::eShaderReadOnlyOptimal),
+			vk::DescriptorImageInfo(_sampler.get(), gBuffer.getWorldPositionView(), vk::ImageLayout::eShaderReadOnlyOptimal),
 		};
 		for (std::size_t i = 0; i < imageInfo.size(); ++i) {
 			descriptorWrite.emplace_back()
-				.setDstSet(rsrc.descriptorSet.get())
+				.setDstSet(descriptorSet)
 				.setDstBinding(static_cast<uint32_t>(i))
 				.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
 				.setPImageInfo(&imageInfo[i])
 				.setDescriptorCount(1);
 		}
 
-		vk::DescriptorBufferInfo uniformInfo(rsrc.uniformBuffer.get(), 0, sizeof(shader::LightingPassUniforms));
+		vk::DescriptorBufferInfo uniformInfo(uniformBuffer, 0, sizeof(shader::LightingPassUniforms));
 		vk::DescriptorBufferInfo reservoirsInfo(reservoirBuffer, 0, reservoirBufferSize);
 		vk::DescriptorBufferInfo pointLightsInfo(sceneBuffers.getPtLights(), 0, sceneBuffers.getPtLightsBufferSize());
 		descriptorWrite.emplace_back()
-			.setDstSet(rsrc.descriptorSet.get())
+			.setDstSet(descriptorSet)
 			.setDstBinding(4)
 			.setDescriptorType(vk::DescriptorType::eUniformBuffer)
 			.setBufferInfo(uniformInfo);
 		descriptorWrite.emplace_back()
-			.setDstSet(rsrc.descriptorSet.get())
+			.setDstSet(descriptorSet)
 			.setDstBinding(5)
 			.setDescriptorType(vk::DescriptorType::eStorageBuffer)
 			.setBufferInfo(reservoirsInfo);
 		descriptorWrite.emplace_back()
-			.setDstSet(rsrc.descriptorSet.get())
+			.setDstSet(descriptorSet)
 			.setDstBinding(6)
 			.setDescriptorType(vk::DescriptorType::eStorageBuffer)
 			.setBufferInfo(pointLightsInfo);
