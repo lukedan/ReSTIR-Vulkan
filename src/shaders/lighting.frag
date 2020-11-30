@@ -31,7 +31,6 @@ layout (location = 0) out vec3 outColor;
 #define PI 3.1415926
 
 #include "include/frustumUtils.glsl"
-#include "include/RIS.glsl"
 
 float rnd(uint seed) {
 	return 0.0f;
