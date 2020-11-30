@@ -55,10 +55,10 @@ void main() {
 		uint randIndex = randNeighbor.y * uniforms.screenSize.x + randNeighbor.x;
 		
 		// Discard over biased neighbors
+		vec3 neighborPos = texelFetch(uniWorldPosition, ivec2(randNeighbor), 0).xyz;
 		vec3 neighborNor = texelFetch(uniNormal, ivec2(randNeighbor), 0).xyz;
-		vec3 neighborPos = texelFetch(uniNormal, ivec2(randNeighbor), 0).xyz;
 
-		if(abs(neighborPos.z - worldPos.z) > 0.1 * abs(worldPos.z) || abs(dot(neighborNor, normal)) > cos(0.7 * M_PI))
+		if(abs(neighborPos.z - worldPos.z) > 0.1 * abs(worldPos.z) || dot(neighborNor, normal) < cos(0.6 * M_PI))
 			continue;
 
 		Reservoir randRes = reservoirs[randIndex];
