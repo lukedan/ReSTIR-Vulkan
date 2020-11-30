@@ -282,7 +282,7 @@ protected:
 				_dynamicDispatcher
 			);
 #endif
-          
+
 			_temporalReusePass.initializeDescriptorSetFor(
 				_gBuffers[i], _gBuffers[(i + numGBuffers - 1) % numGBuffers], _restirUniformBuffer.get(),
 				_reservoirBuffers[i].get(), _reservoirBuffers[(i + numGBuffers - 1) % numGBuffers].get(), _reservoirBufferSize,
