@@ -63,6 +63,7 @@ void main() {
 	Reservoir res = reservoirs[reservoirIndex];
 	Reservoir prevRes = prevFrameReservoirs[prevFrag.y * uniforms.screenSize.x + prevFrag.x];
 
+	// TODO clamp number of samples
 	/*if (prevRes.numStreamSamples > 20 * res.numStreamSamples) {
 		return;
 	}*/

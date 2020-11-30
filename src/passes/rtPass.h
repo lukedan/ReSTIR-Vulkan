@@ -52,6 +52,10 @@ public:
 		float aspectRatio;
 	};
 
+	[[nodiscard]] vk::DescriptorSetLayout getDescriptorSetLayout() const {
+		return _descriptorSetLayout.get();
+	}
+
 	void freeDeviceMemory(vk::Device dev) 
 	{
 		for (int i = 0; i < memories.size(); i++) 
@@ -59,8 +63,6 @@ public:
 			dev.freeMemory(memories.at(i));
 		}
 	}
-
-	GBuffer* _gBuffer = nullptr;
 
 	void issueCommands(vk::CommandBuffer commandBuffer, vk::Extent2D extent, vk::DispatchLoaderDynamic dld) {
 		commandBuffer.pipelineBarrier(
@@ -70,7 +72,7 @@ public:
 		);
 
 		commandBuffer.bindPipeline(vk::PipelineBindPoint::eRayTracingKHR, _pipelines[0].get());
-		commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eRayTracingKHR, _pipelineLayout.get(), 0, {_descriptorSet.get()}, {});
+		commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eRayTracingKHR, _pipelineLayout.get(), 0, {descriptorSet}, {});
 		commandBuffer.traceRaysKHR(rayGenSBT, rayMissSBT, rayHitSBT, rayCallSBT, extent.width, extent.height, 1, dld);
 	}
 
@@ -134,22 +136,15 @@ public:
 		std::vector<vk::RayTracingShaderGroupCreateInfoKHR> shaderGroups;
 	};
 
-	void createDescriptorSetForRayTracing(vk::Device& dev,
-		vk::DescriptorPool& pool, 
+	void createDescriptorSetForRayTracing(
+		vk::Device dev,
+		const GBuffer &gbuffer,
 		vk::Buffer uniformBuffer,
 		vk::Buffer reservoirBuffer, vk::DeviceSize reservoirBufferSize,
-		vk::DispatchLoaderDynamic& dld)
-	{
+		vk::DescriptorSet set,
+		vk::DispatchLoaderDynamic& dld
+	) {
 		std::array<vk::WriteDescriptorSet, 4> descriptorWrite;
-
-		vk::DescriptorSetAllocateInfo setInfo;
-		setInfo
-			.setDescriptorPool(pool)
-			.setDescriptorSetCount(1)
-			.setSetLayouts(_descriptorSetLayout.get());
-
-		_descriptorSet = std::move(dev.allocateDescriptorSetsUnique(setInfo)[0]);
-		
 
 		vk::WriteDescriptorSetAccelerationStructureKHR descriptorAccelerationStructureInfo;
 		descriptorAccelerationStructureInfo.
@@ -159,7 +154,7 @@ public:
 		vk::WriteDescriptorSet accelerationStructureWrite;
 		accelerationStructureWrite
 			.setPNext(&descriptorAccelerationStructureInfo)
-			.setDstSet(_descriptorSet.get())
+			.setDstSet(set)
 			.setDstBinding(0)
 			.setDstArrayElement(0)
 			.setDescriptorType(vk::DescriptorType::eAccelerationStructureKHR)
@@ -169,11 +164,11 @@ public:
 
 		// GBuffer Data
 		std::array<vk::DescriptorImageInfo, 1> imageInfo{
-			vk::DescriptorImageInfo(_sampler.get(), _gBuffer->getWorldPositionView(), vk::ImageLayout::eShaderReadOnlyOptimal)
+			vk::DescriptorImageInfo(_sampler.get(), gbuffer.getWorldPositionView(), vk::ImageLayout::eShaderReadOnlyOptimal)
 		};
 
 		descriptorWrite[1]
-			.setDstSet(_descriptorSet.get())
+			.setDstSet(set)
 			.setDstBinding(1)
 			.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
 			.setPImageInfo(&imageInfo[0])
@@ -186,7 +181,7 @@ public:
 
 		vk::WriteDescriptorSet reservoirsWrite;
 		reservoirsWrite
-			.setDstSet(_descriptorSet.get())
+			.setDstSet(set)
 			.setDstBinding(2)
 			.setDescriptorType(vk::DescriptorType::eStorageBuffer)
 			.setBufferInfo(reservoirsBufferInfo);
@@ -195,7 +190,7 @@ public:
 		vk::DescriptorBufferInfo restirUniformInfo(uniformBuffer, 0, sizeof(shader::RestirUniforms));
 
 		descriptorWrite[3]
-			.setDstSet(_descriptorSet.get())
+			.setDstSet(set)
 			.setDstBinding(3)
 			.setDescriptorType(vk::DescriptorType::eUniformBuffer)
 			.setBufferInfo(restirUniformInfo);
@@ -621,14 +616,13 @@ public:
 	vk::StridedBufferRegionKHR rayMissSBT;
 	vk::StridedBufferRegionKHR rayHitSBT;
 	vk::StridedBufferRegionKHR rayCallSBT;
-
+	vk::DescriptorSet descriptorSet;
 protected:
 	Shader _rayGen, _rayChit, _rayMiss, _rayShadowMiss;
 	vk::Format _swapchainFormat;
 	vk::UniqueSampler _sampler;
 	vk::UniquePipelineLayout _pipelineLayout;
 	vk::UniqueDescriptorSetLayout _descriptorSetLayout;
-	vk::UniqueDescriptorSet _descriptorSet;
 
 	[[nodiscard]] vk::UniqueRenderPass _createPass(vk::Device);
 

@@ -1,6 +1,6 @@
 #pragma once
 
-#define RENDERDOC_CAPTURE
+/*#define RENDERDOC_CAPTURE*/
 
 #define VK_ENABLE_BETA_EXTENSIONS
 #include "misc.h"
@@ -145,6 +145,7 @@ protected:
 	std::array<vk::UniqueDescriptorSet, numGBuffers> _lightingPassDescriptorSets;
 
 	RtPass _rtPass;
+	std::array<vk::UniqueDescriptorSet, numGBuffers> _rtPassDescriptors;
 
 	ImGuiPass _imguiPass;
 
@@ -208,6 +209,7 @@ protected:
 		for (std::size_t i = 0; i < numGBuffers; ++i) {
 			_lightSamplePass.descriptorSet = _lightSampleDescriptors[i].get();
 			_swVisibilityTestPass.descriptorSet = _swVisibilityTestDescriptors[i].get();
+			_rtPass.descriptorSet = _rtPassDescriptors[i].get();
 			_temporalReusePass.descriptorSet = _temporalReuseDescriptors[i].get();
 
 			vk::CommandBufferBeginInfo beginInfo;
@@ -216,7 +218,9 @@ protected:
 			_gBufferPass.issueCommands(_mainCommandBuffers[i].get(), _gBuffers[i].getFramebuffer());
 			_lightSamplePass.issueCommands(_mainCommandBuffers[i].get(), nullptr);
 			if (_useHardwareRt) {
-				/*_rtPass.issueCommands(_mainCommandBuffers[i].get(), _swapchain.getImageExtent(), _dynamicDispatcher);*/
+#ifndef RENDERDOC_CAPTURE
+				_rtPass.issueCommands(_mainCommandBuffers[i].get(), _swapchain.getImageExtent(), _dynamicDispatcher);
+#endif
 			} else {
 				_swVisibilityTestPass.issueCommands(_mainCommandBuffers[i].get(), nullptr);
 			}
@@ -255,8 +259,14 @@ protected:
 				_device.get(), _swVisibilityTestDescriptors[i].get()
 			);
 
-			/*_rtPass.createDescriptorSetForRayTracing(_device.get(), _staticDescriptorPool.get(),
-				_restirUniformBuffer.get(), _reservoirBuffers[i].get(), _reservoirBufferSize, _dynamicDispatcher);*/
+#ifndef RENDERDOC_CAPTURE
+			_rtPass.createDescriptorSetForRayTracing(
+				_device.get(),
+				_gBuffers[i], _restirUniformBuffer.get(), _reservoirBuffers[i].get(), _reservoirBufferSize,
+				_rtPassDescriptors[i].get(),
+				_dynamicDispatcher
+			);
+#endif
 
 			_temporalReusePass.initializeDescriptorSetFor(
 				_gBuffers[i], _gBuffers[(i + numGBuffers - 1) % numGBuffers], _restirUniformBuffer.get(),

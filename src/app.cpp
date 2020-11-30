@@ -444,6 +444,16 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 	_rtPass.createAccelerationStructure(_device.get(), _physicalDevice, _allocator, _dynamicDispatcher,
 		_commandPool.get(), _graphicsComputeQueue, _sceneBuffers, _gltfScene);
 	_rtPass.createShaderBindingTable(_device.get(), _allocator, _physicalDevice, _dynamicDispatcher);
+	{
+		std::array<vk::DescriptorSetLayout, numGBuffers> setLayouts;
+		std::fill(setLayouts.begin(), setLayouts.end(), _rtPass.getDescriptorSetLayout());
+		vk::DescriptorSetAllocateInfo allocInfo;
+		allocInfo
+			.setDescriptorPool(_staticDescriptorPool.get())
+			.setSetLayouts(setLayouts);
+		auto newSets = _device->allocateDescriptorSetsUnique(allocInfo);
+		std::move(newSets.begin(), newSets.end(), _rtPassDescriptors.begin());
+	}
 #endif
 
 
