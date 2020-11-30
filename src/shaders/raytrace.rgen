@@ -49,7 +49,7 @@ void main() {
        
         vec3 curLightPos = vec3(res.samples[i].position);
         vec3 curDirection = vec3(curLightPos) - worldPos;
-        float curTMax = length(curDirection);
+        float curTMax = length(curDirection) - 0.001;
         curDirection = normalize(curDirection);
          vec3 origin    = worldPos + 0.001 * curDirection;
 

@@ -23,7 +23,7 @@ layout (binding = 6) buffer Resultreservoirs
 	Reservoir resultReservoirs[];
 };
 
-#define RAND_NEIGHBOURS 5
+#define RAND_NEIGHBOURS 3
 #define RAND_RADIUS 30.0
 
 void main() {

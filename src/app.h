@@ -129,6 +129,7 @@ protected:
 
 	vma::UniqueBuffer _restirUniformBuffer;
 	std::array<vma::UniqueBuffer, 2> _reservoirBuffers;
+	vma::UniqueBuffer _spatialTempBuffer;
 	vk::DeviceSize _reservoirBufferSize;
 
 	LightSamplePass _lightSamplePass;
@@ -257,6 +258,13 @@ protected:
 				// zero-initialize reservoir buffers
 				cmdBuf->fillBuffer(_reservoirBuffers[i].get(), 0, VK_WHOLE_SIZE, 0);
 			}
+			_spatialTempBuffer = _allocator.createTypedBuffer<shader::Reservoir>(
+				numPixels,
+				vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst,
+				VMA_MEMORY_USAGE_GPU_ONLY
+				);
+			// zero-initialize reservoir buffers
+			cmdBuf->fillBuffer(_spatialTempBuffer.get(), 0, VK_WHOLE_SIZE, 0);
 		}
 
 		for (std::size_t i = 0; i < numGBuffers; ++i) {
@@ -287,10 +295,10 @@ protected:
 
 			_spatialReusePass.initializeDescriptorSetFor(
 				_gBuffers[i], _restirUniformBuffer.get(), _reservoirBuffers[i].get(), _reservoirBufferSize,
-				_reservoirBuffers[(i + numGBuffers - 1) % numGBuffers].get(), _device.get(), _spatialReuseDescriptors[i].get()
+				_spatialTempBuffer.get(), _device.get(), _spatialReuseDescriptors[i].get()
 			);
 			_spatialReusePass.initializeDescriptorSetFor(
-				_gBuffers[i], _restirUniformBuffer.get(), _reservoirBuffers[(i + numGBuffers - 1) % numGBuffers].get(), _reservoirBufferSize,
+				_gBuffers[i], _restirUniformBuffer.get(), _spatialTempBuffer.get(), _reservoirBufferSize,
 				_reservoirBuffers[i].get(), _device.get(), _spatialReuseSecondDescriptors[i].get()
 			);
 		}
