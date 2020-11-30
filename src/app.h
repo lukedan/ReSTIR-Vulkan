@@ -289,7 +289,6 @@ protected:
 				_gBuffers[i], _restirUniformBuffer.get(), _reservoirBuffers[i].get(), _reservoirBufferSize,
 				_reservoirBuffers[(i + numGBuffers - 1) % numGBuffers].get(), _device.get(), _spatialReuseDescriptors[i].get()
 			);
-
 			_spatialReusePass.initializeDescriptorSetFor(
 				_gBuffers[i], _restirUniformBuffer.get(), _reservoirBuffers[(i + numGBuffers - 1) % numGBuffers].get(), _reservoirBufferSize,
 				_reservoirBuffers[i].get(), _device.get(), _spatialReuseSecondDescriptors[i].get()

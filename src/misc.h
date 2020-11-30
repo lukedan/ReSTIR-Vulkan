@@ -130,3 +130,5 @@ void loadScene(const std::string& filename, nvh::GltfScene& m_gltfScene);
 );
 
 [[nodiscard]] std::vector<shader::triLight> collectTriangleLightsFromScene(const nvh::GltfScene&);
+
+[[nodiscard]] std::vector<shader::aliasTableColumn> createAliasTable(const nvh::GltfScene& scene, std::vector<shader::pointLight>& ptLights, std::vector<shader::triLight>& triLights);

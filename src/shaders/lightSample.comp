@@ -3,6 +3,7 @@
 #include "include/restirUtils.glsl"
 #include "include/reservoir.glsl"
 #include "include/structs/light.glsl"
+#include "include/RIS.glsl"
 
 layout (local_size_x = LIGHT_SAMPLE_GROUP_SIZE_X, local_size_y = LIGHT_SAMPLE_GROUP_SIZE_Y, local_size_z = 1) in;
 
@@ -26,6 +27,21 @@ layout (binding = 7) buffer TriangleLights {
 	int count;
 	triLight lights[];
 } triangleLights;
+layout (binding = 8) buffer AliasTable{
+	int count;
+	aliasTableColumn aliasCol[];
+} aliasTable;
+
+int aliasTableSample(float r1, float r2){
+	int selected_column = int(aliasTable.count * r1);
+	int selected_sample = -1;
+	if(aliasTable.aliasCol[selected_column].prab > r2){
+		selected_sample = selected_column;
+	}else{
+		selected_sample = aliasTable.aliasCol[selected_column].alias;
+	}
+	return selected_sample;
+}
 
 void main() {
 	uvec2 pixelCoord = gl_GlobalInvocationID.xy;
@@ -38,10 +54,13 @@ void main() {
 	vec2 roughnessMetallic = texelFetch(uniMaterialProperties, ivec2(pixelCoord), 0).xy;
 	vec3 worldPos = texelFetch(uniWorldPosition, ivec2(pixelCoord), 0).xyz;
 
+	/* Streaming RIS using WRS -- TODO: w needs to adopt triangle lights. */
 	Reservoir res = newReservoir();
 	Rand rand = seedRand(uniforms.frame * 31, pixelCoord.y * 10007 + pixelCoord.x);
-	for (int i = 0; i < 32; ++i) {
-		pointLight light = pointLights.lights[int(randFloat(rand) * pointLights.count)];
+	for (int i = 0; i < 32; ++i) {			
+		int selected_idx = aliasTableSample(randFloat(rand), randFloat(rand));
+
+		pointLight light = pointLights.lights[selected_idx];
 
 		vec3 pHat = evaluatePHat(
 			worldPos, light.pos.xyz, uniforms.cameraPos.xyz, normal,
@@ -51,6 +70,7 @@ void main() {
 
 		addSampleToReservoir(res, light.pos.xyz, vec4(pHat, pHatLum), 1.0f / pointLights.count, vec4(light.color.xyz, 1.0), rand);
 	}
+	
 
 	uint reservoirIndex = pixelCoord.y * uniforms.screenSize.x + pixelCoord.x;
 	reservoirs[reservoirIndex] = res;

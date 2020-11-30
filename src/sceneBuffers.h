@@ -41,6 +41,9 @@ public:
 	[[nodiscard]] vk::Buffer getMaterials() const {
 		return _materials.get();
 	}
+	[[nodiscard]] vk::Buffer getAliasTable() const {
+		return _aliasTableBuffer.get();
+	}
 	[[nodiscard]] const std::vector<SceneTexture> &getTextures() const {
 		return _textureImages;
 	}
@@ -56,6 +59,9 @@ public:
 	[[nodiscard]] const vk::DeviceSize getTriLightsBufferSize() const {
 		return _triLightsBufferSize;
 	}
+	[[nodiscard]] const vk::DeviceSize getAliasTableBufferSize() const {
+		return _aliasTableBufferSize;
+	}
 	
 
 	[[nodiscard]] static SceneBuffers create(
@@ -70,6 +76,8 @@ public:
 		if (pointLights.empty() && triangleLights.empty()) {
 			pointLights = generateRandomPointLights(200, scene.m_dimensions.min, scene.m_dimensions.max);
 		}
+
+		std::vector<shader::aliasTableColumn> aliasTable = createAliasTable(scene, pointLights, triangleLights);
 
 		SceneBuffers result;
 
@@ -98,6 +106,13 @@ public:
 			static_cast<uint32_t>(result._triLightsBufferSize),
 			vk::BufferUsageFlagBits::eStorageBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU
 		);
+		// Alias table
+		result._aliasTableBufferSize = 16 + sizeof(shader::aliasTableColumn) * aliasTable.size();
+		result._aliasTableBuffer = allocator.createBuffer(
+			static_cast<uint32_t>(result._aliasTableBufferSize),
+			vk::BufferUsageFlagBits::eStorageBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU
+		);
+
 
 		vk::Format format = vk::Format::eR8G8B8A8Unorm;
 
@@ -230,6 +245,14 @@ public:
 		result._triLightsBuffer.unmap();
 		result._triLightsBuffer.flush();
 
+		// Alias table
+		int32_t* aliasTablePtr = result._aliasTableBuffer.mapAs<int32_t>();
+		*aliasTablePtr = aliasTable.size();
+		auto* aliasTableContentPtr = reinterpret_cast<shader::aliasTableColumn*>(reinterpret_cast<uintptr_t>(aliasTablePtr) + 16);
+		std::memcpy(aliasTableContentPtr, aliasTable.data(), sizeof(shader::aliasTableColumn) * aliasTable.size());
+		result._aliasTableBuffer.unmap();
+		result._aliasTableBuffer.flush();
+
 		return result;
 	}
 private:
@@ -239,9 +262,11 @@ private:
 	vma::UniqueBuffer _materials;
 	vma::UniqueBuffer _ptLightsBuffer;
 	vma::UniqueBuffer _triLightsBuffer;
+	vma::UniqueBuffer _aliasTableBuffer;
 	std::vector<SceneTexture> _textureImages;
 	SceneTexture _defaultNormal;
 	SceneTexture _defaultWhite;
 	vk::DeviceSize _ptLightsBufferSize;
 	vk::DeviceSize _triLightsBufferSize;
+	vk::DeviceSize _aliasTableBufferSize;
 };

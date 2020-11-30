@@ -12,3 +12,9 @@ struct triLight {
 	vec4 emissiveFactor;
 	float area;
 };
+
+struct aliasTableColumn {
+	float prab; // The i's column's event i's prab
+	int alias; // The i's column's another event's idx
+	float oriPrab;
+};

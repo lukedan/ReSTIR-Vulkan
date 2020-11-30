@@ -4,6 +4,7 @@
 #include <ctime>
 #include <fstream>
 #include <random>
+#include <queue>
 
 #include "vma.h"
 
@@ -392,5 +393,82 @@ std::vector<shader::triLight> collectTriangleLightsFromScene(const nvh::GltfScen
 			}
 		}
 	}
+	return result;
+}
+
+// https://blog.csdn.net/haolexiao/article/details/65157026
+// Vose alias method
+[[nodiscard]] std::vector<shader::aliasTableColumn> createAliasTable(const nvh::GltfScene &scene, std::vector<shader::pointLight>& ptLights, std::vector<shader::triLight>& triLights) {
+	
+	std::queue<int> biggerThanOneQueue;
+	std::queue<int> smallerThanOneQueue;
+	std::vector<float> lightPrabVec;
+	float powerSum = 0.f;
+	int lightNum = 0;
+
+	// Init samplers' probability
+	if (!ptLights.empty()) {
+		lightNum = ptLights.size();
+
+		for (auto& itr_ptLight : ptLights) {
+			powerSum += itr_ptLight.intensity;
+			lightPrabVec.push_back(itr_ptLight.intensity);
+		}	
+	}
+	else {
+		lightNum = triLights.size();
+
+		for (auto& itr_triLight : triLights) {
+			float triLightPower = shader::luminance(itr_triLight.emissiveFactor.x, itr_triLight.emissiveFactor.y, itr_triLight.emissiveFactor.z) * itr_triLight.area;
+			powerSum += triLightPower;
+			lightPrabVec.push_back(triLightPower);
+		}
+	}
+
+	std::vector<shader::aliasTableColumn> result(lightNum, shader::aliasTableColumn{ .prab = 0.f, .alias = -1, .oriPrab = 0.f });
+
+	for (int i = 0; i < lightPrabVec.size(); ++i) {
+		result[i].oriPrab = lightPrabVec[i] / powerSum;
+		lightPrabVec[i] = float(lightPrabVec.size()) * lightPrabVec[i] / powerSum;
+		if (lightPrabVec[i] >= 1.f) {
+			biggerThanOneQueue.push(i);
+		}
+		else {
+			smallerThanOneQueue.push(i);
+		}
+	}
+
+	// Construct Alias Table
+	while (!biggerThanOneQueue.empty() && !smallerThanOneQueue.empty()) {
+		int g = biggerThanOneQueue.front();
+		biggerThanOneQueue.pop();
+		int l = smallerThanOneQueue.front();
+		smallerThanOneQueue.pop();
+
+		result[l].prab = lightPrabVec[l];
+		result[l].alias = g;
+
+		lightPrabVec[g] = (lightPrabVec[g] + lightPrabVec[l]) - 1.f;
+
+		if (lightPrabVec[g] < 1.f) {
+			smallerThanOneQueue.push(g);
+		}
+		else {
+			biggerThanOneQueue.push(g);
+		}
+	}
+
+	while (!biggerThanOneQueue.empty()) {
+		int g = biggerThanOneQueue.front();
+		biggerThanOneQueue.pop();
+		result[g].prab = 1.f;
+	}
+
+	while (!smallerThanOneQueue.empty()) {
+		int l = smallerThanOneQueue.front();
+		smallerThanOneQueue.pop();
+		result[l].prab = 1.f;
+	}
+
 	return result;
 }
