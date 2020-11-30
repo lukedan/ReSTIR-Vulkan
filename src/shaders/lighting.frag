@@ -48,9 +48,7 @@ void main() {
 		Reservoir reservoir = reservoirs[pixelCoord.y * uniforms.bufferSize.x + pixelCoord.x];
 		outColor = vec3(0.0f);
 		for (int i = 0; i < RESERVOIR_SIZE; ++i) {
-			outColor +=
-				reservoir.samples[i].pHat.xyz * reservoir.samples[i].sumWeights /
-				(reservoir.samples[i].pHat.w * reservoir.numStreamSamples);
+			outColor += reservoir.samples[i].pHat.xyz * reservoir.samples[i].w;
 		}
 		outColor /= RESERVOIR_SIZE;
 	} else if (uniforms.debugMode == GBUFFER_DEBUG_ALBEDO) {

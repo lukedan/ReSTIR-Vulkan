@@ -39,6 +39,7 @@ void main() {
 		vec3 dir = res.samples[i].position.xyz - worldPos;
 		vec3 offset = 0.001f * normalize(dir);
 		if (!raytrace(worldPos + offset, dir - 2 * offset)) {
+			res.samples[i].w = 0.0f;
 			res.samples[i].sumWeights = 0.0f;
 		}
 	}

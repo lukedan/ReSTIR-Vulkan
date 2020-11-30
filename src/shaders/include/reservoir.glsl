@@ -3,7 +3,9 @@
 #include "rand.glsl"
 #include "structs/restirStructs.glsl"
 
-void updateReservoirAt(inout Reservoir res, int i, float weight, vec3 position, vec4 pHat, inout Rand rand) {
+void updateReservoirAt(
+	inout Reservoir res, int i, float weight, vec3 position, vec4 pHat, inout Rand rand
+) {
 	res.samples[i].sumWeights += weight;
 	float replacePossibility = weight / res.samples[i].sumWeights;
 	if (randFloat(rand) < replacePossibility) {
@@ -18,6 +20,7 @@ void addSampleToReservoir(inout Reservoir res, vec3 position, vec4 pHat, float s
 
 	for (int i = 0; i < RESERVOIR_SIZE; ++i) {
 		updateReservoirAt(res, i, weight, position, pHat, rand);
+		res.samples[i].w = res.samples[i].sumWeights / (res.numStreamSamples * res.samples[i].pHat.w);
 	}
 }
 
@@ -25,10 +28,11 @@ void combineReservoirs(inout Reservoir self, Reservoir other, vec4 pHat[RESERVOI
 	self.numStreamSamples += other.numStreamSamples;
 
 	for (int i = 0; i < RESERVOIR_SIZE; ++i) {
-		if (other.samples[i].pHat.w != 0.0f) {
-			float weight = (pHat[i].w / other.samples[i].pHat.w) * other.samples[i].sumWeights;
+		float weight = pHat[i].w * other.samples[i].w * other.numStreamSamples;
+		if (weight > 0.0f) {
 			updateReservoirAt(self, i, weight, other.samples[i].position.xyz, pHat[i], rand);
 		}
+		self.samples[i].w = self.samples[i].sumWeights / (self.numStreamSamples * self.samples[i].pHat.w);
 	}
 }
 

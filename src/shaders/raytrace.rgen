@@ -68,7 +68,8 @@ void main() {
 
         if(isShadowed)
         {
-            res.samples[i].sumWeights = 0.0;
+            res.samples[i].w = 0.0f;
+            res.samples[i].sumWeights = 0.0f;
         }
     } 
     reservoirs[reservoirIndex] = res;

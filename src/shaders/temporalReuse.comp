@@ -78,29 +78,19 @@ void main() {
 	Reservoir res = reservoirs[reservoirIndex];
 	Reservoir prevRes = prevFrameReservoirs[prevFrag.y * uniforms.screenSize.x + prevFrag.x];
 
-	// TODO clamp number of samples
-	/*if (prevRes.numStreamSamples > 20 * res.numStreamSamples) {
-		return;
-	}*/
-
-	/*uint clampedSampleCount = min(prevRes.numStreamSamples, 20 * res.numStreamSamples);*/
-	/*float weightMultiplier = clampedSampleCount / prevRes.numStreamSamples;*/
+	// clamp the number of samples
+	prevRes.numStreamSamples = min(prevRes.numStreamSamples, 20 * res.numStreamSamples);
 
 	vec2 metallicRoughness = texelFetch(uniMaterialProperties, ivec2(pixelCoord), 0).xy;
 
 	vec4 pHat[RESERVOIR_SIZE];
 	for (int i = 0; i < RESERVOIR_SIZE; ++i) {
-		/*prevRes.samples[i].sumWeights *= weightMultiplier;*/
-
 		pHat[i].rgb = evaluatePHat(
 			worldPos, prevRes.samples[i].position.xyz, uniforms.cameraPos.xyz,
 			normal, albedo, prevRes.samples[i].emission.rgb, metallicRoughness.x, metallicRoughness.y
 		);
 		pHat[i].w = luminance(pHat[i].r, pHat[i].g, pHat[i].b);
-
-		/*pHat[i] = prevRes.samples[i].pHat;*/
 	}
-	/*prevRes.numStreamSamples = clampedSampleCount;*/
 
 	combineReservoirs(res, prevRes, pHat, rand);
 
