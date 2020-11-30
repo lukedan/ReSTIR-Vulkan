@@ -81,6 +81,8 @@ public:
 
 		SceneBuffers result;
 
+		int tempsize = sizeof(shader::aliasTableColumn);
+
 		result._vertices = allocator.createTypedBuffer<Vertex>(
 			scene.m_positions.size(), vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eShaderDeviceAddress, VMA_MEMORY_USAGE_CPU_TO_GPU
 			);

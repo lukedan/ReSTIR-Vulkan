@@ -274,11 +274,11 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 
 	/** NOTE: A scene without emissive materials will be given 8 point lights and scenes with lightning material won't have point lights **/
 	/** cornellBox has emissive materials and others don't have **/
-	/*loadScene("../../../scenes/cornellBox/cornellBox.gltf", _gltfScene);*/
+	loadScene("../../../scenes/cornellBox/cornellBox.gltf", _gltfScene);
 	// loadScene("../../../scenes/boxTextured/boxTextured.gltf", _gltfScene);
 	// loadScene("../../../scenes/duck/Duck.gltf", _gltfScene);
 	// loadScene("../../../scenes/fish/BarramundiFish.gltf", _gltfScene);
-	loadScene("../../../scenes/Sponza/glTF/Sponza.gltf", _gltfScene);
+	// loadScene("../../../scenes/Sponza/glTF/Sponza.gltf", _gltfScene);
 
 	{ // create descriptor pools
 		std::array<vk::DescriptorPoolSize, 6> staticPoolSizes{
@@ -477,7 +477,6 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 		std::move(newSets.begin(), newSets.end(), _rtPassDescriptors.begin());
 	}
 #endif
-
 
 	_temporalReusePass = Pass::create<TemporalReusePass>(_device.get());
 	{

@@ -12,7 +12,7 @@ void updateReservoirAt(inout Reservoir res, int i, float weight, vec3 position, 
 	}
 }
 
-void addSampleToReservoir(inout Reservoir res, vec3 position, vec4 pHat, float sampleP, vec4 lightColor, inout Rand rand) {
+void addSampleToReservoir(inout Reservoir res, vec3 position, vec4 pHat, float sampleP, inout Rand rand) {
 	float weight = pHat.w / sampleP;
 	res.numStreamSamples += 1;
 
