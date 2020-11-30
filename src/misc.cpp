@@ -383,12 +383,17 @@ std::vector<shader::triLight> collectTriangleLightsFromScene(const nvh::GltfScen
 				vec4 p2 = node.worldMatrix * nvmath::vec4(pos[indices[1]], 1.0f);
 				vec4 p3 = node.worldMatrix * nvmath::vec4(pos[indices[2]], 1.0f);
 				vec3 p1_vec3(p1.x, p1.y, p1.z), p2_vec3(p2.x, p2.y, p2.z), p3_vec3(p3.x, p3.y, p3.z);
-				float area = nvmath::cross(p2_vec3 - p1_vec3, p3_vec3 - p1_vec3).norm() / 2.f;
+
+				vec3 normal = nvmath::cross(p2_vec3 - p1_vec3, p3_vec3 - p1_vec3);
+				float area = normal.norm();
+				normal /= area;
+				area *= 0.5f;
+
 				shader::triLight tmpTriLight{ p1, p2, p3, vec4(material.emissiveFactor, 0.0), area };
 				result.push_back(shader::triLight{
 					.p1 = p1, .p2 = p2, .p3 = p3,
 					.emissiveFactor = material.emissiveFactor,
-					.area = area
+					.normalArea = nvmath::vec4(normal, area)
 					});
 			}
 		}
@@ -419,7 +424,7 @@ std::vector<shader::triLight> collectTriangleLightsFromScene(const nvh::GltfScen
 		lightNum = triLights.size();
 
 		for (auto& itr_triLight : triLights) {
-			float triLightPower = shader::luminance(itr_triLight.emissiveFactor.x, itr_triLight.emissiveFactor.y, itr_triLight.emissiveFactor.z) * itr_triLight.area;
+			float triLightPower = shader::luminance(itr_triLight.emissiveFactor.x, itr_triLight.emissiveFactor.y, itr_triLight.emissiveFactor.z) * itr_triLight.normalArea.w;
 			powerSum += triLightPower;
 			lightPrabVec.push_back(triLightPower);
 		}

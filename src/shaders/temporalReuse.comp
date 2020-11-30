@@ -54,7 +54,7 @@ void main() {
 	}
 #else
 	// highest quality results can be obtained by directly comparing the world positions
-	// this comes with a small performance penalty
+	// the performance impact of this is unclear
 	vec3 positionDiff = worldPos - texelFetch(uniPrevFrameWorldPosition, prevFrag, 0).xyz;
 	if (dot(positionDiff, positionDiff) > 0.01f) {
 		return;

@@ -38,17 +38,6 @@ vec3 pickPointOnTriangle(float r1, float r2, vec3 p1, vec3 p2, vec3 p3) {
     return (1.0 - sqrt_r1) * p1 + (sqrt_r1 * (1.0 - r2)) * p2 + (r2 * sqrt_r1) * p3;
 }
 
-float DistanceSquared(vec3 a, vec3 b) {
-    float len = length(a - b);
-    return len * len;
-}
-
-// http://www.pbr-book.org/3ed-2018/Light_Transport_I_Surface_Reflection/Sampling_Light_Sources.html#sec:sampling-lights
-float triLightPDF(triLight sampledTriLight, vec3 wi, vec3 sampledTriLightPos, vec3 refPoint) {
-    vec3 lightNormal = normalize(cross(sampledTriLight.p2.xyz - sampledTriLight.p1.xyz, sampledTriLight.p3.xyz - sampledTriLight.p1.xyz));
-    return DistanceSquared(refPoint, sampledTriLightPos) / (abs(dot(lightNormal, wi)) * sampledTriLight.area);
-}
-
 int aliasTableSample(float r1, float r2){
 	int selected_column = int(aliasTable.count * r1);
 	int selected_sample = -1;
@@ -79,14 +68,20 @@ void main() {
 
 		vec3 lightSamplePos;
 		vec3 lightSampleColor;
+		float sampleProb;
 		if(pointLights.count != 0){
 			pointLight light = pointLights.lights[selected_idx];
 			lightSamplePos = light.pos.xyz;
 			lightSampleColor = light.color.xyz;
+			sampleProb = aliasTable.aliasCol[selected_idx].oriPrab;
 		}else{
 			triLight light = triangleLights.lights[selected_idx];
 			lightSamplePos = pickPointOnTriangle(randFloat(rand), randFloat(rand), light.p1.xyz, light.p2.xyz, light.p3.xyz);
 			lightSampleColor = light.emissiveFactor.xyz;
+
+			vec3 wi = normalize(worldPos - lightSamplePos);
+			vec3 normal = light.normalArea.xyz;
+			sampleProb = aliasTable.aliasCol[selected_idx].oriPrab / (abs(dot(wi, normal)) * light.normalArea.w);
 		}
 		
 		vec3 pHat = evaluatePHat(
@@ -95,7 +90,7 @@ void main() {
 		);
 		float pHatLum = luminance(pHat.r, pHat.g, pHat.b);
 
-		addSampleToReservoir(res, lightSamplePos, vec4(pHat, pHatLum), aliasTable.aliasCol[selected_idx].oriPrab, rand);
+		addSampleToReservoir(res, lightSamplePos, vec4(pHat, pHatLum), sampleProb, rand);
 	}
 	
 	uint reservoirIndex = pixelCoord.y * uniforms.screenSize.x + pixelCoord.x;

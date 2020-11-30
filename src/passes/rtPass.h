@@ -399,23 +399,10 @@ public:
 		}
 
 		// Top level acceleration structure
-		int instanceCount = 0;
 		std::vector<BlasInstanceForTlas> tlas;
+		tlas.reserve(gltfScene.m_nodes.size());
 		for (auto& node : gltfScene.m_nodes)
 		{
-			const nvh::GltfMaterial& mat = gltfScene.m_materials[gltfScene.m_primMeshes[node.primMesh].materialIndex];
-			if (mat.emissiveFactor.sq_norm() > 1e-6) {
-				continue;
-			}
-			instanceCount++;
-		}
-		tlas.reserve(instanceCount);
-		for (auto& node : gltfScene.m_nodes)
-		{
-			const nvh::GltfMaterial& mat = gltfScene.m_materials[gltfScene.m_primMeshes[node.primMesh].materialIndex];
-			if (mat.emissiveFactor.sq_norm() > 1e-6) {
-				continue;
-			}
 			BlasInstanceForTlas inst;
 			inst.transform = node.worldMatrix;
 			inst.instanceId = node.primMesh;

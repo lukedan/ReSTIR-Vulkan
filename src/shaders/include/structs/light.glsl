@@ -10,7 +10,7 @@ struct triLight {
 	vec4 p2;
 	vec4 p3;
 	vec4 emissiveFactor;
-	float area;
+	vec4 normalArea;
 };
 
 struct aliasTableColumn {
