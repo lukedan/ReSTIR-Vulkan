@@ -62,7 +62,7 @@ void main() {
             origin.xyz,     // ray origin
             tMin,           // ray min range
             curDirection.xyz,  // ray direction
-            curTMax,           // ray max range
+            curTMax - 0.002,           // ray max range
             0               // payload (location = 0)
         );
 

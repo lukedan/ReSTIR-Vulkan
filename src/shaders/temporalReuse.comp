@@ -1,6 +1,9 @@
 #version 450
 
+/*#define COMPARE_DEPTH*/
+
 #include "include/reservoir.glsl"
+#include "include/restirUtils.glsl"
 
 layout (local_size_x = TEMPORAL_REUSE_GROUP_SIZE_X, local_size_y = TEMPORAL_REUSE_GROUP_SIZE_Y, local_size_z = 1) in;
 
@@ -11,14 +14,16 @@ layout (binding = 0) uniform Uniforms {
 layout (binding = 1) uniform sampler2D uniWorldPosition;
 layout (binding = 2) uniform sampler2D uniAlbedo;
 layout (binding = 3) uniform sampler2D uniNormal;
-layout (binding = 4) uniform sampler2D uniPrevFrameDepth;
-layout (binding = 5) uniform sampler2D uniPrevFrameAlbedo;
-layout (binding = 6) uniform sampler2D uniPrevFrameNormal;
+layout (binding = 4) uniform sampler2D uniMaterialProperties;
+layout (binding = 5) uniform sampler2D uniPrevFrameWorldPosition;
+layout (binding = 6) uniform sampler2D uniPrevFrameAlbedo;
+layout (binding = 7) uniform sampler2D uniPrevFrameNormal;
+layout (binding = 8) uniform sampler2D uniPrevDepth;
 
-layout (binding = 7) buffer PrevFrameReservoirs {
+layout (binding = 9) buffer PrevFrameReservoirs {
 	Reservoir prevFrameReservoirs[];
 };
-layout (binding = 8) buffer Reservoirs {
+layout (binding = 10) buffer Reservoirs {
 	Reservoir reservoirs[];
 };
 
@@ -41,20 +46,30 @@ void main() {
 	}
 
 	ivec2 prevFrag = ivec2(prevFramePos.xy);
-	float prevFrameDepth = texelFetch(uniPrevFrameDepth, prevFrag, 0).x;
-	if (abs(prevFrameDepth - prevFramePos.z) > 0.001 * prevFrameDepth) {
+
+#ifdef COMPARE_DEPTH
+	float depthDiff = prevFramePos.z - texelFetch(uniPrevDepth, prevFrag, 0).x;
+	if (depthDiff > 0.001f * prevFramePos.z) {
 		return;
 	}
+#else
+	// highest quality results can be obtained by directly comparing the world positions
+	// this comes with a small performance penalty
+	vec3 positionDiff = worldPos - texelFetch(uniPrevFrameWorldPosition, prevFrag, 0).xyz;
+	if (dot(positionDiff, positionDiff) > 0.01f) {
+		return;
+	}
+#endif
 
-	vec3 albedoDiff =
-		texelFetch(uniAlbedo, ivec2(pixelCoord), 0).xyz - texelFetch(uniPrevFrameAlbedo, prevFrag, 0).xyz;
+	vec3 albedo = texelFetch(uniAlbedo, ivec2(pixelCoord), 0).rgb;
+	vec3 albedoDiff = albedo - texelFetch(uniPrevFrameAlbedo, prevFrag, 0).rgb;
 	if (dot(albedoDiff, albedoDiff) > 0.01f) {
 		return;
 	}
 
-	vec3 normalDiff =
-		texelFetch(uniNormal, ivec2(pixelCoord), 0).xyz - texelFetch(uniPrevFrameNormal, prevFrag, 0).xyz;
-	if (dot(normalDiff, normalDiff) > 0.01f) {
+	vec3 normal = texelFetch(uniNormal, ivec2(pixelCoord), 0).xyz;
+	float normalDot = dot(normal, texelFetch(uniPrevFrameNormal, prevFrag, 0).xyz);
+	if (normalDot < 0.5f) {
 		return;
 	}
 
@@ -68,13 +83,22 @@ void main() {
 		return;
 	}*/
 
-	/*uint clampedSampleCount = min(prevRes.numStreamSamples, 20 * res.numStreamSamples);
-	float weightMultiplier = clampedSampleCount / prevRes.numStreamSamples;*/
+	/*uint clampedSampleCount = min(prevRes.numStreamSamples, 20 * res.numStreamSamples);*/
+	/*float weightMultiplier = clampedSampleCount / prevRes.numStreamSamples;*/
+
+	vec2 metallicRoughness = texelFetch(uniMaterialProperties, ivec2(pixelCoord), 0).xy;
 
 	vec4 pHat[RESERVOIR_SIZE];
 	for (int i = 0; i < RESERVOIR_SIZE; ++i) {
 		/*prevRes.samples[i].sumWeights *= weightMultiplier;*/
-		pHat[i] = prevRes.samples[i].pHat; // TODO maybe recompute phat?
+
+		pHat[i].rgb = evaluatePHat(
+			worldPos, prevRes.samples[i].position.xyz, uniforms.cameraPos.xyz,
+			normal, albedo, prevRes.samples[i].emission.rgb, metallicRoughness.x, metallicRoughness.y
+		);
+		pHat[i].w = luminance(pHat[i].r, pHat[i].g, pHat[i].b);
+
+		/*pHat[i] = prevRes.samples[i].pHat;*/
 	}
 	/*prevRes.numStreamSamples = clampedSampleCount;*/
 

@@ -204,6 +204,10 @@ protected:
 				vk::ImageLayout::eUndefined, vk::ImageLayout::eShaderReadOnlyOptimal
 			);
 			transitionImageLayout(
+				cmdBuf.get(), _gBuffers[i].getWorldPositionBuffer(), GBuffer::Formats::get().worldPosition,
+				vk::ImageLayout::eUndefined, vk::ImageLayout::eShaderReadOnlyOptimal
+			);
+			transitionImageLayout(
 				cmdBuf.get(), _gBuffers[i].getDepthBuffer(), GBuffer::Formats::get().depth,
 				vk::ImageLayout::eUndefined, vk::ImageLayout::eShaderReadOnlyOptimal
 			);

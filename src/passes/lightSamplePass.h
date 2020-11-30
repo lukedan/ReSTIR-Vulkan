@@ -21,8 +21,8 @@ public:
 		buffer.bindPipeline(vk::PipelineBindPoint::eCompute, getPipelines()[0].get());
 		buffer.bindDescriptorSets(vk::PipelineBindPoint::eCompute, _layout.get(), 0, { descriptorSet }, {});
 		buffer.dispatch(
-			ceilDiv(screenSize.width, LIGHT_SAMPLE_GROUP_SIZE_X),
-			ceilDiv(screenSize.height, LIGHT_SAMPLE_GROUP_SIZE_Y),
+			ceilDiv<uint32_t>(screenSize.width, LIGHT_SAMPLE_GROUP_SIZE_X),
+			ceilDiv<uint32_t>(screenSize.height, LIGHT_SAMPLE_GROUP_SIZE_Y),
 			1
 		);
 	}

@@ -58,6 +58,10 @@ AabbTree AabbTree::build(const nvh::GltfScene &scene) {
 	std::vector<Leaf> leaves;
 	for (const nvh::GltfNode &node : scene.m_nodes) {
 		const nvh::GltfPrimMesh &mesh = scene.m_primMeshes[node.primMesh];
+		const nvh::GltfMaterial &mat = scene.m_materials[mesh.materialIndex];
+		if (mat.emissiveFactor.sq_norm() > 1e-6) {
+			continue;
+		}
 
 		const uint32_t *indices = scene.m_indices.data() + mesh.firstIndex;
 		const nvmath::vec3 *pos = scene.m_positions.data() + mesh.vertexOffset;

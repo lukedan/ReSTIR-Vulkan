@@ -20,8 +20,12 @@ namespace vma {
 }
 
 
-[[nodiscard]] constexpr int ceilDiv(int a, int b) {
-	return (a + b - 1) / b;
+template <typename T> [[nodiscard]] constexpr T ceilDiv(T a, T b) {
+	return (a + b - static_cast<T>(1)) / b;
+}
+
+template <typename Struct, typename PreArray> [[nodiscard]] constexpr std::size_t alignPreArrayBlock() {
+	return ceilDiv(sizeof(PreArray), alignof(Struct)) * alignof(Struct);
 }
 
 [[nodiscard]] std::vector<char> readFile(const std::filesystem::path&);

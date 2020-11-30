@@ -97,19 +97,25 @@ public:
 			);
 		// Lights
 		// Point lights
-		result._ptLightsBufferSize = 16 + sizeof(shader::pointLight) * pointLights.size();
+		result._ptLightsBufferSize =
+			alignPreArrayBlock<shader::pointLight, int32_t>() + 
+			sizeof(shader::pointLight) * pointLights.size();
 		result._ptLightsBuffer = allocator.createBuffer(
 			static_cast<uint32_t>(result._ptLightsBufferSize),
 			vk::BufferUsageFlagBits::eStorageBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU
 		);
 		// Triangle lights
-		result._triLightsBufferSize = 16 + sizeof(shader::triLight) * triangleLights.size();
+		result._triLightsBufferSize =
+			alignPreArrayBlock<shader::triLight, int32_t>() +
+			sizeof(shader::triLight) * triangleLights.size();
 		result._triLightsBuffer = allocator.createBuffer(
 			static_cast<uint32_t>(result._triLightsBufferSize),
 			vk::BufferUsageFlagBits::eStorageBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU
 		);
 		// Alias table
-		result._aliasTableBufferSize = 16 + sizeof(shader::aliasTableColumn) * aliasTable.size();
+		result._aliasTableBufferSize =
+			alignPreArrayBlock<shader::aliasTableColumn, int32_t>() +
+			sizeof(shader::aliasTableColumn) * aliasTable.size();
 		result._aliasTableBuffer = allocator.createBuffer(
 			static_cast<uint32_t>(result._aliasTableBufferSize),
 			vk::BufferUsageFlagBits::eStorageBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU
@@ -234,7 +240,9 @@ public:
 		// Point lights
 		int32_t* pointLightPtr = result._ptLightsBuffer.mapAs<int32_t>();
 		*pointLightPtr = pointLights.size();
-		auto* ptLights = reinterpret_cast<shader::pointLight*>(reinterpret_cast<uintptr_t>(pointLightPtr) + 16);
+		auto* ptLights = reinterpret_cast<shader::pointLight*>(
+			reinterpret_cast<uintptr_t>(pointLightPtr) + alignPreArrayBlock<shader::pointLight, int32_t>()
+			);
 		std::memcpy(ptLights, pointLights.data(), sizeof(shader::pointLight) * pointLights.size());
 		result._ptLightsBuffer.unmap();
 		result._ptLightsBuffer.flush();
@@ -242,7 +250,9 @@ public:
 		// Tri lights
 		int32_t* triLightsPtr = result._triLightsBuffer.mapAs<int32_t>();
 		*triLightsPtr = triangleLights.size();
-		auto* triLights = reinterpret_cast<shader::triLight*>(reinterpret_cast<uintptr_t>(triLightsPtr) + 16);
+		auto* triLights = reinterpret_cast<shader::triLight*>(
+			reinterpret_cast<uintptr_t>(triLightsPtr) + alignPreArrayBlock<shader::triLight, int32_t>()
+			);
 		std::memcpy(triLights, triangleLights.data(), sizeof(shader::triLight) * triangleLights.size());
 		result._triLightsBuffer.unmap();
 		result._triLightsBuffer.flush();
@@ -250,7 +260,9 @@ public:
 		// Alias table
 		int32_t* aliasTablePtr = result._aliasTableBuffer.mapAs<int32_t>();
 		*aliasTablePtr = aliasTable.size();
-		auto* aliasTableContentPtr = reinterpret_cast<shader::aliasTableColumn*>(reinterpret_cast<uintptr_t>(aliasTablePtr) + 16);
+		auto* aliasTableContentPtr = reinterpret_cast<shader::aliasTableColumn*>(
+			reinterpret_cast<uintptr_t>(aliasTablePtr) + alignPreArrayBlock<shader::aliasTableColumn, int32_t>()
+			);
 		std::memcpy(aliasTableContentPtr, aliasTable.data(), sizeof(shader::aliasTableColumn) * aliasTable.size());
 		result._aliasTableBuffer.unmap();
 		result._aliasTableBuffer.flush();
