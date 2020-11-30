@@ -44,7 +44,7 @@ void main() {
 	for(int i = 0; i < RAND_NEIGHBOURS; i++)
 	{
 		ivec2 randNeighbor = ivec2(0, 0);
-	
+		
 		float angle = randFloat(rand) * 2.0 * M_PI;
 		float radius = randFloat(rand) * RAND_RADIUS;
 
@@ -53,6 +53,14 @@ void main() {
 		randNeighbor.y = clamp(int(pixelCoord.y) + randNeighborOffset.y, 0, int(uniforms.screenSize.y) - 1);
 
 		uint randIndex = randNeighbor.y * uniforms.screenSize.x + randNeighbor.x;
+		
+		// Discard over biased neighbors
+		vec3 neighborNor = texelFetch(uniNormal, ivec2(randNeighbor), 0).xyz;
+		vec3 neighborPos = texelFetch(uniNormal, ivec2(randNeighbor), 0).xyz;
+
+		if(abs(neighborPos.z - worldPos.z) > 0.1 * abs(worldPos.z) || abs(dot(neighborNor, normal)) > cos(0.7 * M_PI))
+			continue;
+
 		Reservoir randRes = reservoirs[randIndex];
 		vec4 newPHats[RESERVOIR_SIZE];
 
