@@ -153,10 +153,8 @@ protected:
 	AabbTreeBuffers _aabbTreeBuffers;
 
 	float posThreshold = 0.1f;
-	vma::UniqueBuffer _posThresholdBuffer;
 
 	float norThreshold = 25.0f;
-	vma::UniqueBuffer _norThresholdBuffer;
 
 	// synchronization
 	std::vector<vk::UniqueSemaphore> _imageAvailableSemaphore;
@@ -250,15 +248,11 @@ protected:
 
 	void _updateThresholdBuffers() 
 	{
-		auto* pos = _posThresholdBuffer.mapAs<float>();
-		*pos = posThreshold;
-		_posThresholdBuffer.unmap();
-		_posThresholdBuffer.flush();
-
-		auto* nor = _norThresholdBuffer.mapAs<float>();
-		*nor = norThreshold;
-		_norThresholdBuffer.unmap();
-		_norThresholdBuffer.flush();
+		auto* restirUniforms = _restirUniformBuffer.mapAs<shader::RestirUniforms>();
+		restirUniforms->posThreshold = posThreshold;
+		restirUniforms->norThreshold = norThreshold;
+		_restirUniformBuffer.unmap();
+		_restirUniformBuffer.flush();
 	}
 
 	void _updateRestirBuffers() {
@@ -275,18 +269,6 @@ protected:
 				// zero-initialize reservoir buffers
 				cmdBuf->fillBuffer(_reservoirBuffers[i].get(), 0, VK_WHOLE_SIZE, 0);
 			}
-		}
-
-		{
-			auto* pos = _posThresholdBuffer.mapAs<float>();
-			*pos = posThreshold;
-			_posThresholdBuffer.unmap();
-			_posThresholdBuffer.flush();
-
-			auto* nor = _norThresholdBuffer.mapAs<float>();
-			*nor = norThreshold;
-			_norThresholdBuffer.unmap();
-			_norThresholdBuffer.flush();
 		}
 
 		for (std::size_t i = 0; i < numGBuffers; ++i) {
@@ -317,12 +299,12 @@ protected:
 
 			_spatialReusePass.initializeDescriptorSetFor(
 				_gBuffers[i], _restirUniformBuffer.get(), _reservoirBuffers[i].get(), _reservoirBufferSize,
-				_reservoirBuffers[(i + numGBuffers - 1) % numGBuffers].get(), _posThresholdBuffer.get(), _norThresholdBuffer.get(),
+				_reservoirBuffers[(i + numGBuffers - 1) % numGBuffers].get(),
 				_device.get(), _spatialReuseDescriptors[i].get()
 			);
 			_spatialReusePass.initializeDescriptorSetFor(
 				_gBuffers[i], _restirUniformBuffer.get(), _reservoirBuffers[(i + numGBuffers - 1) % numGBuffers].get(), _reservoirBufferSize,
-				_reservoirBuffers[i].get(), _posThresholdBuffer.get(), _norThresholdBuffer.get(), _device.get(),  _spatialReuseSecondDescriptors[i].get()
+				_reservoirBuffers[i].get(), _device.get(),  _spatialReuseSecondDescriptors[i].get()
 			);
 		}
 	}

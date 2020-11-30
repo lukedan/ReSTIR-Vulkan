@@ -405,6 +405,8 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 		auto *restirUniforms = _restirUniformBuffer.mapAs<shader::RestirUniforms>();
 		restirUniforms->screenSize = nvmath::uvec2(_swapchain.getImageExtent().width, _swapchain.getImageExtent().height);
 		restirUniforms->frame = 0;
+		restirUniforms->posThreshold = posThreshold;
+		restirUniforms->norThreshold = norThreshold;
 		_restirUniformBuffer.unmap();
 		_restirUniformBuffer.flush();
 	}
@@ -436,20 +438,6 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 		std::move(newSets.begin(), newSets.end(), _swVisibilityTestDescriptors.begin());
 	}
 	_swVisibilityTestPass.screenSize = _swapchain.getImageExtent();
-
-	_posThresholdBuffer = _allocator.createTypedBuffer<float>(1, vk::BufferUsageFlagBits::eUniformBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU);
-	_norThresholdBuffer = _allocator.createTypedBuffer<float>(1, vk::BufferUsageFlagBits::eUniformBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU);
-	{
-		auto* pos = _posThresholdBuffer.mapAs<float>();
-		*pos = posThreshold;
-		_posThresholdBuffer.unmap();
-		_posThresholdBuffer.flush();
-
-		auto* nor = _norThresholdBuffer.mapAs<float>();
-		*nor = norThreshold;
-		_norThresholdBuffer.unmap();
-		_norThresholdBuffer.flush();
-	}
 
 	_spatialReusePass = Pass::create<SpatialReusePass>(_device.get());
 	{
