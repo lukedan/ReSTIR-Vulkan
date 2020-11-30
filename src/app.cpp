@@ -574,7 +574,7 @@ void App::updateGui() {
 	ImGui_ImplGlfw_NewFrame();
 	ImGui::NewFrame();
 
-	const char *items[]{
+	const char *debugModes[]{
 		"None",
 		"Albedo",
 		"Normal",
@@ -582,9 +582,17 @@ void App::updateGui() {
 		"WorldPosition",
 		"DisneyBRDF"
 	};
-	_debugModeChanged = ImGui::Combo("Debug Mode", &_debugMode, items, IM_ARRAYSIZE(items));
+	_debugModeChanged = ImGui::Combo("Debug Mode", &_debugMode, debugModes, IM_ARRAYSIZE(debugModes));
 
-	_renderPathChanged = ImGui::Checkbox("Use Hardware Ray Tracing", &_useHardwareRt) || _renderPathChanged;
+	const char *visibilityTestMethods[]{
+		"Disabled",
+		"Software",
+		"Hardware"
+	};
+	_renderPathChanged = ImGui::Combo(
+		"Visibility Test", reinterpret_cast<int*>(&_visibilityTestMethod),
+		visibilityTestMethods, IM_ARRAYSIZE(visibilityTestMethods)
+	) || _renderPathChanged;
 	_renderPathChanged = ImGui::Checkbox("Use Temporal Reuse", &_enableTemporalReuse) || _renderPathChanged;
 	_renderPathChanged = ImGui::SliderInt("Spatial Reuse Iterations", &_spatialReuseIterations, 0, 10) || _renderPathChanged;
 

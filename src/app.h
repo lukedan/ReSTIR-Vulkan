@@ -21,19 +21,11 @@
 #include "passes/rtPass.h"
 #include "passes/imguiPass.h"
 
-struct PhysicalDeviceInfo {
-	vk::PhysicalDeviceMemoryProperties     memoryProperties{};
-	std::vector<vk::QueueFamilyProperties> queueProperties;
-
-	vk::PhysicalDeviceFeatures         features10{};
-	vk::PhysicalDeviceVulkan11Features features11;
-	vk::PhysicalDeviceVulkan12Features features12;
-
-	vk::PhysicalDeviceProperties         properties10{};
-	vk::PhysicalDeviceVulkan11Properties properties11;
-	vk::PhysicalDeviceVulkan12Properties properties12;
+enum class VisibilityTestMethod {
+	disabled,
+	software,
+	hardware
 };
-
 
 class App {
 public:
@@ -128,7 +120,7 @@ protected:
 	GBufferPass::Resources _gBufferResources;
 
 	vma::UniqueBuffer _restirUniformBuffer;
-	std::array<vma::UniqueBuffer, 2> _reservoirBuffers;
+	std::array<vma::UniqueBuffer, numGBuffers> _reservoirBuffers;
 	vk::DeviceSize _reservoirBufferSize;
 
 	LightSamplePass _lightSamplePass;
@@ -170,7 +162,7 @@ protected:
 
 	// ui
 	int _debugMode = GBUFFER_DEBUG_NONE;
-	bool _useHardwareRt = true;
+	VisibilityTestMethod _visibilityTestMethod = VisibilityTestMethod::hardware;
 	bool _enableTemporalReuse = true;
 	int _spatialReuseIterations = 1;
 
@@ -226,12 +218,15 @@ protected:
 
 			_gBufferPass.issueCommands(_mainCommandBuffers[i].get(), _gBuffers[i].getFramebuffer());
 			_lightSamplePass.issueCommands(_mainCommandBuffers[i].get(), nullptr);
-			if (_useHardwareRt) {
+			switch (_visibilityTestMethod) {
+			case VisibilityTestMethod::software:
+				_swVisibilityTestPass.issueCommands(_mainCommandBuffers[i].get(), nullptr);
+				break;
+			case VisibilityTestMethod::hardware:
 #ifndef RENDERDOC_CAPTURE
 				_rtPass.issueCommands(_mainCommandBuffers[i].get(), _swapchain.getImageExtent(), _dynamicDispatcher);
 #endif
-			} else {
-				_swVisibilityTestPass.issueCommands(_mainCommandBuffers[i].get(), nullptr);
+				break;
 			}
 			if (_enableTemporalReuse) {
 				_temporalReusePass.issueCommands(_mainCommandBuffers[i].get(), nullptr);
