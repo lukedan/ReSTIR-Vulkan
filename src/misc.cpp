@@ -386,7 +386,7 @@ std::vector<shader::triLight> collectTriangleLightsFromScene(const nvh::GltfScen
 				vec3 p1_vec3(p1.x, p1.y, p1.z), p2_vec3(p2.x, p2.y, p2.z), p3_vec3(p3.x, p3.y, p3.z);
 				float area = nvmath::cross(p2_vec3 - p1_vec3, p3_vec3 - p1_vec3).norm() / 2.f;
 				shader::triLight tmpTriLight{ p1, p2, p3, vec4(material.emissiveFactor, 0.0), area };
-				result.emplace_back(shader::triLight{
+				result.push_back(shader::triLight{
 					.p1 = p1, .p2 = p2, .p3 = p3,
 					.emissiveFactor = material.emissiveFactor,
 					.area = area
@@ -430,6 +430,7 @@ std::vector<shader::triLight> collectTriangleLightsFromScene(const nvh::GltfScen
 
 	for (int i = 0; i < lightPrabVec.size(); ++i) {
 		result[i].oriPrab = lightPrabVec[i] / powerSum;
+		// result[i].oriPrab = 1.f / lightNum;
 		lightPrabVec[i] = float(lightPrabVec.size()) * lightPrabVec[i] / powerSum;
 		if (lightPrabVec[i] >= 1.f) {
 			biggerThanOneQueue.push(i);

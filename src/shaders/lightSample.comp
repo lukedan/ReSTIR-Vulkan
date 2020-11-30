@@ -27,10 +27,28 @@ layout (binding = 7) buffer TriangleLights {
 	int count;
 	triLight lights[];
 } triangleLights;
+
 layout (binding = 8) buffer AliasTable{
 	int count;
 	aliasTableColumn aliasCol[];
 } aliasTable;
+
+// https://math.stackexchange.com/questions/18686/uniform-random-point-in-triangle
+vec3 pickPointOnTriangle(float r1, float r2, vec3 p1, vec3 p2, vec3 p3) {
+    float sqrt_r1 = sqrt(r1);
+    return (1.0 - sqrt_r1) * p1 + (sqrt_r1 * (1.0 - r2)) * p2 + (r2 * sqrt_r1) * p3;
+}
+
+float DistanceSquared(vec3 a, vec3 b) {
+    float len = length(a - b);
+    return len * len;
+}
+
+// http://www.pbr-book.org/3ed-2018/Light_Transport_I_Surface_Reflection/Sampling_Light_Sources.html#sec:sampling-lights
+float triLightPDF(triLight sampledTriLight, vec3 wi, vec3 sampledTriLightPos, vec3 refPoint) {
+    vec3 lightNormal = normalize(cross(sampledTriLight.p2.xyz - sampledTriLight.p1.xyz, sampledTriLight.p3.xyz - sampledTriLight.p1.xyz));
+    return DistanceSquared(refPoint, sampledTriLightPos) / (abs(dot(lightNormal, wi)) * sampledTriLight.area);
+}
 
 int aliasTableSample(float r1, float r2){
 	int selected_column = int(aliasTable.count * r1);
@@ -62,18 +80,27 @@ void main() {
 	for (int i = 0; i < 32; ++i) {			
 		int selected_idx = aliasTableSample(randFloat(rand), randFloat(rand));
 
-		pointLight light = pointLights.lights[selected_idx];
-
+		vec3 lightSamplePos;
+		vec3 lightSampleColor;
+		if(pointLights.count != 0){
+			pointLight light = pointLights.lights[selected_idx];
+			lightSamplePos = light.pos.xyz;
+			lightSampleColor = light.color.xyz;
+		}else{
+			triLight light = triangleLights.lights[selected_idx];
+			lightSamplePos = pickPointOnTriangle(randFloat(rand), randFloat(rand), light.p1.xyz, light.p2.xyz, light.p3.xyz);
+			lightSampleColor = light.emissiveFactor.xyz;
+		}
+		
 		vec3 pHat = evaluatePHat(
-			worldPos, light.pos.xyz, uniforms.cameraPos.xyz, normal,
-			albedo, light.color.xyz, roughnessMetallic.x, roughnessMetallic.y
+			worldPos, lightSamplePos, uniforms.cameraPos.xyz, normal,
+			albedo, lightSampleColor, roughnessMetallic.x, roughnessMetallic.y
 		);
 		float pHatLum = luminance(pHat.r, pHat.g, pHat.b);
 
-		addSampleToReservoir(res, light.pos.xyz, vec4(pHat, pHatLum), 1.0f / pointLights.count, rand);
+		addSampleToReservoir(res, lightSamplePos, vec4(pHat, pHatLum), aliasTable.aliasCol[selected_idx].oriPrab, rand);
 	}
 	
-
 	uint reservoirIndex = pixelCoord.y * uniforms.screenSize.x + pixelCoord.x;
 	reservoirs[reservoirIndex] = res;
 }

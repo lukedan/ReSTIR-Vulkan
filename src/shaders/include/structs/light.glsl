@@ -17,4 +17,6 @@ struct aliasTableColumn {
 	float prab; // The i's column's event i's prab
 	int alias; // The i's column's another event's idx
 	float oriPrab;
+	int padding;
+	vec4 largePadding;
 };
