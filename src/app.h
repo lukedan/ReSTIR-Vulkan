@@ -172,7 +172,7 @@ protected:
 	int _debugMode = GBUFFER_DEBUG_NONE;
 	bool _useHardwareRt = true;
 	bool _enableTemporalReuse = true;
-	bool _enableSpatialReuse = true;
+	int _spatialReuseIterations = 1;
 
 	bool _debugModeChanged = false;
 	bool _renderPathChanged = false;
@@ -216,7 +216,6 @@ protected:
 			_swVisibilityTestPass.descriptorSet = _swVisibilityTestDescriptors[i].get();
 			_rtPass.descriptorSet = _rtPassDescriptors[i].get();
 			_temporalReusePass.descriptorSet = _temporalReuseDescriptors[i].get();
-			_spatialReusePass.descriptorSet = _spatialReuseDescriptors[i].get();
 
 			vk::CommandBufferBeginInfo beginInfo;
 			_mainCommandBuffers[i]->begin(beginInfo);
@@ -233,12 +232,11 @@ protected:
 			if (_enableTemporalReuse) {
 				_temporalReusePass.issueCommands(_mainCommandBuffers[i].get(), nullptr);
 			}
-			if (_enableSpatialReuse) 
-			{
+			for (int j = 0; j < _spatialReuseIterations; ++j) {
+				_spatialReusePass.descriptorSet = _spatialReuseDescriptors[i].get();
 				_spatialReusePass.issueCommands(_mainCommandBuffers[i].get(), nullptr);
 				_spatialReusePass.descriptorSet = _spatialReuseSecondDescriptors[i].get();
 				_spatialReusePass.issueCommands(_mainCommandBuffers[i].get(), nullptr);
-				_spatialReusePass.descriptorSet = _spatialReuseDescriptors[i].get();
 			}
 
 			_mainCommandBuffers[i]->end();

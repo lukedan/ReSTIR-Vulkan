@@ -25,7 +25,7 @@ void combineReservoirs(inout Reservoir self, Reservoir other, vec4 pHat[RESERVOI
 	self.numStreamSamples += other.numStreamSamples;
 
 	for (int i = 0; i < RESERVOIR_SIZE; ++i) {
-		if (other.samples[i].sumWeights != 0.0f) {
+		if (other.samples[i].pHat.w != 0.0f) {
 			float weight = (pHat[i].w / other.samples[i].pHat.w) * other.samples[i].sumWeights;
 			updateReservoirAt(self, i, weight, other.samples[i].position.xyz, pHat[i], rand);
 		}

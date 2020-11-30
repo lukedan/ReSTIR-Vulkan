@@ -587,7 +587,7 @@ void App::updateGui() {
 
 	_renderPathChanged = ImGui::Checkbox("Use Hardware Ray Tracing", &_useHardwareRt) || _renderPathChanged;
 	_renderPathChanged = ImGui::Checkbox("Use Temporal Reuse", &_enableTemporalReuse) || _renderPathChanged;
-	_renderPathChanged = ImGui::Checkbox("Use Spatial Reuse", &_enableSpatialReuse) || _renderPathChanged;
+	_renderPathChanged = ImGui::SliderInt("Spatial Reuse Iterations", &_spatialReuseIterations, 0, 10) || _renderPathChanged;
 
 	ImGui::Render();
 }
