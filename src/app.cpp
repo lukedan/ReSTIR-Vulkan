@@ -437,6 +437,20 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 	}
 	_swVisibilityTestPass.screenSize = _swapchain.getImageExtent();
 
+	_posThresholdBuffer = _allocator.createTypedBuffer<float>(1, vk::BufferUsageFlagBits::eUniformBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU);
+	_norThresholdBuffer = _allocator.createTypedBuffer<float>(1, vk::BufferUsageFlagBits::eUniformBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU);
+	{
+		auto* pos = _posThresholdBuffer.mapAs<float>();
+		*pos = posThreshold;
+		_posThresholdBuffer.unmap();
+		_posThresholdBuffer.flush();
+
+		auto* nor = _norThresholdBuffer.mapAs<float>();
+		*nor = norThreshold;
+		_norThresholdBuffer.unmap();
+		_norThresholdBuffer.flush();
+	}
+
 	_spatialReusePass = Pass::create<SpatialReusePass>(_device.get());
 	{
 		std::array<vk::DescriptorSetLayout, numGBuffers> setLayouts;
@@ -595,7 +609,8 @@ void App::updateGui() {
 	) || _renderPathChanged;
 	_renderPathChanged = ImGui::Checkbox("Use Temporal Reuse", &_enableTemporalReuse) || _renderPathChanged;
 	_renderPathChanged = ImGui::SliderInt("Spatial Reuse Iterations", &_spatialReuseIterations, 0, 10) || _renderPathChanged;
-
+	_renderPathChanged = ImGui::SliderFloat("Depth Threshold", &posThreshold, 0.0, 1.0) || _renderPathChanged;
+	_renderPathChanged = ImGui::SliderFloat("Normal Threshold", &norThreshold, 5.0, 45.0) || _renderPathChanged;
 	ImGui::Render();
 }
 
@@ -712,6 +727,7 @@ void App::mainLoop() {
 				_cameraUpdated = false;
 				_debugModeChanged = false;
 			} else if (_renderPathChanged) {
+				_updateThresholdBuffers();
 				_recordMainCommandBuffers();
 			}
 

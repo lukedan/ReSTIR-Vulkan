@@ -23,6 +23,16 @@ layout (binding = 6) buffer Resultreservoirs
 	Reservoir resultReservoirs[];
 };
 
+layout (binding = 7) uniform Posthreshold
+{
+	float posThreshold;
+};
+
+layout (binding = 8) uniform Northreshold
+{
+	float norThreshold;
+};
+
 #define RAND_NEIGHBOURS 3
 #define RAND_RADIUS 30.0
 
@@ -58,7 +68,7 @@ void main() {
 		vec3 neighborPos = texelFetch(uniWorldPosition, ivec2(randNeighbor), 0).xyz;
 		vec3 neighborNor = texelFetch(uniNormal, ivec2(randNeighbor), 0).xyz;
 
-		if(abs(neighborPos.z - worldPos.z) > 0.1 * abs(worldPos.z) || dot(neighborNor, normal) < cos(0.44))
+		if(abs(neighborPos.z - worldPos.z) > posThreshold * abs(worldPos.z) || dot(neighborNor, normal) < cos(radians(norThreshold)))
 			continue;
 
 		Reservoir randRes = reservoirs[randIndex];
