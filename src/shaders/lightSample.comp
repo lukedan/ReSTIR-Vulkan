@@ -41,7 +41,7 @@ vec3 pickPointOnTriangle(float r1, float r2, vec3 p1, vec3 p2, vec3 p3) {
 int aliasTableSample(float r1, float r2){
 	int selected_column = int(aliasTable.count * r1);
 	int selected_sample = -1;
-	if(aliasTable.aliasCol[selected_column].prab > r2){
+	if(aliasTable.aliasCol[selected_column].prob > r2){
 		selected_sample = selected_column;
 	}else{
 		selected_sample = aliasTable.aliasCol[selected_column].alias;
@@ -73,7 +73,7 @@ void main() {
 			pointLight light = pointLights.lights[selected_idx];
 			lightSamplePos = light.pos.xyz;
 			lightSampleColor = light.color.xyz;
-			sampleProb = aliasTable.aliasCol[selected_idx].oriPrab;
+			sampleProb = aliasTable.aliasCol[selected_idx].oriProb;
 		}else{
 			triLight light = triangleLights.lights[selected_idx];
 			lightSamplePos = pickPointOnTriangle(randFloat(rand), randFloat(rand), light.p1.xyz, light.p2.xyz, light.p3.xyz);
@@ -81,7 +81,7 @@ void main() {
 
 			vec3 wi = normalize(worldPos - lightSamplePos);
 			vec3 normal = light.normalArea.xyz;
-			sampleProb = aliasTable.aliasCol[selected_idx].oriPrab / (abs(dot(wi, normal)) * light.normalArea.w);
+			sampleProb = aliasTable.aliasCol[selected_idx].oriProb / (abs(dot(wi, normal)) * light.normalArea.w);
 		}
 		
 		vec3 pHat = evaluatePHat(

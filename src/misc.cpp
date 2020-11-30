@@ -407,7 +407,7 @@ std::vector<shader::triLight> collectTriangleLightsFromScene(const nvh::GltfScen
 	
 	std::queue<int> biggerThanOneQueue;
 	std::queue<int> smallerThanOneQueue;
-	std::vector<float> lightPrabVec;
+	std::vector<float> lightProbVec;
 	float powerSum = 0.f;
 	int lightNum = 0;
 
@@ -417,7 +417,7 @@ std::vector<shader::triLight> collectTriangleLightsFromScene(const nvh::GltfScen
 
 		for (auto& itr_ptLight : ptLights) {
 			powerSum += itr_ptLight.intensity;
-			lightPrabVec.push_back(itr_ptLight.intensity);
+			lightProbVec.push_back(itr_ptLight.intensity);
 		}	
 	}
 	else {
@@ -426,17 +426,17 @@ std::vector<shader::triLight> collectTriangleLightsFromScene(const nvh::GltfScen
 		for (auto& itr_triLight : triLights) {
 			float triLightPower = shader::luminance(itr_triLight.emissiveFactor.x, itr_triLight.emissiveFactor.y, itr_triLight.emissiveFactor.z) * itr_triLight.normalArea.w;
 			powerSum += triLightPower;
-			lightPrabVec.push_back(triLightPower);
+			lightProbVec.push_back(triLightPower);
 		}
 	}
 
-	std::vector<shader::aliasTableColumn> result(lightNum, shader::aliasTableColumn{ .prab = 0.f, .alias = -1, .oriPrab = 0.f });
+	std::vector<shader::aliasTableColumn> result(lightNum, shader::aliasTableColumn{ .prob = 0.f, .alias = -1, .oriProb = 0.f });
 
-	for (int i = 0; i < lightPrabVec.size(); ++i) {
-		result[i].oriPrab = lightPrabVec[i] / powerSum;
-		// result[i].oriPrab = 1.f / lightNum;
-		lightPrabVec[i] = float(lightPrabVec.size()) * lightPrabVec[i] / powerSum;
-		if (lightPrabVec[i] >= 1.f) {
+	for (int i = 0; i < lightProbVec.size(); ++i) {
+		result[i].oriProb = lightProbVec[i] / powerSum;
+		// result[i].oriProb = 1.f / lightNum;
+		lightProbVec[i] = float(lightProbVec.size()) * lightProbVec[i] / powerSum;
+		if (lightProbVec[i] >= 1.f) {
 			biggerThanOneQueue.push(i);
 		}
 		else {
@@ -451,12 +451,12 @@ std::vector<shader::triLight> collectTriangleLightsFromScene(const nvh::GltfScen
 		int l = smallerThanOneQueue.front();
 		smallerThanOneQueue.pop();
 
-		result[l].prab = lightPrabVec[l];
+		result[l].prob = lightProbVec[l];
 		result[l].alias = g;
 
-		lightPrabVec[g] = (lightPrabVec[g] + lightPrabVec[l]) - 1.f;
+		lightProbVec[g] = (lightProbVec[g] + lightProbVec[l]) - 1.f;
 
-		if (lightPrabVec[g] < 1.f) {
+		if (lightProbVec[g] < 1.f) {
 			smallerThanOneQueue.push(g);
 		}
 		else {
@@ -467,13 +467,13 @@ std::vector<shader::triLight> collectTriangleLightsFromScene(const nvh::GltfScen
 	while (!biggerThanOneQueue.empty()) {
 		int g = biggerThanOneQueue.front();
 		biggerThanOneQueue.pop();
-		result[g].prab = 1.f;
+		result[g].prob = 1.f;
 	}
 
 	while (!smallerThanOneQueue.empty()) {
 		int l = smallerThanOneQueue.front();
 		smallerThanOneQueue.pop();
-		result[l].prab = 1.f;
+		result[l].prob = 1.f;
 	}
 
 	return result;

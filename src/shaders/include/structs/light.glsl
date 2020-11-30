@@ -14,7 +14,7 @@ struct triLight {
 };
 
 struct aliasTableColumn {
-	float prab; // The i's column's event i's prab
+	float prob; // The i's column's event i's prob
 	int alias; // The i's column's another event's idx
-	float oriPrab;
+	float oriProb;
 };
