@@ -58,7 +58,7 @@ void main() {
 		vec3 neighborPos = texelFetch(uniWorldPosition, ivec2(randNeighbor), 0).xyz;
 		vec3 neighborNor = texelFetch(uniNormal, ivec2(randNeighbor), 0).xyz;
 
-		if(abs(neighborPos.z - worldPos.z) > 0.1 * abs(worldPos.z) || dot(neighborNor, normal) < cos(0.6 * M_PI))
+		if(abs(neighborPos.z - worldPos.z) > 0.1 * abs(worldPos.z) || dot(neighborNor, normal) < cos(0.44))
 			continue;
 
 		Reservoir randRes = reservoirs[randIndex];
