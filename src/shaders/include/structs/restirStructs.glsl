@@ -29,6 +29,9 @@ struct RestirUniforms {
 	vec4 cameraPos;
 	uvec2 screenSize;
 	uint frame;
+
+	uint initialLightSampleCount;
 	float posThreshold;
 	float norThreshold;
+	uint temporalSampleCountMultiplier;
 };

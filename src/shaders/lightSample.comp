@@ -60,10 +60,9 @@ void main() {
 	vec2 roughnessMetallic = texelFetch(uniMaterialProperties, ivec2(pixelCoord), 0).xy;
 	vec3 worldPos = texelFetch(uniWorldPosition, ivec2(pixelCoord), 0).xyz;
 
-	/* Streaming RIS using WRS -- TODO: w needs to adopt triangle lights. */
 	Reservoir res = newReservoir();
 	Rand rand = seedRand(uniforms.frame * 31, pixelCoord.y * 10007 + pixelCoord.x);
-	for (int i = 0; i < 32; ++i) {			
+	for (int i = 0; i < uniforms.initialLightSampleCount; ++i) {			
 		int selected_idx = aliasTableSample(randFloat(rand), randFloat(rand));
 
 		vec3 lightSamplePos;
@@ -90,7 +89,7 @@ void main() {
 		);
 		float pHatLum = luminance(pHat.r, pHat.g, pHat.b);
 
-		addSampleToReservoir(res, lightSamplePos, vec4(pHat, pHatLum), sampleProb, rand);
+		addSampleToReservoir(res, lightSamplePos, lightSampleColor, vec4(pHat, pHatLum), sampleProb, rand);
 	}
 	
 	uint reservoirIndex = pixelCoord.y * uniforms.screenSize.x + pixelCoord.x;

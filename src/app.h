@@ -166,8 +166,10 @@ protected:
 
 	// ui
 	int _debugMode = GBUFFER_DEBUG_NONE;
+	int _log2InitialLightSamples = 5;
 	VisibilityTestMethod _visibilityTestMethod = VisibilityTestMethod::hardware;
 	bool _enableTemporalReuse = true;
+	int _temporalReuseSampleMultiplier = 20;
 	int _spatialReuseIterations = 1;
 
 	bool _debugModeChanged = false;

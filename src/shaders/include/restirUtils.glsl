@@ -19,5 +19,5 @@ vec3 evaluatePHat(
 	float cosHalf = dot(normal, halfVec);
 	float cosInHalf = dot(wi, halfVec);
 
-	return disneyBrdfColor(cosIn, cosOut, cosHalf, cosInHalf, albedo, roughness, metallic) * cosIn / sqrDist;
+	return emission * disneyBrdfColor(cosIn, cosOut, cosHalf, cosInHalf, albedo, roughness, metallic) * cosIn / sqrDist;
 }

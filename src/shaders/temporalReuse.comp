@@ -79,7 +79,9 @@ void main() {
 	Reservoir prevRes = prevFrameReservoirs[prevFrag.y * uniforms.screenSize.x + prevFrag.x];
 
 	// clamp the number of samples
-	prevRes.numStreamSamples = min(prevRes.numStreamSamples, 20 * res.numStreamSamples);
+	prevRes.numStreamSamples = min(
+		prevRes.numStreamSamples, uniforms.temporalSampleCountMultiplier * res.numStreamSamples
+	);
 
 	vec2 metallicRoughness = texelFetch(uniMaterialProperties, ivec2(pixelCoord), 0).xy;
 
