@@ -74,6 +74,11 @@ namespace vma {
 				_allocator = nullptr;
 			}
 		}
+
+		void getAllocInfo(VmaAllocationInfo* pAllocatorInfo)
+		{
+			vmaGetAllocationInfo(_getAllocator(), _allocation, pAllocatorInfo);
+		}
 	protected:
 		T _object;
 		VmaAllocation _allocation = nullptr;
