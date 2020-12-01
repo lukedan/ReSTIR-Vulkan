@@ -205,6 +205,18 @@ namespace vma {
 			return createBuffer(bufferInfo, allocationInfo);
 		}
 
+		[[nodiscard]] VkResult allocateMemory(vk::MemoryRequirements memReq,
+			VmaAllocation& allocation,
+			VmaAllocationInfo& allocationDetial,
+			VmaAllocationCreateInfo& createInfo
+		) {
+			return vmaAllocateMemory(_allocator, &static_cast<VkMemoryRequirements>(memReq), &createInfo, &allocation, &allocationDetial);
+		}
+
+		void freeMemory(VmaAllocation& allocation) 
+		{
+			vmaFreeMemory(_allocator, allocation);
+		}
 		void reset() {
 			if (_allocator) {
 				vmaDestroyAllocator(_allocator);

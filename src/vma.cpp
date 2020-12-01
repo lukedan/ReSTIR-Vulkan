@@ -69,7 +69,9 @@ namespace vma {
 	) {
 		Allocator result;
 		VmaAllocatorCreateInfo allocatorInfo{};
-		allocatorInfo.flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
+		allocatorInfo.flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT | 
+			                  VMA_ALLOCATOR_CREATE_KHR_DEDICATED_ALLOCATION_BIT | 
+			                  VMA_ALLOCATOR_CREATE_KHR_BIND_MEMORY2_BIT;
 		allocatorInfo.vulkanApiVersion = version;
 		allocatorInfo.instance = inst;
 		allocatorInfo.physicalDevice = physDev;

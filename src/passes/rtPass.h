@@ -5,9 +5,10 @@
 #include <vulkan/vulkan.hpp>
 #include "vma.h"
 
+//#define ORIGINAL
 #undef MemoryBarrier
 
-struct BlasInstanceForTlas 
+struct BlasInstanceForTlas
 {
 	uint32_t                   blasId{ 0 };      // Index of the BLAS in m_blas
 	uint32_t                   instanceId{ 0 };  // Instance Index (gl_InstanceID)
@@ -22,7 +23,7 @@ public:
 	RtPass() = default;
 	RtPass(RtPass&&) = default;
 	RtPass& operator=(RtPass&&) = default;
-	struct cameraUniforms 
+	struct cameraUniforms
 	{
 		nvmath::mat4 viewInverse;
 		nvmath::mat4 projInverse;
@@ -38,6 +39,13 @@ public:
 		return _descriptorSetLayout.get();
 	}
 
+	void freeDeviceMemory(vk::Device dev)
+	{
+		for (int i = 0; i < memories.size(); i++)
+		{
+			dev.freeMemory(memories.at(i));
+		}
+	}
 
 	void issueCommands(vk::CommandBuffer commandBuffer, vk::Extent2D extent, vk::DispatchLoaderDynamic dld) {
 		commandBuffer.pipelineBarrier(
@@ -47,7 +55,7 @@ public:
 		);
 
 		commandBuffer.bindPipeline(vk::PipelineBindPoint::eRayTracingKHR, _pipelines[0].get());
-		commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eRayTracingKHR, _pipelineLayout.get(), 0, {descriptorSet}, {});
+		commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eRayTracingKHR, _pipelineLayout.get(), 0, { descriptorSet }, {});
 		commandBuffer.traceRaysKHR(rayGenSBT, rayMissSBT, rayHitSBT, rayCallSBT, extent.width, extent.height, 1, dld);
 	}
 
@@ -113,7 +121,7 @@ public:
 
 	void createDescriptorSetForRayTracing(
 		vk::Device dev,
-		const GBuffer &gbuffer,
+		const GBuffer& gbuffer,
 		vk::Buffer uniformBuffer,
 		vk::Buffer reservoirBuffer, vk::DeviceSize reservoirBufferSize,
 		vk::DescriptorSet set,
@@ -173,12 +181,7 @@ public:
 		dev.updateDescriptorSets(descriptorWrite, {}, dld);
 	}
 
-	void createShaderBindingTable(
-		vk::Device& dev, 
-		vma::Allocator& allocator, 
-		vk::PhysicalDevice& physicalDev, 
-		vk::DispatchLoaderDynamic dld
-	)
+	void createShaderBindingTable(vk::Device& dev, vma::Allocator& allocator, vk::PhysicalDevice& physicalDev, vk::DispatchLoaderDynamic dld)
 	{
 		vk::PhysicalDeviceRayTracingPropertiesKHR rtProperties;
 		vk::PhysicalDeviceProperties2 devProperties2;
@@ -256,24 +259,24 @@ public:
 		_allBlas.resize(gltfScene.m_primMeshes.size());
 		int index = 0;
 		std::vector<vk::DeviceAddress> allBlasHandle;
-		for (auto& primMesh : gltfScene.m_primMeshes) 
+		for (auto& primMesh : gltfScene.m_primMeshes)
 		{
 			vk::AccelerationStructureCreateGeometryTypeInfoKHR blasCreateGeoInfo;
-			blasCreateGeoInfo
-				.setGeometryType(vk::GeometryTypeKHR::eTriangles)
-				.setMaxPrimitiveCount(primMesh.indexCount / 3.0f)
-				.setIndexType(vk::IndexType::eUint32)
-				.setMaxVertexCount(primMesh.vertexCount)
-				.setVertexFormat(vk::Format::eR32G32B32Sfloat)
-				.setAllowsTransforms(VK_FALSE);
+			blasCreateGeoInfo.setGeometryType(vk::GeometryTypeKHR::eTriangles);
+			blasCreateGeoInfo.setMaxPrimitiveCount(primMesh.indexCount / 3.0f);
+			blasCreateGeoInfo.setIndexType(vk::IndexType::eUint32);
+			blasCreateGeoInfo.setMaxVertexCount(primMesh.vertexCount);
+			blasCreateGeoInfo.setVertexFormat(vk::Format::eR32G32B32Sfloat);
+			blasCreateGeoInfo.setAllowsTransforms(VK_FALSE);
 
 			vk::AccelerationStructureCreateInfoKHR blasCreateInfo;
-			blasCreateInfo
-				.setCompactedSize(0)
-				.setType(vk::AccelerationStructureTypeKHR::eBottomLevel)
-				.setFlags(vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace)
-				.setMaxGeometryCount(1)
-				.setPGeometryInfos(&blasCreateGeoInfo);
+			blasCreateInfo.setPNext(nullptr);
+			blasCreateInfo.setCompactedSize(0);
+			blasCreateInfo.setType(vk::AccelerationStructureTypeKHR::eBottomLevel);
+			blasCreateInfo.setFlags(vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace);
+			blasCreateInfo.setMaxGeometryCount(1);
+			blasCreateInfo.setPGeometryInfos(&blasCreateGeoInfo);
+			blasCreateInfo.setDeviceAddress(VK_NULL_HANDLE);
 
 			try
 			{
@@ -285,17 +288,15 @@ public:
 				exit(-1);
 			}
 
-			vma::UniqueBuffer blObjectBuffer = createAccelerationStructure(
-				dev, allocator, dynamicDispatcher,
-				_allBlas.at(index).get(),
-				vk::AccelerationStructureMemoryRequirementsTypeKHR::eObject);
+			vk::DeviceSize blasScratchSize;
 
-			bindAccelerationStructure(dev, blObjectBuffer, _allBlas.at(index).get(), dynamicDispatcher);
-
-			vma::UniqueBuffer blScratchBuffer = createAccelerationStructure(
-				dev, allocator, dynamicDispatcher,
+			createAccelerationStructure(
+				dev, pd, allocator, dynamicDispatcher,
 				_allBlas.at(index).get(),
-				vk::AccelerationStructureMemoryRequirementsTypeKHR::eBuildScratch);
+				vk::AccelerationStructureMemoryRequirementsTypeKHR::eObject,
+				&blasScratchSize);
+
+			vma::UniqueBuffer blasScratchBuffer = createScratchBuffer(blasScratchSize, allocator);
 
 			vk::AccelerationStructureDeviceAddressInfoKHR devAddrInfo;
 			devAddrInfo.setAccelerationStructure(_allBlas.at(index).get());
@@ -324,7 +325,7 @@ public:
 			blasAccelerationBuildGeometryInfo.setGeometryArrayOfPointers(VK_FALSE);
 			blasAccelerationBuildGeometryInfo.setGeometryCount(1);
 			blasAccelerationBuildGeometryInfo.setPpGeometries(&blasPpGeometries);
-			blasAccelerationBuildGeometryInfo.scratchData.setDeviceAddress(dev.getBufferAddress(blScratchBuffer.get()));
+			blasAccelerationBuildGeometryInfo.scratchData.setDeviceAddress(dev.getBufferAddress(blasScratchBuffer.get()));
 
 			vk::AccelerationStructureBuildOffsetInfoKHR blasAccelerationBuildOffsetInfo;
 			blasAccelerationBuildOffsetInfo.primitiveCount = primMesh.indexCount / 3;
@@ -372,7 +373,7 @@ public:
 
 			dev.destroyFence(blasFence);
 			dev.freeCommandBuffers(commandPool, blasCommandBuffers);
-			
+
 			index++;
 		}
 
@@ -403,23 +404,19 @@ public:
 
 		_topLevelAS = dev.createAccelerationStructureKHRUnique(tlasAccelerationInfo, nullptr, dynamicDispatcher);
 
+		vk::DeviceSize tlasScratchSize;
 
-		vma::UniqueBuffer tlasBuffer = createAccelerationStructure(
-			dev, allocator, dynamicDispatcher,
+		createAccelerationStructure(
+			dev, pd, allocator, dynamicDispatcher,
 			_topLevelAS.get(),
-			vk::AccelerationStructureMemoryRequirementsTypeKHR::eObject);
+			vk::AccelerationStructureMemoryRequirementsTypeKHR::eObject,
+			&tlasScratchSize);
 
-		bindAccelerationStructure(dev, tlasBuffer, _topLevelAS.get(), dynamicDispatcher);
-
-
-		vma::UniqueBuffer tlasScratchBuffer = createAccelerationStructure(
-			dev, allocator, dynamicDispatcher,
-			_topLevelAS.get(),
-			vk::AccelerationStructureMemoryRequirementsTypeKHR::eBuildScratch);
-
+		vma::UniqueBuffer tlasScratchBuffer = createScratchBuffer(tlasScratchSize, allocator);
 
 		std::vector<vk::AccelerationStructureInstanceKHR> geometryInstances;
-		
+		//geometryInstances.reserve(tlas.size());
+
 		for (const auto& inst : tlas)
 		{
 			vk::DeviceAddress blasAddress = allBlasHandle[inst.blasId];
@@ -436,9 +433,10 @@ public:
 			geometryInstances.push_back(acInstance);
 		}
 
+
 		instance = createMappedBuffer(
-			dev, geometryInstances.data(), 
-			sizeof(vk::AccelerationStructureInstanceKHR) * geometryInstances.size(), 
+			dev, geometryInstances.data(),
+			sizeof(vk::AccelerationStructureInstanceKHR) * geometryInstances.size(),
 			allocator, dynamicDispatcher);
 
 		vk::AccelerationStructureGeometryKHR tlasAccelerationGeometry;
@@ -558,7 +556,7 @@ public:
 		lightsUniformBuffer = allocator.createTypedBuffer<shader::Reservoir>(1, vk::BufferUsageFlagBits::eStorageBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU);
 	}
 
-	void updateCameraUniform(Camera& _camera) 
+	void updateCameraUniform(Camera& _camera)
 	{
 		auto* cameraUniformBegin = cameraUniformBuffer.mapAs<shader::LightingPassUniforms>();
 		cameraUniformBegin->cameraPos = _camera.position;
@@ -566,11 +564,11 @@ public:
 		cameraUniformBuffer.flush();
 	}
 
-	void updateLightsUniform() 
+	void updateLightsUniform()
 	{
 		auto* lightsUniformBegin = lightsUniformBuffer.mapAs<shader::Reservoir>();
 		int cnt = 0;
-		for (shader::LightSample light : lightsUniformBegin->samples) 
+		for (shader::LightSample light : lightsUniformBegin->samples)
 		{
 			//light.emission = vec4(1.0f, 1.0f, 1.0f, 1.0f);
 			light.position = vec4(cnt * 2.0f, cnt * 1.0f, cnt * 1.0f, 1.0f);
@@ -590,6 +588,14 @@ public:
 	void setDispatchLoaderDynamic(vk::DispatchLoaderDynamic& dld)
 	{
 		_dld = dld;
+	}
+
+	void destroyAllocations(vma::Allocator& allocator) 
+	{
+		for (int i = 0; i < asAllocation.size(); i++) 
+		{
+			allocator.freeMemory(asAllocation.at(i));
+		}
 	}
 
 	//vk::DescriptorSet descriptorSet;
@@ -666,9 +672,9 @@ protected:
 		storageImageLayoutBinding.descriptorCount = 1;
 		storageImageLayoutBinding.stageFlags = vk::ShaderStageFlagBits::eRaygenKHR;
 
-		
 
-		std::array<vk::DescriptorSetLayoutBinding, 4> bindings{ 
+
+		std::array<vk::DescriptorSetLayoutBinding, 4> bindings{
 			accelerationStructureLayoutBinding,
 			vk::DescriptorSetLayoutBinding(1, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eRaygenKHR),
 			vk::DescriptorSetLayoutBinding(2, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eRaygenKHR),
@@ -679,7 +685,7 @@ protected:
 		layoutInfo.setBindings(bindings);
 		_descriptorSetLayout = dev.createDescriptorSetLayoutUnique(layoutInfo);
 
-		std::array<vk::DescriptorSetLayout, 1> descriptorLayouts{ _descriptorSetLayout.get()};
+		std::array<vk::DescriptorSetLayout, 1> descriptorLayouts{ _descriptorSetLayout.get() };
 
 		vk::PipelineLayoutCreateInfo pipelineLayoutInfo;
 		pipelineLayoutInfo.setSetLayouts(descriptorLayouts);
@@ -698,13 +704,17 @@ private:
 	vma::UniqueBuffer instance;
 	vma::UniqueBuffer cameraUniformBuffer;
 	vma::UniqueBuffer lightsUniformBuffer;
+	std::vector<vk::DeviceMemory> memories;
 
 	// Acceleration Structure
 	vk::UniqueHandle<vk::AccelerationStructureKHR, vk::DispatchLoaderDynamic> _bottomLevelAS;
 	std::vector<vk::UniqueHandle<vk::AccelerationStructureKHR, vk::DispatchLoaderDynamic>> _allBlas;
+	uint64_t _bottomLevelASHandle;
 	vk::UniqueHandle<vk::AccelerationStructureKHR, vk::DispatchLoaderDynamic> _topLevelAS;
 
 	vk::DispatchLoaderDynamic _dld;
+
+	std::vector<VmaAllocation> asAllocation;
 
 	// Offscreen buffer
 	vma::UniqueImage _offscreenBuffer;
@@ -735,7 +745,6 @@ private:
 
 		return memoryRequirements2.memoryRequirements;
 	}
-
 
 	void InsertCommandImageBarrier(vk::CommandBuffer commandBuffer,
 		vk::Image image,
@@ -772,60 +781,84 @@ private:
 		throw std::runtime_error("failed to find suitable memory type!");
 	}
 
-	vma::UniqueBuffer createAccelerationStructure(
-		vk::Device dev,
-		vma::Allocator& allocator, 
-		vk::DispatchLoaderDynamic dld,
-		vk::AccelerationStructureKHR ac,
-		vk::AccelerationStructureMemoryRequirementsTypeKHR memoryType
-	)
+	void BindAccelerationMemory(vk::Device dev, vk::AccelerationStructureKHR acceleration, vk::DeviceMemory memory, vk::DispatchLoaderDynamic dld)
 	{
-		vk::MemoryRequirements asRequirements = GetAccelerationStructureMemoryRequirements(
-			dev, ac, memoryType, dld
-		);
-
-		vk::BufferCreateInfo asBufferInfo;
-		asBufferInfo
-			.setPNext(nullptr)
-			.setSize(asRequirements.size)
-			.setUsage(vk::BufferUsageFlagBits::eRayTracingKHR | vk::BufferUsageFlagBits::eShaderDeviceAddress)
-			.setSharingMode(vk::SharingMode::eExclusive)
-			.setQueueFamilyIndexCount(0)
-			.setPQueueFamilyIndices(nullptr);
-
-		VmaAllocationCreateInfo allocationInfo{};
-		allocationInfo.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
-		allocationInfo.memoryTypeBits = asRequirements.memoryTypeBits;
-
-		vma::UniqueBuffer blObjectBuffer = allocator.createBuffer(asBufferInfo, allocationInfo);
-
-		return blObjectBuffer;
-	}
-
-	void bindAccelerationStructure(
-		vk::Device dev,
-		vma::UniqueBuffer& acBuffer,
-		vk::AccelerationStructureKHR ac,
-		vk::DispatchLoaderDynamic dld
-	) 
-	{
-		VmaAllocationInfo blasAllocationInfo;
-		acBuffer.getAllocInfo(&blasAllocationInfo);
-
 		vk::BindAccelerationStructureMemoryInfoKHR accelerationMemoryBindInfo;
 		accelerationMemoryBindInfo
-			.setAccelerationStructure(ac)
-			.setMemory(static_cast<vk::DeviceMemory>(blasAllocationInfo.deviceMemory))
+			.setAccelerationStructure(acceleration)
+			.setMemory(memory)
 			.setMemoryOffset(0)
 			.setDeviceIndexCount(0)
 			.setPDeviceIndices(nullptr);
 		dev.bindAccelerationStructureMemoryKHR(accelerationMemoryBindInfo, dld);
 	}
 
+	void createAccelerationStructure(
+		vk::Device dev,
+		vk::PhysicalDevice pd,
+		vma::Allocator& allocator,
+		vk::DispatchLoaderDynamic dld,
+		vk::AccelerationStructureKHR ac,
+		vk::AccelerationStructureMemoryRequirementsTypeKHR memoryType,
+		vk::DeviceSize* size
+	) {
+		vk::MemoryRequirements asRequirements = GetAccelerationStructureMemoryRequirements(
+			dev, ac, memoryType, dld
+		);
+
+		*size = asRequirements.size;
+
+		vk::BufferCreateInfo asBufferInfo;
+		asBufferInfo
+			.setSize(asRequirements.size)
+			.setUsage(vk::BufferUsageFlagBits::eRayTracingKHR | vk::BufferUsageFlagBits::eShaderDeviceAddress)
+			.setSharingMode(vk::SharingMode::eExclusive);
+
+		vk::UniqueBuffer tmpbuffer = dev.createBufferUnique(asBufferInfo, nullptr);
+		vk::MemoryRequirements bufRequirements = dev.getBufferMemoryRequirements(tmpbuffer.get());
+		uint32_t allocationMemoryBits = bufRequirements.memoryTypeBits | asRequirements.memoryTypeBits;
+
+		VmaAllocationCreateInfo allocationInfo{};
+		allocationInfo.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
+
+		VmaAllocation allocation = nullptr;
+		VmaAllocationInfo allocationDetail;
+
+		vkCheck(allocator.allocateMemory(asRequirements, allocation, allocationDetail, allocationInfo));
+
+		vk::BindAccelerationStructureMemoryInfoKHR accelerationMemoryBindInfo;
+		accelerationMemoryBindInfo
+			.setAccelerationStructure(ac)
+			.setMemory(static_cast<vk::DeviceMemory>(allocationDetail.deviceMemory))
+			.setMemoryOffset(allocationDetail.offset);
+
+		dev.bindAccelerationStructureMemoryKHR(accelerationMemoryBindInfo, dld);
+
+		asAllocation.push_back(allocation);
+	}
+
+
+	vma::UniqueBuffer createScratchBuffer(vk::DeviceSize size, vma::Allocator& allocator) 
+	{
+		VK_BUFFER_USAGE_RAY_TRACING_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+		vk::BufferCreateInfo bufferInfo;
+		bufferInfo
+			.setSize(size)
+			.setUsage(vk::BufferUsageFlagBits::eRayTracingKHR |
+				vk::BufferUsageFlagBits::eShaderDeviceAddress |
+				vk::BufferUsageFlagBits::eTransferDst);
+		VmaAllocationCreateInfo allocInfo{};
+		allocInfo.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
+
+		vma::UniqueBuffer scratchBuffer = allocator.createBuffer(bufferInfo, allocInfo);
+
+		return scratchBuffer;
+	}
+	
 	vma::UniqueBuffer createMappedBuffer(
 		vk::Device& dev,
-		void* srcData, 
-		uint32_t byteLength, 
+		void* srcData,
+		uint32_t byteLength,
 		vma::Allocator& allocator,
 		vk::DispatchLoaderDynamic dld
 	)
