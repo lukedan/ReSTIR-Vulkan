@@ -160,7 +160,7 @@ void GBufferPass::initializeResourcesFor(
 	const nvh::GltfScene &targetScene, const SceneBuffers &buffers, vk::UniqueDevice& device, Resources &sets
 ) {
 	std::vector<vk::WriteDescriptorSet> bufferWrite;
-	bufferWrite.reserve(2 + 3 * targetScene.m_materials.size());
+	bufferWrite.reserve(2 + 4 * targetScene.m_materials.size());
 
 	std::array<vk::DescriptorBufferInfo, 1> uniformBufferInfo{
 		vk::DescriptorBufferInfo(sets.uniformBuffer.get(), 0, sizeof(Uniforms))
@@ -199,11 +199,23 @@ void GBufferPass::initializeResourcesFor(
 		vk::DescriptorSet set = sets.materialTexturesDescriptors[i].get();
 		const nvh::GltfMaterial &mat = targetScene.m_materials[i];
 
-		bufferWrite.emplace_back()
-			.setDstSet(set)
-			.setDstBinding(0)
-			.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
-			.setImageInfo(mat.pbrBaseColorTexture >= 0 ? materialTextureInfo[mat.pbrBaseColorTexture] : defaultWhiteInfo);
+		switch (mat.shadingModel) {
+		case SHADING_MODEL_METALLIC_ROUGHNESS:
+			bufferWrite.emplace_back()
+				.setDstSet(set)
+				.setDstBinding(0)
+				.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
+				.setImageInfo(mat.pbrBaseColorTexture >= 0 ? materialTextureInfo[mat.pbrBaseColorTexture] : defaultWhiteInfo);
+			break;
+		case SHADING_MODEL_SPECULAR_GLOSSINESS:
+			bufferWrite.emplace_back()
+				.setDstSet(set)
+				.setDstBinding(0)
+				.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
+				.setImageInfo(mat.khrDiffuseTexture >= 0 ? materialTextureInfo[mat.khrDiffuseTexture] : defaultWhiteInfo);
+			break;
+		}
+
 		bufferWrite.emplace_back()
 			.setDstSet(set)
 			.setDstBinding(1)
@@ -225,6 +237,12 @@ void GBufferPass::initializeResourcesFor(
 				.setImageInfo(mat.khrSpecularGlossinessTexture >= 0 ? materialTextureInfo[mat.khrSpecularGlossinessTexture] : defaultWhiteInfo);
 			break;
 		}
+
+		bufferWrite.emplace_back()
+			.setDstSet(set)
+			.setDstBinding(3)
+			.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
+			.setImageInfo(mat.emissiveTexture >= 0 ? materialTextureInfo[mat.emissiveTexture] : defaultWhiteInfo);
 	}
 
 	device.get().updateDescriptorSets(bufferWrite, {});
@@ -388,10 +406,11 @@ void GBufferPass::_initialize(vk::Device dev) {
 	materialDescriptorSetInfo.setBindings(materialDescriptorBindings);
 	_materialDescriptorSetLayout = dev.createDescriptorSetLayoutUnique(materialDescriptorSetInfo);
 
-	std::array<vk::DescriptorSetLayoutBinding, 3> textureDescriptorBindings{
+	std::array<vk::DescriptorSetLayoutBinding, 4> textureDescriptorBindings{
 		vk::DescriptorSetLayoutBinding(0, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment),
 		vk::DescriptorSetLayoutBinding(1, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment),
-		vk::DescriptorSetLayoutBinding(2, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment)
+		vk::DescriptorSetLayoutBinding(2, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment),
+		vk::DescriptorSetLayoutBinding(3, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment)
 	};
 	vk::DescriptorSetLayoutCreateInfo textureDescriptorSetInfo;
 	textureDescriptorSetInfo.setBindings(textureDescriptorBindings);
