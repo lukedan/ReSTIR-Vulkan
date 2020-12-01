@@ -568,7 +568,6 @@ App::~App() {
 	ImGui_ImplVulkan_Shutdown();
 	ImGui_ImplGlfw_Shutdown();
 	ImGui::DestroyContext();
-	_rtPass.freeDeviceMemory(_device.get());
 }
 
 void App::updateGui() {

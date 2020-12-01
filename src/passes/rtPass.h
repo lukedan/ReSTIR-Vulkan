@@ -38,13 +38,6 @@ public:
 		return _descriptorSetLayout.get();
 	}
 
-	void freeDeviceMemory(vk::Device dev) 
-	{
-		for (int i = 0; i < memories.size(); i++) 
-		{
-			dev.freeMemory(memories.at(i));
-		}
-	}
 
 	void issueCommands(vk::CommandBuffer commandBuffer, vk::Extent2D extent, vk::DispatchLoaderDynamic dld) {
 		commandBuffer.pipelineBarrier(
@@ -209,8 +202,6 @@ public:
 
 		VmaAllocationInfo sbtAllocationInfo;
 		_shaderBindingTable.getAllocInfo(&sbtAllocationInfo);
-
-		memories.push_back(sbtAllocationInfo.deviceMemory);
 
 		// Set shader info
 		uint8_t* dstData = _shaderBindingTable.mapAs<uint8_t>();
@@ -707,7 +698,6 @@ private:
 	vma::UniqueBuffer instance;
 	vma::UniqueBuffer cameraUniformBuffer;
 	vma::UniqueBuffer lightsUniformBuffer;
-	std::vector<vk::DeviceMemory> memories;
 
 	// Acceleration Structure
 	vk::UniqueHandle<vk::AccelerationStructureKHR, vk::DispatchLoaderDynamic> _bottomLevelAS;
