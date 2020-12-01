@@ -88,4 +88,6 @@ void main() {
 			);
 		}
 	}
+
+	outColor = pow(outColor, vec3(1.0f / uniforms.gamma));
 }
