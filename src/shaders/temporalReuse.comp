@@ -66,6 +66,7 @@ void main() {
 	if (dot(albedoDiff, albedoDiff) > 0.01f) {
 		return;
 	}
+	float albedoLum = luminance(albedo.r, albedo.g, albedo.b);
 
 	vec3 normal = texelFetch(uniNormal, ivec2(pixelCoord), 0).xyz;
 	float normalDot = dot(normal, texelFetch(uniPrevFrameNormal, prevFrag, 0).xyz);
@@ -85,13 +86,12 @@ void main() {
 
 	vec2 metallicRoughness = texelFetch(uniMaterialProperties, ivec2(pixelCoord), 0).xy;
 
-	vec4 pHat[RESERVOIR_SIZE];
+	float pHat[RESERVOIR_SIZE];
 	for (int i = 0; i < RESERVOIR_SIZE; ++i) {
-		pHat[i].rgb = evaluatePHat(
-			worldPos, prevRes.samples[i].position.xyz, uniforms.cameraPos.xyz,
-			normal, albedo, prevRes.samples[i].emission.rgb, metallicRoughness.x, metallicRoughness.y
+		pHat[i] = evaluatePHat(
+			worldPos, prevRes.samples[i].position_emissionLum.xyz, uniforms.cameraPos.xyz,
+			normal, albedoLum, prevRes.samples[i].position_emissionLum.w, metallicRoughness.x, metallicRoughness.y
 		);
-		pHat[i].w = luminance(pHat[i].r, pHat[i].g, pHat[i].b);
 	}
 
 	combineReservoirs(res, prevRes, pHat, rand);

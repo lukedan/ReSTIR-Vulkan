@@ -23,6 +23,10 @@ layout (binding = 6) buffer PointLights {
 	int count;
 	pointLight lights[];
 } pointLights;
+layout (binding = 7) buffer TriangleLights {
+	int count;
+	triLight lights[];
+} triangleLights;
 
 layout (location = 0) in vec2 inUv;
 
@@ -47,7 +51,18 @@ void main() {
 		Reservoir reservoir = reservoirs[pixelCoord.y * uniforms.bufferSize.x + pixelCoord.x];
 		outColor = vec3(0.0f);
 		for (int i = 0; i < RESERVOIR_SIZE; ++i) {
-			outColor += reservoir.samples[i].pHat.xyz * reservoir.samples[i].w;
+			vec3 emission;
+			int lightIndex = reservoir.samples[i].lightIndex;
+			if (lightIndex < 0) {
+				emission = triangleLights.lights[-1 - lightIndex].emission_luminance.rgb;
+			} else {
+				emission = pointLights.lights[lightIndex].color_luminance.rgb;
+			}
+			vec3 pHat = evaluatePHatFull(
+				worldPos, reservoir.samples[i].position_emissionLum.xyz, uniforms.cameraPos.xyz, normal,
+				albedo.rgb, emission, materialProps.x, materialProps.y
+			);
+			outColor += pHat * reservoir.samples[i].w;
 		}
 		outColor /= RESERVOIR_SIZE;
 		if (albedo.w > 0.5f) {
@@ -67,9 +82,9 @@ void main() {
 
 		outColor = vec3(0.0f);
 		for (int i = 0; i < pointLights.count; ++i) {
-			outColor += evaluatePHat(
+			outColor += evaluatePHatFull(
 				worldPos, pointLights.lights[i].pos.xyz, uniforms.cameraPos.xyz, normal,
-				albedo.xyz, pointLights.lights[i].color.xyz, roughness, metallic
+				albedo.rgb, pointLights.lights[i].color_luminance.rgb, roughness, metallic
 			);
 		}
 	}

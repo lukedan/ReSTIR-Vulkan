@@ -56,7 +56,9 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 #endif
 	};
 	std::vector<const char*> requiredLayers{
+#ifndef NDEBUG
 		"VK_LAYER_KHRONOS_validation"
+#endif
 	};
 
 	vk::PhysicalDeviceRayTracingFeaturesKHR raytracingFeature;
