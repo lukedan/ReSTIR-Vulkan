@@ -576,6 +576,8 @@ void App::updateGui() {
 	ImGui_ImplGlfw_NewFrame();
 	ImGui::NewFrame();
 
+	ImGui::PushItemWidth(ImGui::GetContentRegionAvailWidth() / 2.0f);
+
 	const char *debugModes[]{
 		"None",
 		"Albedo",
@@ -586,6 +588,12 @@ void App::updateGui() {
 	};
 	_debugModeChanged = ImGui::Combo("Debug Mode", &_debugMode, debugModes, IM_ARRAYSIZE(debugModes));
 
+	ImGui::Separator();
+
+	ImGui::SliderInt("Initial Light Samples (log2)", &_log2InitialLightSamples, 0, 10);
+
+	ImGui::Separator();
+
 	const char *visibilityTestMethods[]{
 		"Disabled",
 		"Software",
@@ -595,7 +603,14 @@ void App::updateGui() {
 		"Visibility Test", reinterpret_cast<int*>(&_visibilityTestMethod),
 		visibilityTestMethods, IM_ARRAYSIZE(visibilityTestMethods)
 	) || _renderPathChanged;
+
+	ImGui::Separator();
+
 	_renderPathChanged = ImGui::Checkbox("Use Temporal Reuse", &_enableTemporalReuse) || _renderPathChanged;
+	ImGui::SliderInt("Temporal Sample Count Clamping", &_temporalReuseSampleMultiplier, 0.0f, 100.0f);
+
+	ImGui::Separator();
+
 	_renderPathChanged = ImGui::SliderInt("Spatial Reuse Iterations", &_spatialReuseIterations, 0, 10) || _renderPathChanged;
 	_renderPathChanged = ImGui::SliderFloat("Depth Threshold", &posThreshold, 0.0, 1.0) || _renderPathChanged;
 	_renderPathChanged = ImGui::SliderFloat("Normal Threshold", &norThreshold, 5.0, 45.0) || _renderPathChanged;
@@ -693,7 +708,9 @@ void App::mainLoop() {
 
 			auto *restirUniforms = _restirUniformBuffer.mapAs<shader::RestirUniforms>();
 			++restirUniforms->frame;
+			restirUniforms->initialLightSampleCount = 1 << _log2InitialLightSamples;
 			restirUniforms->prevFrameProjectionViewMatrix = prevFrameProjectionView;
+			restirUniforms->temporalSampleCountMultiplier = _temporalReuseSampleMultiplier;
 
 			if (_cameraUpdated || _debugModeChanged) {
 				_graphicsComputeQueue.waitIdle();

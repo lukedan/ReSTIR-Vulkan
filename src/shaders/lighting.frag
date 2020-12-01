@@ -42,7 +42,6 @@ void main() {
 	vec2 materialProps = texture(uniMaterialProperties, inUv).xy;
 	vec3 worldPos = texture(uniWorldPosition, inUv).xyz;
 
-	// No Monte-Carlo rendering 
 	if (uniforms.debugMode == GBUFFER_DEBUG_NONE) {
 		uvec2 pixelCoord = uvec2(gl_FragCoord.xy);
 		Reservoir reservoir = reservoirs[pixelCoord.y * uniforms.bufferSize.x + pixelCoord.x];
@@ -51,6 +50,9 @@ void main() {
 			outColor += reservoir.samples[i].pHat.xyz * reservoir.samples[i].w;
 		}
 		outColor /= RESERVOIR_SIZE;
+		if (albedo.w > 0.5f) {
+			outColor = albedo.xyz;
+		}
 	} else if (uniforms.debugMode == GBUFFER_DEBUG_ALBEDO) {
 		outColor = albedo.rgb;
 	} else if (uniforms.debugMode == GBUFFER_DEBUG_NORMAL) {
