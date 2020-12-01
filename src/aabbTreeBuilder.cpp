@@ -117,9 +117,11 @@ AabbTree AabbTree::build(const nvh::GltfScene &scene) {
 						centroidMax = nvmath::nv_max(centroidMax, cur.centroid);
 						aabbMin = nvmath::nv_min(aabbMin, cur.aabbMin);
 						aabbMax = nvmath::nv_max(aabbMax, cur.aabbMax);
+						/*
 						if (abs(aabbMin.x) > 1000) {
 							__debugbreak();
 						}
+						*/
 					}
 					outerHeuristic = surfaceAreaHeuristic(aabbMin, aabbMax);
 				}

@@ -11,6 +11,7 @@ layout (set = 2, binding = 0) uniform Material {
 layout (set = 3, binding = 0) uniform sampler2D uniAlbedo;
 layout (set = 3, binding = 1) uniform sampler2D uniNormal;
 layout (set = 3, binding = 2) uniform sampler2D uniMaterial;
+layout (set = 3, binding = 3) uniform sampler2D uniEmissiveTexture;
 
 layout (location = 0) in vec3 inPosition;
 layout (location = 1) in vec3 inNormal;
@@ -71,7 +72,7 @@ void main() {
 	
 	if (length(material.emissiveFactor.xyz) > 0.0) {
 		// Emissive material
-		outAlbedo.xyz = material.emissiveFactor.xyz;
+		outAlbedo.xyz = material.colorParam.rgb * material.emissiveFactor.xyz * texture(uniEmissiveTexture, inUv).rgb;
 		outAlbedo.w = 1.0;
 	} else {
 		outAlbedo.w = 0.0;
