@@ -29,6 +29,7 @@ layout (binding = 7) buffer TriangleLights {
 
 layout (binding = 8) buffer AliasTable{
 	int count;
+	int padding[3];
 	aliasTableColumn aliasCol[];
 } aliasTable;
 
@@ -38,15 +39,16 @@ vec3 pickPointOnTriangle(float r1, float r2, vec3 p1, vec3 p2, vec3 p3) {
     return (1.0 - sqrt_r1) * p1 + (sqrt_r1 * (1.0 - r2)) * p2 + (r2 * sqrt_r1) * p3;
 }
 
-int aliasTableSample(float r1, float r2){
-	int selected_column = int(aliasTable.count * r1);
-	int selected_sample = -1;
-	if(aliasTable.aliasCol[selected_column].prob > r2){
-		selected_sample = selected_column;
-	}else{
-		selected_sample = aliasTable.aliasCol[selected_column].alias;
+void aliasTableSample(float r1, float r2, out int index, out float probability) {
+	int selected_column = min(int(aliasTable.count * r1), aliasTable.count - 1);
+	aliasTableColumn col = aliasTable.aliasCol[selected_column];
+	if (col.prob > r2) {
+		index = selected_column;
+		probability = col.oriProb;
+	} else {
+		index = col.alias;
+		probability = col.aliasOriProb;
 	}
-	return selected_sample;
 }
 
 void main() {
@@ -65,17 +67,17 @@ void main() {
 	Reservoir res = newReservoir();
 	Rand rand = seedRand(uniforms.frame * 31, pixelCoord.y * 10007 + pixelCoord.x);
 	for (int i = 0; i < uniforms.initialLightSampleCount; ++i) {			
-		int selected_idx = aliasTableSample(randFloat(rand), randFloat(rand));
+		int selected_idx;
+		float lightSampleProb;
+		aliasTableSample(randFloat(rand), randFloat(rand), selected_idx, lightSampleProb);
 
 		vec3 lightSamplePos;
 		float lightSampleLuminance;
-		float lightSampleProb;
 		int lightSampleIndex;
 		if (pointLights.count != 0) {
 			pointLight light = pointLights.lights[selected_idx];
 			lightSamplePos = light.pos.xyz;
 			lightSampleLuminance = light.color_luminance.w;
-			lightSampleProb = aliasTable.aliasCol[selected_idx].oriProb;
 			lightSampleIndex = selected_idx;
 		} else {
 			triLight light = triangleLights.lights[selected_idx];
@@ -85,7 +87,7 @@ void main() {
 
 			vec3 wi = normalize(worldPos - lightSamplePos);
 			vec3 normal = light.normalArea.xyz;
-			lightSampleProb = aliasTable.aliasCol[selected_idx].oriProb / (abs(dot(wi, normal)) * light.normalArea.w);
+			lightSampleProb /= abs(dot(wi, normal)) * light.normalArea.w;
 		}
 		
 		float pHat = evaluatePHat(

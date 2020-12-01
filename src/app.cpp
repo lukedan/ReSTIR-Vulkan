@@ -739,6 +739,9 @@ void App::mainLoop() {
 			} else if (_renderPathChanged) {
 				_updateThresholdBuffers();
 				_recordMainCommandBuffers();
+				restirUniforms->frame = 0;
+
+				_renderPathChanged = false;
 			}
 
 			_restirUniformBuffer.unmap();

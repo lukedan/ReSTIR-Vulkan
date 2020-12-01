@@ -475,12 +475,18 @@ std::vector<shader::triLight> collectTriangleLightsFromScene(const nvh::GltfScen
 		int g = biggerThanOneQueue.front();
 		biggerThanOneQueue.pop();
 		result[g].prob = 1.f;
+		result[g].alias = g;
 	}
 
 	while (!smallerThanOneQueue.empty()) {
 		int l = smallerThanOneQueue.front();
 		smallerThanOneQueue.pop();
 		result[l].prob = 1.f;
+		result[l].alias = l;
+	}
+
+	for (shader::aliasTableColumn &col : result) {
+		col.aliasOriProb = result[col.alias].oriProb;
 	}
 
 	return result;

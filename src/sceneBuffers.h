@@ -114,7 +114,7 @@ public:
 		);
 		// Alias table
 		result._aliasTableBufferSize =
-			alignPreArrayBlock<shader::aliasTableColumn, int32_t>() +
+			alignPreArrayBlock<shader::aliasTableColumn, int32_t[4]>() +
 			sizeof(shader::aliasTableColumn) * aliasTable.size();
 		result._aliasTableBuffer = allocator.createBuffer(
 			static_cast<uint32_t>(result._aliasTableBufferSize),
@@ -261,7 +261,7 @@ public:
 		int32_t* aliasTablePtr = result._aliasTableBuffer.mapAs<int32_t>();
 		*aliasTablePtr = aliasTable.size();
 		auto* aliasTableContentPtr = reinterpret_cast<shader::aliasTableColumn*>(
-			reinterpret_cast<uintptr_t>(aliasTablePtr) + alignPreArrayBlock<shader::aliasTableColumn, int32_t>()
+			reinterpret_cast<uintptr_t>(aliasTablePtr) + alignPreArrayBlock<shader::aliasTableColumn, int32_t[4]>()
 			);
 		std::memcpy(aliasTableContentPtr, aliasTable.data(), sizeof(shader::aliasTableColumn) * aliasTable.size());
 		result._aliasTableBuffer.unmap();
