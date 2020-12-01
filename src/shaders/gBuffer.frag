@@ -72,7 +72,7 @@ void main() {
 	
 	if (length(material.emissiveFactor.xyz) > 0.0) {
 		// Emissive material
-		outAlbedo.xyz = outAlbedo.xyz * material.emissiveFactor.xyz * texture(uniEmissiveTexture, inUv).rgb;
+		outAlbedo.xyz = material.colorParam.rgb * material.emissiveFactor.xyz * texture(uniEmissiveTexture, inUv).rgb;
 		outAlbedo.w = 1.0;
 	} else {
 		outAlbedo.w = 0.0;
