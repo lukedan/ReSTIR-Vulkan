@@ -586,10 +586,11 @@ void App::updateGui() {
 	const char *debugModes[]{
 		"None",
 		"Albedo",
+		"Emission",
 		"Normal",
 		"MaterialProperties",
 		"WorldPosition",
-		"DisneyBRDF"
+		"Naive Point Light Visualization"
 	};
 	_viewParamChanged = ImGui::Combo("Debug Mode", &_debugMode, debugModes, IM_ARRAYSIZE(debugModes)) || _viewParamChanged;
 	_viewParamChanged = ImGui::SliderFloat("Gamma", &_gamma, 1.0f, 5.0f) || _viewParamChanged;

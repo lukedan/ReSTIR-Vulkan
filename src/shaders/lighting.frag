@@ -69,14 +69,24 @@ void main() {
 			outColor = albedo.xyz;
 		}
 	} else if (uniforms.debugMode == GBUFFER_DEBUG_ALBEDO) {
-		outColor = albedo.rgb;
+		if (albedo.a < 0.5f) {
+			outColor = albedo.rgb;
+		} else {
+			outColor = vec3(0.0f);
+		}
+	} else if (uniforms.debugMode == GBUFFER_DEBUG_EMISSION) {
+		if (albedo.a > 0.5f) {
+			outColor = albedo.rgb;
+		} else {
+			outColor = vec3(0.0f);
+		}
 	} else if (uniforms.debugMode == GBUFFER_DEBUG_NORMAL) {
 		outColor = (vec3(normal) + 1.0f) * 0.5f;
 	} else if (uniforms.debugMode == GBUFFER_DEBUG_MATERIAL_PROPERTIES) {
 		outColor = vec3(materialProps, 1.0f);
 	} else if (uniforms.debugMode == GBUFFER_DEBUG_WORLD_POSITION) {
 		outColor = worldPos / 10.0f + 0.5f;
-	} else if (uniforms.debugMode == GBUFFER_DEBUG_DISNEY_BRDF) {
+	} else if (uniforms.debugMode == GBUFFER_DEBUG_NAIVE_POINT_LIGHT_NO_SHADOW) {
 		float roughness = materialProps.r;
 		float metallic = materialProps.g;
 
