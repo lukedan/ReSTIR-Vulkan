@@ -3,6 +3,8 @@
 /*#define RENDERDOC_CAPTURE*/
 
 #define VK_ENABLE_BETA_EXTENSIONS
+
+#define ONE_SHADER
 #include "misc.h"
 #include "vma.h"
 #include "glfwWindow.h"
@@ -142,6 +144,8 @@ protected:
 
 	RtPass _rtPass;
 	std::array<vk::UniqueDescriptorSet, numGBuffers> _rtPassDescriptors;
+	std::array<vk::UniqueDescriptorSet, numGBuffers> _rtPassLightSampleDescriptors;
+	std::array<vk::UniqueDescriptorSet, numGBuffers> _rtPassTemporalDescriptors;
 
 	ImGuiPass _imguiPass;
 
@@ -217,12 +221,18 @@ protected:
 			_lightSamplePass.descriptorSet = _lightSampleDescriptors[i].get();
 			_swVisibilityTestPass.descriptorSet = _swVisibilityTestDescriptors[i].get();
 			_rtPass.descriptorSet = _rtPassDescriptors[i].get();
+			_rtPass.lightSampleDescriptorSet = _rtPassLightSampleDescriptors[i].get();
+			_rtPass.temporalDescriptorSet = _rtPassTemporalDescriptors[i].get();
 			_temporalReusePass.descriptorSet = _temporalReuseDescriptors[i].get();
 
 			vk::CommandBufferBeginInfo beginInfo;
 			_mainCommandBuffers[i]->begin(beginInfo);
 
 			_gBufferPass.issueCommands(_mainCommandBuffers[i].get(), _gBuffers[i].getFramebuffer());
+
+#ifdef ONE_SHADER
+			_rtPass.issueCommands(_mainCommandBuffers[i].get(), _swapchain.getImageExtent(), _dynamicDispatcher);
+#else
 			_lightSamplePass.issueCommands(_mainCommandBuffers[i].get(), nullptr);
 			switch (_visibilityTestMethod) {
 			case VisibilityTestMethod::software:
@@ -237,6 +247,7 @@ protected:
 			if (_enableTemporalReuse) {
 				_temporalReusePass.issueCommands(_mainCommandBuffers[i].get(), nullptr);
 			}
+#endif
 			for (int j = 0; j < _spatialReuseIterations; ++j) {
 				_spatialReusePass.descriptorSet = _spatialReuseDescriptors[i].get();
 				_spatialReusePass.issueCommands(_mainCommandBuffers[i].get(), nullptr);
@@ -290,6 +301,15 @@ protected:
 				_gBuffers[i], _restirUniformBuffer.get(), _reservoirBuffers[i].get(), _reservoirBufferSize,
 				_rtPassDescriptors[i].get(),
 				_dynamicDispatcher
+			);
+			_rtPass.initializeLightSampleDescriptorSetFor(
+				_gBuffers[i], _sceneBuffers, _restirUniformBuffer.get(), _reservoirBuffers[i].get(), _reservoirBufferSize,
+				_device.get(), _rtPassLightSampleDescriptors[i].get()
+			);
+			_rtPass.initializeTemporalDescriptorSetFor(
+				_gBuffers[i], _gBuffers[(i + numGBuffers - 1) % numGBuffers], _restirUniformBuffer.get(),
+				_reservoirBuffers[i].get(), _reservoirBuffers[(i + numGBuffers - 1) % numGBuffers].get(), _reservoirBufferSize,
+				_device.get(), _rtPassTemporalDescriptors[i].get()
 			);
 #endif
 

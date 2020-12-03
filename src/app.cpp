@@ -278,10 +278,10 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 	// loadScene("../../../scenes/boxTextured/boxTextured.gltf", _gltfScene);
 	// loadScene("../../../scenes/duck/Duck.gltf", _gltfScene);
 	// loadScene("../../../scenes/fish/BarramundiFish.gltf", _gltfScene);
-	// loadScene("../../../scenes/Sponza/glTF/Sponza.gltf", _gltfScene);
+	 loadScene("../../../scenes/Sponza/glTF/Sponza.gltf", _gltfScene);
 	// loadScene("../../../scenes/office/scene.gltf", _gltfScene);
 	// loadScene("../../../scenes/C4DScenes/BistroInterior.gltf", _gltfScene);
-	loadScene("../../../scenes/C4DScenes/BistroExterior.gltf", _gltfScene);
+	//loadScene("../../../scenes/C4DScenes/BistroExterior.gltf", _gltfScene);
 
 	{ // create descriptor pools
 		std::array<vk::DescriptorPoolSize, 6> staticPoolSizes{
@@ -480,6 +480,26 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 			.setSetLayouts(setLayouts);
 		auto newSets = _device->allocateDescriptorSetsUnique(allocInfo);
 		std::move(newSets.begin(), newSets.end(), _rtPassDescriptors.begin());
+	}
+	{
+		std::array<vk::DescriptorSetLayout, numGBuffers> setLayouts;
+		std::fill(setLayouts.begin(), setLayouts.end(), _rtPass.getLightSampleDescriptorSetLayout());
+		vk::DescriptorSetAllocateInfo allocInfo;
+		allocInfo
+			.setDescriptorPool(_staticDescriptorPool.get())
+			.setSetLayouts(setLayouts);
+		auto newSets = _device->allocateDescriptorSetsUnique(allocInfo);
+		std::move(newSets.begin(), newSets.end(), _rtPassLightSampleDescriptors.begin());
+	}
+	{
+		std::array<vk::DescriptorSetLayout, numGBuffers> setLayouts;
+		std::fill(setLayouts.begin(), setLayouts.end(), _rtPass.getTemporalDescriptorSetLayout());
+		vk::DescriptorSetAllocateInfo allocInfo;
+		allocInfo
+			.setDescriptorPool(_staticDescriptorPool.get())
+			.setSetLayouts(setLayouts);
+		auto newSets = _device->allocateDescriptorSetsUnique(allocInfo);
+		std::move(newSets.begin(), newSets.end(), _rtPassTemporalDescriptors.begin());
 	}
 #endif
 

@@ -36,7 +36,15 @@ public:
 	};
 
 	[[nodiscard]] vk::DescriptorSetLayout getDescriptorSetLayout() const {
-		return _descriptorSetLayout.get();
+		return _visibilityDescriptorSetLayout.get();
+	}
+
+	[[nodiscard]] vk::DescriptorSetLayout getLightSampleDescriptorSetLayout() const {
+		return _lightSampleDescriptorSetLayout.get();
+	}
+
+	[[nodiscard]] vk::DescriptorSetLayout getTemporalDescriptorSetLayout() const {
+		return _temporalDescriptorSetLayout.get();
 	}
 
 	void freeDeviceMemory(vk::Device dev)
@@ -55,7 +63,7 @@ public:
 		);
 
 		commandBuffer.bindPipeline(vk::PipelineBindPoint::eRayTracingKHR, _pipelines[0].get());
-		commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eRayTracingKHR, _pipelineLayout.get(), 0, { descriptorSet }, {});
+		commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eRayTracingKHR, _pipelineLayout.get(), 0, { descriptorSet, lightSampleDescriptorSet, temporalDescriptorSet }, {});
 		commandBuffer.traceRaysKHR(rayGenSBT, rayMissSBT, rayHitSBT, rayCallSBT, extent.width, extent.height, 1, dld);
 	}
 
@@ -179,6 +187,97 @@ public:
 			.setBufferInfo(restirUniformInfo);
 
 		dev.updateDescriptorSets(descriptorWrite, {}, dld);
+	}
+
+	void initializeLightSampleDescriptorSetFor(
+		const GBuffer& gbuffer, const SceneBuffers& scene, vk::Buffer uniformBuffer,
+		vk::Buffer reservoirBuffer, vk::DeviceSize reservoirBufferSize,
+		vk::Device device, vk::DescriptorSet set
+	) {
+		std::array<vk::WriteDescriptorSet, 6> writes;
+
+		vk::DescriptorImageInfo albedoImageInfo(_sampler.get(), gbuffer.getAlbedoView(), vk::ImageLayout::eShaderReadOnlyOptimal);
+		vk::DescriptorImageInfo normalImageInfo(_sampler.get(), gbuffer.getNormalView(), vk::ImageLayout::eShaderReadOnlyOptimal);
+		vk::DescriptorImageInfo materialPropsImageInfo(_sampler.get(), gbuffer.getMaterialPropertiesView(), vk::ImageLayout::eShaderReadOnlyOptimal);
+		vk::DescriptorBufferInfo pointLightBuffer(scene.getPtLights(), 0, scene.getPtLightsBufferSize());
+		vk::DescriptorBufferInfo triangleLightBuffer(scene.getTriLights(), 0, scene.getTriLightsBufferSize());
+		vk::DescriptorBufferInfo aliasTableBufferInfo(scene.getAliasTable(), 0, scene.getAliasTableBufferSize());
+
+		writes[0]
+			.setDstSet(set)
+			.setDstBinding(0)
+			.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
+			.setImageInfo(albedoImageInfo);
+		writes[1]
+			.setDstSet(set)
+			.setDstBinding(1)
+			.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
+			.setImageInfo(normalImageInfo);
+		writes[2]
+			.setDstSet(set)
+			.setDstBinding(2)
+			.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
+			.setImageInfo(materialPropsImageInfo);
+		writes[3]
+			.setDstSet(set)
+			.setDstBinding(3)
+			.setDescriptorType(vk::DescriptorType::eStorageBuffer)
+			.setBufferInfo(pointLightBuffer);
+		writes[4]
+			.setDstSet(set)
+			.setDstBinding(4)
+			.setDescriptorType(vk::DescriptorType::eStorageBuffer)
+			.setBufferInfo(triangleLightBuffer);
+		writes[5]
+			.setDstSet(set)
+			.setDstBinding(5)
+			.setDescriptorType(vk::DescriptorType::eStorageBuffer)
+			.setBufferInfo(aliasTableBufferInfo);
+
+		device.updateDescriptorSets(writes, {});
+	}
+
+	void initializeTemporalDescriptorSetFor(
+		const GBuffer& gbuffer, const GBuffer& prevFrameGBuffer, vk::Buffer uniformBuffer,
+		vk::Buffer reservoirBuffer, vk::Buffer prevFrameReservoirBuffer, vk::DeviceSize reservoirBufferSize,
+		vk::Device device, vk::DescriptorSet set
+	) {
+		std::array<vk::WriteDescriptorSet, 5> writes;
+
+		// currently no world position buffer, so use depth as a placeholder
+		vk::DescriptorImageInfo prevWorldPositionImageInfo(_sampler.get(), prevFrameGBuffer.getWorldPositionView(), vk::ImageLayout::eShaderReadOnlyOptimal);
+		vk::DescriptorImageInfo prevAlbedoImageInfo(_sampler.get(), prevFrameGBuffer.getAlbedoView(), vk::ImageLayout::eShaderReadOnlyOptimal);
+		vk::DescriptorImageInfo prevNormalImageInfo(_sampler.get(), prevFrameGBuffer.getNormalView(), vk::ImageLayout::eShaderReadOnlyOptimal);
+		vk::DescriptorImageInfo prevDepthImageInfo(_sampler.get(), prevFrameGBuffer.getDepthView(), vk::ImageLayout::eShaderReadOnlyOptimal);
+		vk::DescriptorBufferInfo prevReservoirInfo(prevFrameReservoirBuffer, 0, reservoirBufferSize);
+	
+		writes[0]
+			.setDstSet(set)
+			.setDstBinding(0)
+			.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
+			.setImageInfo(prevWorldPositionImageInfo);
+		writes[1]
+			.setDstSet(set)
+			.setDstBinding(1)
+			.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
+			.setImageInfo(prevAlbedoImageInfo);
+		writes[2]
+			.setDstSet(set)
+			.setDstBinding(2)
+			.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
+			.setImageInfo(prevNormalImageInfo);
+		writes[3]
+			.setDstSet(set)
+			.setDstBinding(3)
+			.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
+			.setImageInfo(prevDepthImageInfo);
+		writes[4]
+			.setDstSet(set)
+			.setDstBinding(4)
+			.setDescriptorType(vk::DescriptorType::eStorageBuffer)
+			.setBufferInfo(prevReservoirInfo);
+
+		device.updateDescriptorSets(writes, {});
 	}
 
 	void createShaderBindingTable(vk::Device& dev, vma::Allocator& allocator, vk::PhysicalDevice& physicalDev, vk::DispatchLoaderDynamic dld)
@@ -605,12 +704,16 @@ public:
 	vk::StridedBufferRegionKHR rayHitSBT;
 	vk::StridedBufferRegionKHR rayCallSBT;
 	vk::DescriptorSet descriptorSet;
+	vk::DescriptorSet lightSampleDescriptorSet;
+	vk::DescriptorSet temporalDescriptorSet;
 protected:
 	Shader _rayGen, _rayChit, _rayMiss, _rayShadowMiss;
 	vk::Format _swapchainFormat;
 	vk::UniqueSampler _sampler;
 	vk::UniquePipelineLayout _pipelineLayout;
-	vk::UniqueDescriptorSetLayout _descriptorSetLayout;
+	vk::UniqueDescriptorSetLayout _visibilityDescriptorSetLayout;
+	vk::UniqueDescriptorSetLayout _lightSampleDescriptorSetLayout;
+	vk::UniqueDescriptorSetLayout _temporalDescriptorSetLayout;
 
 	[[nodiscard]] vk::UniqueRenderPass _createPass(vk::Device);
 
@@ -683,9 +786,35 @@ protected:
 
 		vk::DescriptorSetLayoutCreateInfo layoutInfo;
 		layoutInfo.setBindings(bindings);
-		_descriptorSetLayout = dev.createDescriptorSetLayoutUnique(layoutInfo);
+		_visibilityDescriptorSetLayout = dev.createDescriptorSetLayoutUnique(layoutInfo);
 
-		std::array<vk::DescriptorSetLayout, 1> descriptorLayouts{ _descriptorSetLayout.get() };
+		std::array<vk::DescriptorSetLayoutBinding, 6> sampleLightBindings{
+			vk::DescriptorSetLayoutBinding(0, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eRaygenKHR),
+			vk::DescriptorSetLayoutBinding(1, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eRaygenKHR),
+			vk::DescriptorSetLayoutBinding(2, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eRaygenKHR),
+			vk::DescriptorSetLayoutBinding(3, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eRaygenKHR),
+			vk::DescriptorSetLayoutBinding(4, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eRaygenKHR),
+			vk::DescriptorSetLayoutBinding(5, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eRaygenKHR)
+		};
+
+		vk::DescriptorSetLayoutCreateInfo lightSampleLayoutInfo;
+		lightSampleLayoutInfo.setBindings(sampleLightBindings);
+		_lightSampleDescriptorSetLayout = dev.createDescriptorSetLayoutUnique(lightSampleLayoutInfo);
+
+		std::array<vk::DescriptorSetLayoutBinding, 5> temporalBindings{
+			vk::DescriptorSetLayoutBinding(0, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eRaygenKHR),
+			vk::DescriptorSetLayoutBinding(1, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eRaygenKHR),
+			vk::DescriptorSetLayoutBinding(2, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eRaygenKHR),
+			vk::DescriptorSetLayoutBinding(3, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eRaygenKHR),
+			vk::DescriptorSetLayoutBinding(4, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eRaygenKHR)
+		};
+
+		vk::DescriptorSetLayoutCreateInfo temporalDescriptorInfo;
+		temporalDescriptorInfo.setBindings(temporalBindings);
+		_temporalDescriptorSetLayout = dev.createDescriptorSetLayoutUnique(temporalDescriptorInfo);
+
+		std::array<vk::DescriptorSetLayout, 3> descriptorLayouts{ _visibilityDescriptorSetLayout.get(), _lightSampleDescriptorSetLayout.get(), _temporalDescriptorSetLayout.get()};
+
 
 		vk::PipelineLayoutCreateInfo pipelineLayoutInfo;
 		pipelineLayoutInfo.setSetLayouts(descriptorLayouts);

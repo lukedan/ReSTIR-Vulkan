@@ -561,3 +561,5 @@ xcuserdata
 *.xccheckout
 *.moved-aside
 *.xcuserstate
+
+scenes/C4DScenes/BistroExterior.gltf
