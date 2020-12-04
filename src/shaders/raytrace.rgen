@@ -37,6 +37,7 @@ layout (binding = 4, set = 1) buffer TriangleLights {
 
 layout (binding = 5, set = 1) buffer AliasTable{
 	int count;
+	int padding[3];
 	aliasTableColumn aliasCol[];
 } aliasTable;
 
@@ -54,15 +55,16 @@ vec3 pickPointOnTriangle(float r1, float r2, vec3 p1, vec3 p2, vec3 p3) {
     return (1.0 - sqrt_r1) * p1 + (sqrt_r1 * (1.0 - r2)) * p2 + (r2 * sqrt_r1) * p3;
 }
 
-int aliasTableSample(float r1, float r2){
-	int selected_column = int(aliasTable.count * r1);
-	int selected_sample = -1;
-	if(aliasTable.aliasCol[selected_column].prob > r2){
-		selected_sample = selected_column;
-	}else{
-		selected_sample = aliasTable.aliasCol[selected_column].alias;
+void aliasTableSample(float r1, float r2, out int index, out float probability) {
+	int selected_column = min(int(aliasTable.count * r1), aliasTable.count - 1);
+	aliasTableColumn col = aliasTable.aliasCol[selected_column];
+	if (col.prob > r2) {
+		index = selected_column;
+		probability = col.oriProb;
+	} else {
+		index = col.alias;
+		probability = col.aliasOriProb;
 	}
-	return selected_sample;
 }
 
 
@@ -77,56 +79,56 @@ vec3 fragCoordDepthToViewPos(vec2 uv, float worldDepth, float tanHalfFovY, float
 }
 
 void main() {
-    // Light Sampling
     uvec2 pixelCoord = gl_LaunchIDEXT.xy;
 	if (any(greaterThanEqual(pixelCoord, uniforms.screenSize))) {
 		return;
 	}
 
+    // Light Sampling
 	vec3 albedo = texelFetch(uniAlbedo, ivec2(pixelCoord), 0).xyz;
 	vec3 normal = texelFetch(uniNormal, ivec2(pixelCoord), 0).xyz;
 	vec2 roughnessMetallic = texelFetch(uniMaterialProperties, ivec2(pixelCoord), 0).xy;
 	vec3 worldPos = texelFetch(uniWorldPosition, ivec2(pixelCoord), 0).xyz;
 
+	float albedoLum = luminance(albedo.r, albedo.g, albedo.b);
+
 	Reservoir res = newReservoir();
-	Rand rand = seedRand(uniforms.frame * 31, pixelCoord.y * 10007 + pixelCoord.x);
+	Rand rand = seedRand(uniforms.frame, pixelCoord.y * 10007 + pixelCoord.x);
 	for (int i = 0; i < uniforms.initialLightSampleCount; ++i) {			
-		int selected_idx = aliasTableSample(randFloat(rand), randFloat(rand));
+		int selected_idx;
+		float lightSampleProb;
+		aliasTableSample(randFloat(rand), randFloat(rand), selected_idx, lightSampleProb);
 
 		vec3 lightSamplePos;
-		vec3 lightSampleColor;
-		float sampleProb;
-		if(pointLights.count != 0){
+		float lightSampleLum;
+		int lightSampleIndex;
+		if (pointLights.count != 0) {
 			pointLight light = pointLights.lights[selected_idx];
 			lightSamplePos = light.pos.xyz;
-			lightSampleColor = light.color.xyz;
-			sampleProb = aliasTable.aliasCol[selected_idx].oriProb;
-		}else{
+			lightSampleLum = light.color_luminance.w;
+			lightSampleIndex = selected_idx;
+		} else {
 			triLight light = triangleLights.lights[selected_idx];
 			lightSamplePos = pickPointOnTriangle(randFloat(rand), randFloat(rand), light.p1.xyz, light.p2.xyz, light.p3.xyz);
-			lightSampleColor = light.emissiveFactor.xyz;
+			lightSampleLum = light.emission_luminance.w;
+			lightSampleIndex = -1 - selected_idx;
 
 			vec3 wi = normalize(worldPos - lightSamplePos);
 			vec3 normal = light.normalArea.xyz;
-			sampleProb = aliasTable.aliasCol[selected_idx].oriProb / (abs(dot(wi, normal)) * light.normalArea.w);
+			lightSampleProb /= abs(dot(wi, normal)) * light.normalArea.w;
 		}
 		
-		vec3 pHat = evaluatePHat(
+		float pHat = evaluatePHat(
 			worldPos, lightSamplePos, uniforms.cameraPos.xyz, normal,
-			albedo, lightSampleColor, roughnessMetallic.x, roughnessMetallic.y
+			albedoLum, lightSampleLum, roughnessMetallic.x, roughnessMetallic.y
 		);
-		float pHatLum = luminance(pHat.r, pHat.g, pHat.b);
 
-		addSampleToReservoir(res, lightSamplePos, lightSampleColor, vec4(pHat, pHatLum), sampleProb, rand);
+		addSampleToReservoir(res, lightSamplePos, lightSampleLum, lightSampleIndex, pHat, lightSampleProb, rand);
 	}
 	
 	uint reservoirIndex = pixelCoord.y * uniforms.screenSize.x + pixelCoord.x;
 	
     // Visibility Reuse
-	if (any(greaterThanEqual(pixelCoord, uniforms.screenSize))) {
-		return;
-	}
-
     uint rayFlags = gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsOpaqueEXT | gl_RayFlagsSkipClosestHitShaderEXT;
     float tMin     = 0.001;
 
@@ -159,63 +161,52 @@ void main() {
             res.samples[i].sumWeights = 0.0f;
         }
     } 
-    //reservoirs[reservoirIndex] = res;
+
+	// Temporal reuse
 	vec4 prevFramePos = uniforms.prevFrameProjectionViewMatrix * vec4(worldPos, 1.0f);
 	prevFramePos.xyz /= prevFramePos.w;
 	prevFramePos.xy = (prevFramePos.xy + 1.0f) * 0.5f * vec2(uniforms.screenSize);
 	if (
-		any(lessThan(prevFramePos.xy, vec2(0.0f))) ||
-		any(greaterThan(prevFramePos.xy, vec2(uniforms.screenSize)))
+		all(greaterThan(prevFramePos.xy, vec2(0.0f))) &&
+		all(lessThan(prevFramePos.xy, vec2(uniforms.screenSize)))
 	) {
-		return;
-	}
-
-	ivec2 prevFrag = ivec2(prevFramePos.xy);
+		ivec2 prevFrag = ivec2(prevFramePos.xy);
 
 #ifdef COMPARE_DEPTH
-	float depthDiff = prevFramePos.z - texelFetch(uniPrevDepth, prevFrag, 0).x;
-	if (depthDiff > 0.001f * prevFramePos.z) {
-		return;
-	}
+		float depthDiff = prevFramePos.z - texelFetch(uniPrevDepth, prevFrag, 0).x;
+		if (depthDiff < 0.001f * prevFramePos.z) {
 #else
-	// highest quality results can be obtained by directly comparing the world positions
-	// the performance impact of this is unclear
-	vec3 positionDiff = worldPos - texelFetch(uniPrevFrameWorldPosition, prevFrag, 0).xyz;
-	if (dot(positionDiff, positionDiff) > 0.01f) {
-		return;
-	}
+		// highest quality results can be obtained by directly comparing the world positions
+		// the performance impact of this is unclear
+		vec3 positionDiff = worldPos - texelFetch(uniPrevFrameWorldPosition, prevFrag, 0).xyz;
+		if (dot(positionDiff, positionDiff) < 0.01f) {
 #endif
+			vec3 albedoDiff = albedo - texelFetch(uniPrevFrameAlbedo, prevFrag, 0).rgb;
+			if (dot(albedoDiff, albedoDiff) < 0.01f) {
+				float normalDot = dot(normal, texelFetch(uniPrevFrameNormal, prevFrag, 0).xyz);
+				if (normalDot > 0.5f) {
+					Reservoir prevRes = prevFrameReservoirs[prevFrag.y * uniforms.screenSize.x + prevFrag.x];
 
-	vec3 albedoDiff = albedo - texelFetch(uniPrevFrameAlbedo, prevFrag, 0).rgb;
-	if (dot(albedoDiff, albedoDiff) > 0.01f) {
-		return;
+					// clamp the number of samples
+					prevRes.numStreamSamples = min(
+						prevRes.numStreamSamples, uniforms.temporalSampleCountMultiplier * res.numStreamSamples
+					);
+
+					vec2 metallicRoughness = texelFetch(uniMaterialProperties, ivec2(pixelCoord), 0).xy;
+
+					float pHat[RESERVOIR_SIZE];
+					for (int i = 0; i < RESERVOIR_SIZE; ++i) {
+						pHat[i] = evaluatePHat(
+							worldPos, prevRes.samples[i].position_emissionLum.xyz, uniforms.cameraPos.xyz,
+							normal, albedoLum, prevRes.samples[i].position_emissionLum.w, metallicRoughness.x, metallicRoughness.y
+						);
+					}
+
+					combineReservoirs(res, prevRes, pHat, rand);
+				}
+			}
+		}
 	}
-
-	float normalDot = dot(normal, texelFetch(uniPrevFrameNormal, prevFrag, 0).xyz);
-	if (normalDot < 0.5f) {
-		return;
-	}
-
-	Rand temporalRand = seedRand(uniforms.frame * 17, reservoirIndex);
-	Reservoir prevRes = prevFrameReservoirs[prevFrag.y * uniforms.screenSize.x + prevFrag.x];
-
-	// clamp the number of samples
-	prevRes.numStreamSamples = min(
-		prevRes.numStreamSamples, uniforms.temporalSampleCountMultiplier * res.numStreamSamples
-	);
-
-	vec2 metallicRoughness = texelFetch(uniMaterialProperties, ivec2(pixelCoord), 0).xy;
-
-	vec4 pHat[RESERVOIR_SIZE];
-	for (int i = 0; i < RESERVOIR_SIZE; ++i) {
-		pHat[i].rgb = evaluatePHat(
-			worldPos, prevRes.samples[i].position.xyz, uniforms.cameraPos.xyz,
-			normal, albedo, prevRes.samples[i].emission.rgb, metallicRoughness.x, metallicRoughness.y
-		);
-		pHat[i].w = luminance(pHat[i].r, pHat[i].g, pHat[i].b);
-	}
-
-	combineReservoirs(res, prevRes, pHat,  temporalRand);
 
 	reservoirs[reservoirIndex] = res;
 }
