@@ -134,11 +134,11 @@ void main() {
     {
         isShadowed = true;
        
-        vec3 curLightPos = vec3(res.samples[i].position);
+        vec3 curLightPos = vec3(res.samples[i].position_emissionLum.xyz);
         vec3 curDirection = vec3(curLightPos) - worldPos;
         float curTMax = length(curDirection);
         curDirection = normalize(curDirection);
-         vec3 origin    = worldPos + 0.001 * curDirection;
+        vec3 origin    = worldPos + 0.001 * curDirection;
 
         traceRayEXT(acc,     // acceleration structure
             rayFlags,       // rayFlags

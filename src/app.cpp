@@ -56,7 +56,9 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 #endif
 	};
 	std::vector<const char*> requiredLayers{
+#ifndef NDEBUG
 		"VK_LAYER_KHRONOS_validation"
+#endif
 	};
 
 	vk::PhysicalDeviceRayTracingFeaturesKHR raytracingFeature;
@@ -604,12 +606,14 @@ void App::updateGui() {
 	const char *debugModes[]{
 		"None",
 		"Albedo",
+		"Emission",
 		"Normal",
 		"MaterialProperties",
 		"WorldPosition",
-		"DisneyBRDF"
+		"Naive Point Light Visualization"
 	};
-	_debugModeChanged = ImGui::Combo("Debug Mode", &_debugMode, debugModes, IM_ARRAYSIZE(debugModes));
+	_viewParamChanged = ImGui::Combo("Debug Mode", &_debugMode, debugModes, IM_ARRAYSIZE(debugModes)) || _viewParamChanged;
+	_viewParamChanged = ImGui::SliderFloat("Gamma", &_gamma, 1.0f, 5.0f) || _viewParamChanged;
 
 	ImGui::Separator();
 
@@ -735,7 +739,7 @@ void App::mainLoop() {
 			restirUniforms->prevFrameProjectionViewMatrix = prevFrameProjectionView;
 			restirUniforms->temporalSampleCountMultiplier = _temporalReuseSampleMultiplier;
 
-			if (_cameraUpdated || _debugModeChanged) {
+			if (_cameraUpdated || _viewParamChanged) {
 				_graphicsComputeQueue.waitIdle();
 
 				auto *gBufferUniforms = _gBufferResources.uniformBuffer.mapAs<GBufferPass::Uniforms>();
@@ -749,14 +753,18 @@ void App::mainLoop() {
 				lightingPassUniforms->cameraPos = _camera.position;
 				lightingPassUniforms->bufferSize = nvmath::uvec2(_swapchain.getImageExtent().width, _swapchain.getImageExtent().height);
 				lightingPassUniforms->debugMode = _debugMode;
+				lightingPassUniforms->gamma = _gamma;
 				_lightingPassUniformBuffer.unmap();
 				_lightingPassUniformBuffer.flush();
 
 				_cameraUpdated = false;
-				_debugModeChanged = false;
+				_viewParamChanged = false;
 			} else if (_renderPathChanged) {
 				_updateThresholdBuffers();
 				_recordMainCommandBuffers();
+				restirUniforms->frame = 0;
+
+				_renderPathChanged = false;
 			}
 
 			_restirUniformBuffer.unmap();

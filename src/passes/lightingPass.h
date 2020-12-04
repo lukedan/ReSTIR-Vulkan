@@ -70,6 +70,7 @@ public:
 		vk::DescriptorBufferInfo uniformInfo(uniformBuffer, 0, sizeof(shader::LightingPassUniforms));
 		vk::DescriptorBufferInfo reservoirsInfo(reservoirBuffer, 0, reservoirBufferSize);
 		vk::DescriptorBufferInfo pointLightsInfo(sceneBuffers.getPtLights(), 0, sceneBuffers.getPtLightsBufferSize());
+		vk::DescriptorBufferInfo triLightsInfo(sceneBuffers.getTriLights(), 0, sceneBuffers.getTriLightsBufferSize());
 		descriptorWrite.emplace_back()
 			.setDstSet(descriptorSet)
 			.setDstBinding(4)
@@ -85,6 +86,11 @@ public:
 			.setDstBinding(6)
 			.setDescriptorType(vk::DescriptorType::eStorageBuffer)
 			.setBufferInfo(pointLightsInfo);
+		descriptorWrite.emplace_back()
+			.setDstSet(descriptorSet)
+			.setDstBinding(7)
+			.setDescriptorType(vk::DescriptorType::eStorageBuffer)
+			.setBufferInfo(triLightsInfo);
 
 		device.updateDescriptorSets(descriptorWrite, {});
 	}
@@ -167,14 +173,15 @@ protected:
 
 		_sampler = createSampler(dev, vk::Filter::eNearest, vk::Filter::eNearest, vk::SamplerMipmapMode::eNearest);
 
-		std::array<vk::DescriptorSetLayoutBinding, 7> descriptorBindings{
+		std::array<vk::DescriptorSetLayoutBinding, 8> descriptorBindings{
 			vk::DescriptorSetLayoutBinding(0, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment),
 			vk::DescriptorSetLayoutBinding(1, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment),
 			vk::DescriptorSetLayoutBinding(2, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment),
 			vk::DescriptorSetLayoutBinding(3, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment),
 			vk::DescriptorSetLayoutBinding(4, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eFragment),
 			vk::DescriptorSetLayoutBinding(5, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eFragment),
-			vk::DescriptorSetLayoutBinding(6, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eFragment)
+			vk::DescriptorSetLayoutBinding(6, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eFragment),
+			vk::DescriptorSetLayoutBinding(7, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eFragment)
 		};
 		vk::DescriptorSetLayoutCreateInfo descriptorInfo;
 		descriptorInfo

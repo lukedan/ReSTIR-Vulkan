@@ -210,9 +210,8 @@ namespace vma {
 			VmaAllocationInfo& allocationDetial,
 			VmaAllocationCreateInfo& createInfo
 		) {
-			// return vmaAllocateMemory(_allocator, &static_cast<VkMemoryRequirements>(memReq), &createInfo, &allocation, &allocationDetial);
-			const VkMemoryRequirements temp = memReq;
-			return vmaAllocateMemory(_allocator, &temp, &createInfo, &allocation, &allocationDetial);
+			VkMemoryRequirements requirements = memReq;
+			return vmaAllocateMemory(_allocator, &requirements, &createInfo, &allocation, &allocationDetial);
 		}
 
 		void freeMemory(VmaAllocation& allocation) 

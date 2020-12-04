@@ -652,7 +652,6 @@ public:
 
 		// Create camera uniform buffer
 		cameraUniformBuffer = allocator.createTypedBuffer<shader::LightingPassUniforms>(1, vk::BufferUsageFlagBits::eUniformBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU);
-		lightsUniformBuffer = allocator.createTypedBuffer<shader::Reservoir>(1, vk::BufferUsageFlagBits::eStorageBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU);
 	}
 
 	void updateCameraUniform(Camera& _camera)
@@ -661,20 +660,6 @@ public:
 		cameraUniformBegin->cameraPos = _camera.position;
 		cameraUniformBuffer.unmap();
 		cameraUniformBuffer.flush();
-	}
-
-	void updateLightsUniform()
-	{
-		auto* lightsUniformBegin = lightsUniformBuffer.mapAs<shader::Reservoir>();
-		int cnt = 0;
-		for (shader::LightSample light : lightsUniformBegin->samples)
-		{
-			//light.emission = vec4(1.0f, 1.0f, 1.0f, 1.0f);
-			light.position = vec4(cnt * 2.0f, cnt * 1.0f, cnt * 1.0f, 1.0f);
-			cnt++;
-		}
-		lightsUniformBuffer.unmap();
-		lightsUniformBuffer.flush();
 	}
 
 	inline static RtPass create(vk::Device dev, vk::DispatchLoaderDynamic& dld)
@@ -832,7 +817,6 @@ private:
 
 	vma::UniqueBuffer instance;
 	vma::UniqueBuffer cameraUniformBuffer;
-	vma::UniqueBuffer lightsUniformBuffer;
 	std::vector<vk::DeviceMemory> memories;
 
 	// Acceleration Structure

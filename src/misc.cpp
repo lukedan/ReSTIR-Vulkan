@@ -346,9 +346,11 @@ std::vector<shader::pointLight> collectPointLightsFromScene(const nvh::GltfScene
 	for (const nvh::GltfLight &light : scene.m_lights) {
 		shader::pointLight &addedLight = result.emplace_back(shader::pointLight{
 			.pos = light.worldMatrix.col(3),
-			.color = nvmath::vec3(light.light.color[0], light.light.color[1], light.light.color[2])
+			.color_luminance = nvmath::vec4(light.light.color[0], light.light.color[1], light.light.color[2], 0.0f)
 			});
-		addedLight.intensity = shader::luminance(addedLight.color.x, addedLight.color.y, addedLight.color.z);
+		addedLight.color_luminance.w = shader::luminance(
+			addedLight.color_luminance.x, addedLight.color_luminance.y, addedLight.color_luminance.z
+		);
 	}
 	return result;
 }
@@ -357,14 +359,16 @@ std::vector<shader::pointLight> generateRandomPointLights(std::size_t count, nvm
 	std::uniform_real_distribution<float> distX(min.x, max.x);
 	std::uniform_real_distribution<float> distY(min.y, max.y);
 	std::uniform_real_distribution<float> distZ(min.z, max.z);
-	std::uniform_real_distribution<float> distRgb(5.0f, 10.0f);
+	std::uniform_real_distribution<float> distRgb(0.0f, 3.0f);
 	std::default_random_engine rand;
 
 	std::vector<shader::pointLight> result(count);
 	for (shader::pointLight &light : result) {
 		light.pos = nvmath::vec4(distX(rand), distY(rand), distZ(rand), 1.0f);
-		light.color = nvmath::vec4(distRgb(rand), distRgb(rand), distRgb(rand), 1.0f);
-		light.intensity = shader::luminance(light.color.x, light.color.y, light.color.z);
+		light.color_luminance = nvmath::vec4(distRgb(rand), distRgb(rand), distRgb(rand), 0.0f);
+		light.color_luminance.w = shader::luminance(
+			light.color_luminance.x, light.color_luminance.y, light.color_luminance.z
+		);
 	}
 	return result;
 }
@@ -389,10 +393,14 @@ std::vector<shader::triLight> collectTriangleLightsFromScene(const nvh::GltfScen
 				normal /= area;
 				area *= 0.5f;
 
+				float emissionLuminance = shader::luminance(
+					material.emissiveFactor.x, material.emissiveFactor.y, material.emissiveFactor.z
+				);
+
 				shader::triLight tmpTriLight{ p1, p2, p3, vec4(material.emissiveFactor, 0.0), area };
 				result.push_back(shader::triLight{
 					.p1 = p1, .p2 = p2, .p3 = p3,
-					.emissiveFactor = material.emissiveFactor,
+					.emission_luminance = nvmath::vec4(material.emissiveFactor, emissionLuminance),
 					.normalArea = nvmath::vec4(normal, area)
 					});
 			}
@@ -404,7 +412,6 @@ std::vector<shader::triLight> collectTriangleLightsFromScene(const nvh::GltfScen
 // https://blog.csdn.net/haolexiao/article/details/65157026
 // Vose alias method
 [[nodiscard]] std::vector<shader::aliasTableColumn> createAliasTable(const nvh::GltfScene &scene, std::vector<shader::pointLight>& ptLights, std::vector<shader::triLight>& triLights) {
-	
 	std::queue<int> biggerThanOneQueue;
 	std::queue<int> smallerThanOneQueue;
 	std::vector<float> lightProbVec;
@@ -416,15 +423,15 @@ std::vector<shader::triLight> collectTriangleLightsFromScene(const nvh::GltfScen
 		lightNum = ptLights.size();
 
 		for (auto& itr_ptLight : ptLights) {
-			powerSum += itr_ptLight.intensity;
-			lightProbVec.push_back(itr_ptLight.intensity);
+			powerSum += itr_ptLight.color_luminance.w;
+			lightProbVec.push_back(itr_ptLight.color_luminance.w);
 		}	
 	}
 	else {
 		lightNum = triLights.size();
 
 		for (auto& itr_triLight : triLights) {
-			float triLightPower = shader::luminance(itr_triLight.emissiveFactor.x, itr_triLight.emissiveFactor.y, itr_triLight.emissiveFactor.z) * itr_triLight.normalArea.w;
+			float triLightPower = itr_triLight.emission_luminance.w * itr_triLight.normalArea.w;
 			powerSum += triLightPower;
 			lightProbVec.push_back(triLightPower);
 		}
@@ -468,12 +475,18 @@ std::vector<shader::triLight> collectTriangleLightsFromScene(const nvh::GltfScen
 		int g = biggerThanOneQueue.front();
 		biggerThanOneQueue.pop();
 		result[g].prob = 1.f;
+		result[g].alias = g;
 	}
 
 	while (!smallerThanOneQueue.empty()) {
 		int l = smallerThanOneQueue.front();
 		smallerThanOneQueue.pop();
 		result[l].prob = 1.f;
+		result[l].alias = l;
+	}
+
+	for (shader::aliasTableColumn &col : result) {
+		col.aliasOriProb = result[col.alias].oriProb;
 	}
 
 	return result;

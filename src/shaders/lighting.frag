@@ -23,6 +23,10 @@ layout (binding = 6) buffer PointLights {
 	int count;
 	pointLight lights[];
 } pointLights;
+layout (binding = 7) buffer TriangleLights {
+	int count;
+	triLight lights[];
+} triangleLights;
 
 layout (location = 0) in vec2 inUv;
 
@@ -47,30 +51,53 @@ void main() {
 		Reservoir reservoir = reservoirs[pixelCoord.y * uniforms.bufferSize.x + pixelCoord.x];
 		outColor = vec3(0.0f);
 		for (int i = 0; i < RESERVOIR_SIZE; ++i) {
-			outColor += reservoir.samples[i].pHat.xyz * reservoir.samples[i].w;
+			vec3 emission;
+			int lightIndex = reservoir.samples[i].lightIndex;
+			if (lightIndex < 0) {
+				emission = triangleLights.lights[-1 - lightIndex].emission_luminance.rgb;
+			} else {
+				emission = pointLights.lights[lightIndex].color_luminance.rgb;
+			}
+			vec3 pHat = evaluatePHatFull(
+				worldPos, reservoir.samples[i].position_emissionLum.xyz, uniforms.cameraPos.xyz, normal,
+				albedo.rgb, emission, materialProps.x, materialProps.y
+			);
+			outColor += pHat * reservoir.samples[i].w;
 		}
 		outColor /= RESERVOIR_SIZE;
 		if (albedo.w > 0.5f) {
 			outColor = albedo.xyz;
 		}
 	} else if (uniforms.debugMode == GBUFFER_DEBUG_ALBEDO) {
-		outColor = albedo.rgb;
+		if (albedo.a < 0.5f) {
+			outColor = albedo.rgb;
+		} else {
+			outColor = vec3(0.0f);
+		}
+	} else if (uniforms.debugMode == GBUFFER_DEBUG_EMISSION) {
+		if (albedo.a > 0.5f) {
+			outColor = albedo.rgb;
+		} else {
+			outColor = vec3(0.0f);
+		}
 	} else if (uniforms.debugMode == GBUFFER_DEBUG_NORMAL) {
 		outColor = (vec3(normal) + 1.0f) * 0.5f;
 	} else if (uniforms.debugMode == GBUFFER_DEBUG_MATERIAL_PROPERTIES) {
 		outColor = vec3(materialProps, 1.0f);
 	} else if (uniforms.debugMode == GBUFFER_DEBUG_WORLD_POSITION) {
 		outColor = worldPos / 10.0f + 0.5f;
-	} else if (uniforms.debugMode == GBUFFER_DEBUG_DISNEY_BRDF) {
+	} else if (uniforms.debugMode == GBUFFER_DEBUG_NAIVE_POINT_LIGHT_NO_SHADOW) {
 		float roughness = materialProps.r;
 		float metallic = materialProps.g;
 
 		outColor = vec3(0.0f);
 		for (int i = 0; i < pointLights.count; ++i) {
-			outColor += evaluatePHat(
+			outColor += evaluatePHatFull(
 				worldPos, pointLights.lights[i].pos.xyz, uniforms.cameraPos.xyz, normal,
-				albedo.xyz, pointLights.lights[i].color.xyz, roughness, metallic
+				albedo.rgb, pointLights.lights[i].color_luminance.rgb, roughness, metallic
 			);
 		}
 	}
+
+	outColor = pow(outColor, vec3(1.0f / uniforms.gamma));
 }

@@ -38,6 +38,8 @@ void main() {
 	vec2 roughnessMetallic = texelFetch(uniMaterialProperties, ivec2(pixelCoord), 0).xy;
 	vec3 worldPos = texelFetch(uniWorldPosition, ivec2(pixelCoord), 0).xyz;
 
+	float albedoLum = luminance(albedo.r, albedo.g, albedo.b);
+
 	uint reservoirIndex = pixelCoord.y * uniforms.screenSize.x + pixelCoord.x;
 	Reservoir res = reservoirs[reservoirIndex];
 
@@ -63,17 +65,15 @@ void main() {
 			continue;
 
 		Reservoir randRes = reservoirs[randIndex];
-		vec4 newPHats[RESERVOIR_SIZE];
+		float newPHats[RESERVOIR_SIZE];
 
 		for(int j = 0; j < RESERVOIR_SIZE; j++)
 		{
-			vec3 newPHat = evaluatePHat(
-			worldPos, randRes.samples[j].position.xyz, uniforms.cameraPos.xyz, normal,
-			albedo, randRes.samples[j].emission.xyz, roughnessMetallic.x, roughnessMetallic.y);
-			float pHatLum = luminance(newPHat.r, newPHat.g, newPHat.b);
-			vec4 newPHat4 = vec4(newPHat, pHatLum);
-			newPHats[j] = newPHat4;
-		}		
+			float newPHat = evaluatePHat(
+				worldPos, randRes.samples[j].position_emissionLum.xyz, uniforms.cameraPos.xyz, normal,
+				albedoLum, randRes.samples[j].position_emissionLum.w, roughnessMetallic.x, roughnessMetallic.y);
+			newPHats[j] = newPHat;
+		}
 		combineReservoirs(res, randRes, newPHats, rand);
 	}
 	resultReservoirs[reservoirIndex] = res;

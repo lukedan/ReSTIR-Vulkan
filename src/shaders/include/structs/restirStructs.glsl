@@ -11,11 +11,11 @@
 #define RESERVOIR_SIZE 4
 
 struct LightSample {
-	vec4 pHat;
-	vec4 position;
-	float sumWeights; // setting W to 0 is equivalent to setting sumWeights to 0
+	vec4 position_emissionLum;
+	int lightIndex; // negative for triangle lights
+	float pHat;
+	float sumWeights;
 	float w;
-	vec4 emission;
 };
 
 struct Reservoir {
