@@ -46,8 +46,16 @@ This is the final project for CIS 565: GPU Programming. The goal of the project 
 
 [MS2 Slides](media/milestone2_v2.pdf)
 
+## Project models
+
+In general, models used in this project are from gltf2 offical samples repository and they have been included under the scene folder. But, there are still other models like 'BistroInterior' are from other resources and they are too large to download. Therefore, we decide to put them into the dropbox and here is the link of it: [Relevant models](https://www.dropbox.com/sh/ovoh6dj6vrld69j/AAAcs-dd6BEJCCuuM9MDsufXa?dl=0)
+
 ## References and Acknowledgments
  - [1] [Spatiotemporal Variance-Guided Filtering: Real-Time Reconstruction for Path-Traced Global Illumination](https://cs.dartmouth.edu/wjarosz/publications/bitterli20spatiotemporal.html)
  - [2] [Dear ImGui](https://github.com/ocornut/imgui)
  - [3] [VulkanMemoryAllocator](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator.git)
  - [4] [tinygltf](https://github.com/syoyo/tinygltf.git)
+ - [5] [MikkTSpace](http://www.mikktspace.com/)
+ - [6] [MikkTSpace Houdini](https://github.com/teared/mikktspace-for-houdini)
+ - [7] [FBX2glTF](https://github.com/facebookincubator/FBX2glTF)
+ - [8] [Gltf Sample Models](https://github.com/KhronosGroup/glTF-Sample-Models)

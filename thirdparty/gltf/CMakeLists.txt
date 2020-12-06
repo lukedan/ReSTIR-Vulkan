@@ -10,7 +10,9 @@ target_sources(gltf
 	PUBLIC
 		gltfscene.h
 	PRIVATE
-		gltfscene.cpp)
+		mikktWrapper.h
+		gltfscene.cpp  
+		mikktWrapper.cpp)
 target_include_directories(gltf
 	INTERFACE
 		"./")
@@ -18,6 +20,7 @@ target_include_directories(gltf
 target_include_directories(gltf
 	PUBLIC
 		"../nvmath/"
-		"../tinygltf/")
+		"../tinygltf/"
+		"../MikkTSpace/")
 
 find_package(Vulkan REQUIRED)

@@ -1,5 +1,4 @@
 #include "app.h"
-
 #include <sstream>
 
 #include <imgui.h>
@@ -280,10 +279,10 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 	// loadScene("../../../scenes/boxTextured/boxTextured.gltf", _gltfScene);
 	// loadScene("../../../scenes/duck/Duck.gltf", _gltfScene);
 	// loadScene("../../../scenes/fish/BarramundiFish.gltf", _gltfScene);
-	 loadScene("../../../scenes/Sponza/glTF/Sponza.gltf", _gltfScene);
+	// loadScene("../../../scenes/Sponza/glTF/Sponza.gltf", _gltfScene);
 	// loadScene("../../../scenes/office/scene.gltf", _gltfScene);
 	// loadScene("../../../scenes/C4DScenes/BistroInterior.gltf", _gltfScene);
-	//loadScene("../../../scenes/C4DScenes/BistroExterior.gltf", _gltfScene);
+	loadScene("../../../scenes/BistroInterior_out/BistroInterior.gltf", _gltfScene);
 
 	{ // create descriptor pools
 		std::array<vk::DescriptorPoolSize, 6> staticPoolSizes{

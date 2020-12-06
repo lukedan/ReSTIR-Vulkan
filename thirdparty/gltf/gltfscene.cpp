@@ -26,6 +26,7 @@
  */
 
 #include "gltfscene.h"
+#include "mikktWrapper.h"
 #include <iostream>
 #include <numeric>
 
@@ -125,6 +126,7 @@ namespace nvh {
         }
 
         // Reserving memory
+        // m_tangents.resize(nbVert, nvmath::vec4f(0.f, 0.f, 0.f, 0.f));
         m_positions.reserve(nbVert);
         m_indices.reserve(nbIndex);
         if ((attributes & GltfAttributes::Normal) == GltfAttributes::Normal)
@@ -392,86 +394,11 @@ namespace nvh {
         {
             if (!getAttribute<nvmath::vec4f>(tmodel, tmesh, m_tangents, "TANGENT"))
             {
-                // #TODO - Should calculate tangents using default MikkTSpace algorithms
+                // Default MikkTSpace algorithms
                 // See: https://github.com/mmikk/MikkTSpace
-
-                std::vector<nvmath::vec3f> tan1(resultMesh.vertexCount);
-                std::vector<nvmath::vec3f> tan2(resultMesh.vertexCount);
-
-                // Current implementation
-                // http://foundationsofgameenginedev.com/FGED2-sample.pdf
-                for (size_t i = 0; i < resultMesh.indexCount; i += 3)
-                {
-                    // local index
-                    uint32_t l_idx0 = m_indices[resultMesh.firstIndex + i + 0];
-                    uint32_t l_idx1 = m_indices[resultMesh.firstIndex + i + 1];
-                    uint32_t l_idx2 = m_indices[resultMesh.firstIndex + i + 2];
-                    // global index
-                    uint32_t g_idx0 = l_idx0 + resultMesh.vertexOffset;
-                    uint32_t g_idx1 = l_idx1 + resultMesh.vertexOffset;
-                    uint32_t g_idx2 = l_idx2 + resultMesh.vertexOffset;
-
-                    const auto& pos1 = m_positions[g_idx0];
-                    const auto& pos2 = m_positions[g_idx1];
-                    const auto& pos3 = m_positions[g_idx2];
-
-                    const auto& uv1 = m_texcoords0[g_idx0];
-                    const auto& uv2 = m_texcoords0[g_idx1];
-                    const auto& uv3 = m_texcoords0[g_idx2];
-
-                    float x1 = pos2.x - pos1.x;
-                    float x2 = pos3.x - pos1.x;
-                    float y1 = pos2.y - pos1.y;
-                    float y2 = pos3.y - pos1.y;
-                    float z1 = pos2.z - pos1.z;
-                    float z2 = pos3.z - pos1.z;
-
-                    float s1 = uv2.x - uv1.x;
-                    float s2 = uv3.x - uv1.x;
-                    float t1 = uv2.y - uv1.y;
-                    float t2 = uv3.y - uv1.y;
-
-                    float         r = 1.0F / (s1 * t2 - s2 * t1);
-                    nvmath::vec3f sdir((t2 * x1 - t1 * x2) * r, (t2 * y1 - t1 * y2) * r, (t2 * z1 - t1 * z2) * r);
-                    nvmath::vec3f tdir((s1 * x2 - s2 * x1) * r, (s1 * y2 - s2 * y1) * r, (s1 * z2 - s2 * z1) * r);
-
-                    // In case of degenerated UV coordinates
-                    if (s1 == 0 || s2 == 0 || t1 == 0 || t2 == 0)
-                    {
-                        const auto& nrm1 = m_normals[g_idx0];
-                        const auto& nrm2 = m_normals[g_idx1];
-                        const auto& nrm3 = m_normals[g_idx2];
-                        const auto  N = nvmath::vec3(nrm1 + nrm2 + nrm3) / nvmath::vec3(3);  // Average on the triangle normals
-
-                        if (abs(N.x) > abs(N.y))
-                            sdir = vec3(N.z, 0, -N.x) / sqrt(N.x * N.x + N.z * N.z);
-                        else
-                            sdir = vec3(0, -N.z, N.y) / sqrt(N.y * N.y + N.z * N.z);
-                        tdir = nvmath::cross(N, sdir);
-                    }
-
-                    tan1[l_idx0] += sdir;
-                    tan1[l_idx1] += sdir;
-                    tan1[l_idx2] += sdir;
-
-                    tan2[l_idx0] += tdir;
-                    tan2[l_idx1] += tdir;
-                    tan2[l_idx2] += tdir;
-                }
-
-                for (uint32_t a = 0; a < resultMesh.vertexCount; a++)
-                {
-                    const auto& n = m_normals[resultMesh.vertexOffset + a];
-                    const auto& t1 = tan1[a];
-                    const auto& t2 = tan2[a];
-
-                    // Gram-Schmidt orthogonalize
-                    nvmath::vec3f tangent = nvmath::normalize(t1 - n * nvmath::dot(n, t1));
-
-                    // Calculate handedness
-                    float handedness = (nvmath::dot(nvmath::cross(n, t1), t2) < 0.0F) ? -1.0F : 1.0F;
-                    m_tangents.emplace_back(tangent.x, tangent.y, tangent.z, handedness);
-                }
+                std::vector<nvmath::vec4f> localTangents(resultMesh.vertexCount);
+                genTangents(&resultMesh, m_indices.data(), m_positions.data(), m_normals.data(), m_texcoords0.data(), localTangents.data());
+                m_tangents.insert(m_tangents.end(), localTangents.begin(), localTangents.end());
             }
         }
 
