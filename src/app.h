@@ -21,6 +21,7 @@
 #include "passes/spatialReusePass.h"
 #include "passes/lightingPass.h"
 #include "passes/rtPass.h"
+#include "passes/unbiasedRtPass.h"
 #include "passes/imguiPass.h"
 
 enum class VisibilityTestMethod {
@@ -42,7 +43,7 @@ public:
 	void updateGui();
 
 	[[nodiscard]] inline static vk::SurfaceFormatKHR chooseSurfaceFormat(
-		const vk::PhysicalDevice &dev, const vk::SurfaceKHR &surface
+		const vk::PhysicalDevice& dev, const vk::SurfaceKHR& surface
 	) {
 		std::vector<vk::SurfaceFormatKHR> available = dev.getSurfaceFormatsKHR(surface);
 		vk::SurfaceFormatKHR desired(vk::Format::eB8G8R8A8Srgb, vk::ColorSpaceKHR::eSrgbNonlinear);
@@ -52,7 +53,7 @@ public:
 		return available[0];
 	}
 	[[nodiscard]] inline static vk::PresentModeKHR choosePresentMode(
-		const vk::PhysicalDevice &dev, vk::SurfaceKHR surface
+		const vk::PhysicalDevice& dev, vk::SurfaceKHR surface
 	) {
 		std::vector<vk::PresentModeKHR> available = dev.getSurfacePresentModesKHR(surface);
 		if (std::find(available.begin(), available.end(), vk::PresentModeKHR::eMailbox) != available.end()) {
@@ -61,7 +62,7 @@ public:
 		return vk::PresentModeKHR::eFifo;
 	}
 	[[nodiscard]] inline static vk::Extent2D chooseSwapExtent(
-		const vk::SurfaceCapabilitiesKHR &capabilities, const glfw::Window &wnd
+		const vk::SurfaceCapabilitiesKHR& capabilities, const glfw::Window& wnd
 	) {
 		if (capabilities.currentExtent.width != std::numeric_limits<std::uint32_t>::max()) {
 			return capabilities.currentExtent;
@@ -75,7 +76,7 @@ public:
 		);
 		return result;
 	}
-	[[nodiscard]] inline static uint32_t chooseImageCount(const vk::SurfaceCapabilitiesKHR &capabilities) {
+	[[nodiscard]] inline static uint32_t chooseImageCount(const vk::SurfaceCapabilitiesKHR& capabilities) {
 		uint32_t imageCount = capabilities.minImageCount + 1;
 		if (capabilities.maxImageCount != 0) {
 			imageCount = std::min(imageCount, capabilities.maxImageCount);
@@ -146,6 +147,9 @@ protected:
 	std::array<vk::UniqueDescriptorSet, numGBuffers> _rtPassDescriptors;
 	std::array<vk::UniqueDescriptorSet, numGBuffers> _rtPassLightSampleDescriptors;
 	std::array<vk::UniqueDescriptorSet, numGBuffers> _rtPassTemporalDescriptors;
+
+	UnbiasedRtPass _unbiasedRtPass;
+	std::array<vk::UniqueDescriptorSet, numGBuffers> _unbiasedRtPassDescriptors;
 
 	ImGuiPass _imguiPass;
 
@@ -224,6 +228,7 @@ protected:
 			_rtPass.descriptorSet = _rtPassDescriptors[i].get();
 			_rtPass.lightSampleDescriptorSet = _rtPassLightSampleDescriptors[i].get();
 			_rtPass.temporalDescriptorSet = _rtPassTemporalDescriptors[i].get();
+			_unbiasedRtPass.descriptorSet = _unbiasedRtPassDescriptors[i].get();
 			_temporalReusePass.descriptorSet = _temporalReuseDescriptors[i].get();
 
 			vk::CommandBufferBeginInfo beginInfo;
@@ -256,11 +261,16 @@ protected:
 				_spatialReusePass.issueCommands(_mainCommandBuffers[i].get(), nullptr);
 			}
 
+#ifndef RENDERDOC_CAPTURE
+			_unbiasedRtPass.issueCommands(_mainCommandBuffers[i].get(), _swapchain.getImageExtent(), _dynamicDispatcher);
+#endif
 			_mainCommandBuffers[i]->end();
+
+
 		}
 	}
 
-	void _updateThresholdBuffers() 
+	void _updateThresholdBuffers()
 	{
 		auto* restirUniforms = _restirUniformBuffer.mapAs<shader::RestirUniforms>();
 		restirUniforms->posThreshold = posThreshold;
@@ -327,8 +337,17 @@ protected:
 			);
 			_spatialReusePass.initializeDescriptorSetFor(
 				_gBuffers[i], _restirUniformBuffer.get(), _reservoirBuffers[(i + numGBuffers - 1) % numGBuffers].get(), _reservoirBufferSize,
-				_reservoirBuffers[i].get(), _device.get(),  _spatialReuseSecondDescriptors[i].get()
+				_reservoirBuffers[i].get(), _device.get(), _spatialReuseSecondDescriptors[i].get()
 			);
+
+#ifndef RENDERDOC_CAPTURE
+			_unbiasedRtPass.createDescriptorSetForRayTracing(
+				_device.get(),
+				_gBuffers[i], _restirUniformBuffer.get(), _reservoirBuffers[i].get(), _reservoirBufferSize,
+				_unbiasedRtPassDescriptors[i].get(),
+				_dynamicDispatcher
+			);
+#endif
 		}
 	}
 

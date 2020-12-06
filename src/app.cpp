@@ -1,4 +1,5 @@
 #include "app.h"
+
 #include <sstream>
 
 #include <imgui.h>
@@ -8,7 +9,7 @@
 VKAPI_ATTR VkBool32 VKAPI_CALL _debugCallback(
 	VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
 	VkDebugUtilsMessageTypeFlagsEXT messageType,
-	const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData,
+	const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
 	void*
 ) {
 	if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) {
@@ -120,7 +121,7 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 	std::vector<void*> featureStructs; // VKRay
 	{ // pick physical device
 		auto physicalDevices = _instance->enumeratePhysicalDevices();
-		for (const vk::PhysicalDevice &dev : physicalDevices) {
+		for (const vk::PhysicalDevice& dev : physicalDevices) {
 			auto props = dev.getProperties();
 			std::cout << "Device " << props.deviceName << ":\n";
 			std::cout << "    Vendor ID: " << props.vendorID << "\n";
@@ -165,7 +166,7 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 		auto queueFamilyProps = _physicalDevice.getQueueFamilyProperties();
 		std::cout << "Queue families:\n";
 		for (std::size_t i = 0; i < queueFamilyProps.size(); ++i) {
-			const vk::QueueFamilyProperties &props = queueFamilyProps[i];
+			const vk::QueueFamilyProperties& props = queueFamilyProps[i];
 			std::cout << "    " << i << ": " << vk::to_string(props.queueFlags);
 			if (props.queueFlags & (vk::QueueFlagBits::eGraphics | vk::QueueFlagBits::eCompute)) {
 				_graphicsComputeQueueIndex = static_cast<uint32_t>(i);
@@ -179,7 +180,7 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 		std::cout << "\n";
 		_graphicsComputeQueueIndex = static_cast<uint32_t>(std::find_if(
 			queueFamilyProps.begin(), queueFamilyProps.end(),
-			[](const vk::QueueFamilyProperties &props) {
+			[](const vk::QueueFamilyProperties& props) {
 				return props.queueFlags & vk::QueueFlagBits::eGraphics;
 			}
 		) - queueFamilyProps.begin());
@@ -264,7 +265,8 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 
 		if (_graphicsComputeQueueIndex == _presentQueueIndex) {
 			_swapchainInfo.setImageSharingMode(vk::SharingMode::eExclusive);
-		} else {
+		}
+		else {
 			_swapchainInfo
 				.setImageSharingMode(vk::SharingMode::eConcurrent)
 				.setQueueFamilyIndices(_swapchainSharedQueues);
@@ -279,10 +281,10 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 	// loadScene("../../../scenes/boxTextured/boxTextured.gltf", _gltfScene);
 	// loadScene("../../../scenes/duck/Duck.gltf", _gltfScene);
 	// loadScene("../../../scenes/fish/BarramundiFish.gltf", _gltfScene);
-	// loadScene("../../../scenes/Sponza/glTF/Sponza.gltf", _gltfScene);
+	loadScene("../../../scenes/Sponza/glTF/Sponza.gltf", _gltfScene);
 	// loadScene("../../../scenes/office/scene.gltf", _gltfScene);
 	// loadScene("../../../scenes/C4DScenes/BistroInterior.gltf", _gltfScene);
-	loadScene("../../../scenes/BistroInterior_out/BistroInterior.gltf", _gltfScene);
+	//loadScene("../../../scenes/C4DScenes/BistroExterior.gltf", _gltfScene);
 
 	{ // create descriptor pools
 		std::array<vk::DescriptorPoolSize, 6> staticPoolSizes{
@@ -396,7 +398,7 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 	_gBufferPass.scene = &_gltfScene;
 	_gBufferPass.sceneBuffers = &_sceneBuffers;
 
-	for (GBuffer &gbuf : _gBuffers) {
+	for (GBuffer& gbuf : _gBuffers) {
 		gbuf = GBuffer::create(_allocator, _device.get(), _swapchain.getImageExtent(), _gBufferPass);
 	}
 	_transitionGBufferLayouts();
@@ -406,7 +408,7 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 		1, vk::BufferUsageFlagBits::eUniformBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU
 		);
 	{
-		auto *restirUniforms = _restirUniformBuffer.mapAs<shader::RestirUniforms>();
+		auto* restirUniforms = _restirUniformBuffer.mapAs<shader::RestirUniforms>();
 		restirUniforms->screenSize = nvmath::uvec2(_swapchain.getImageExtent().width, _swapchain.getImageExtent().height);
 		restirUniforms->frame = 0;
 		restirUniforms->posThreshold = posThreshold;
@@ -518,6 +520,24 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 	_temporalReusePass.screenSize = _swapchain.getImageExtent();
 
 
+#ifndef RENDERDOC_CAPTURE
+	// Hardware RT pass for visibility test
+	_unbiasedRtPass = UnbiasedRtPass::create(_device.get(), _dynamicDispatcher);
+	_unbiasedRtPass.createAccelerationStructure(_device.get(), _physicalDevice, _allocator, _dynamicDispatcher,
+		_commandPool.get(), _graphicsComputeQueue, _sceneBuffers, _gltfScene);
+	_unbiasedRtPass.createShaderBindingTable(_device.get(), _allocator, _physicalDevice, _dynamicDispatcher);
+	{
+		std::array<vk::DescriptorSetLayout, numGBuffers> setLayouts;
+		std::fill(setLayouts.begin(), setLayouts.end(), _unbiasedRtPass.getDescriptorSetLayout());
+		vk::DescriptorSetAllocateInfo allocInfo;
+		allocInfo
+			.setDescriptorPool(_staticDescriptorPool.get())
+			.setSetLayouts(setLayouts);
+		auto newSets = _device->allocateDescriptorSetsUnique(allocInfo);
+		std::move(newSets.begin(), newSets.end(), _unbiasedRtPassDescriptors.begin());
+	}
+#endif
+
 	_updateRestirBuffers();
 
 
@@ -592,6 +612,7 @@ App::~App() {
 	ImGui_ImplVulkan_Shutdown();
 	ImGui_ImplGlfw_Shutdown();
 	ImGui::DestroyContext();
+	_unbiasedRtPass.destroyAllocations(_allocator);
 	_rtPass.destroyAllocations(_allocator);
 }
 
@@ -602,7 +623,7 @@ void App::updateGui() {
 
 	ImGui::PushItemWidth(ImGui::GetContentRegionAvailWidth() / 2.0f);
 
-	const char *debugModes[]{
+	const char* debugModes[]{
 		"None",
 		"Albedo",
 		"Emission",
@@ -620,7 +641,7 @@ void App::updateGui() {
 
 	ImGui::Separator();
 
-	const char *visibilityTestMethods[]{
+	const char* visibilityTestMethods[]{
 		"Disabled",
 		"Software",
 		"Hardware"
@@ -675,13 +696,13 @@ void App::mainLoop() {
 
 			currentGBufferFrame = 0;
 
-			for (GBuffer &gbuf : _gBuffers) {
+			for (GBuffer& gbuf : _gBuffers) {
 				gbuf.resize(_allocator, _device.get(), _swapchain.getImageExtent(), _gBufferPass);
 			}
 			_transitionGBufferLayouts();
 			_gBufferPass.onResized(_device.get(), _swapchain.getImageExtent());
 
-			auto *restirUniforms = _restirUniformBuffer.mapAs<shader::RestirUniforms>();
+			auto* restirUniforms = _restirUniformBuffer.mapAs<shader::RestirUniforms>();
 			restirUniforms->screenSize = nvmath::uvec2(windowSize.width, windowSize.height);
 			restirUniforms->frame = 0;
 			_restirUniformBuffer.unmap();
@@ -732,7 +753,7 @@ void App::mainLoop() {
 			}
 			_device->resetFences(_mainFence.get());
 
-			auto *restirUniforms = _restirUniformBuffer.mapAs<shader::RestirUniforms>();
+			auto* restirUniforms = _restirUniformBuffer.mapAs<shader::RestirUniforms>();
 			++restirUniforms->frame;
 			restirUniforms->initialLightSampleCount = 1 << _log2InitialLightSamples;
 			restirUniforms->prevFrameProjectionViewMatrix = prevFrameProjectionView;
@@ -741,14 +762,14 @@ void App::mainLoop() {
 			if (_cameraUpdated || _viewParamChanged) {
 				_graphicsComputeQueue.waitIdle();
 
-				auto *gBufferUniforms = _gBufferResources.uniformBuffer.mapAs<GBufferPass::Uniforms>();
+				auto* gBufferUniforms = _gBufferResources.uniformBuffer.mapAs<GBufferPass::Uniforms>();
 				gBufferUniforms->projectionViewMatrix = _camera.projectionViewMatrix;
 				_gBufferResources.uniformBuffer.unmap();
 				_gBufferResources.uniformBuffer.flush();
 
 				restirUniforms->cameraPos = _camera.position;
 
-				auto *lightingPassUniforms = _lightingPassUniformBuffer.mapAs<shader::LightingPassUniforms>();
+				auto* lightingPassUniforms = _lightingPassUniformBuffer.mapAs<shader::LightingPassUniforms>();
 				lightingPassUniforms->cameraPos = _camera.position;
 				lightingPassUniforms->bufferSize = nvmath::uvec2(_swapchain.getImageExtent().width, _swapchain.getImageExtent().height);
 				lightingPassUniforms->debugMode = _debugMode;
@@ -758,7 +779,8 @@ void App::mainLoop() {
 
 				_cameraUpdated = false;
 				_viewParamChanged = false;
-			} else if (_renderPathChanged) {
+			}
+			else if (_renderPathChanged) {
 				_updateThresholdBuffers();
 				_recordMainCommandBuffers();
 				restirUniforms->frame = 0;
@@ -836,7 +858,8 @@ void App::mainLoop() {
 			if (_presentQueue.presentKHR(presentInfo) == vk::Result::eSuboptimalKHR) {
 				needsResize = true;
 			}
-		} catch (const vk::OutOfDateKHRError&) {
+		}
+		catch (const vk::OutOfDateKHRError&) {
 			needsResize = true;
 		}
 
@@ -855,7 +878,8 @@ void App::_onMouseButtonEvent(int button, int action, int mods) {
 		if (_pressedMouseButton == -1) {
 			_pressedMouseButton = button;
 		}
-	} else {
+	}
+	else {
 		if (button == _pressedMouseButton) {
 			_pressedMouseButton = -1;
 		}
@@ -868,38 +892,38 @@ void App::_onMouseMoveEvent(double x, double y) {
 	bool cameraChanged = true;
 	switch (_pressedMouseButton) {
 	case GLFW_MOUSE_BUTTON_LEFT:
-		{
-			nvmath::vec3f camOffset = _camera.position - _camera.lookAt;
+	{
+		nvmath::vec3f camOffset = _camera.position - _camera.lookAt;
 
-			nvmath::vec3f yAxis = nvmath::normalize(_camera.worldUp);
-			nvmath::vec3f xAxis = nvmath::normalize(nvmath::cross(yAxis, camOffset));
-			nvmath::vec3f zAxis = nvmath::cross(xAxis, yAxis);
+		nvmath::vec3f yAxis = nvmath::normalize(_camera.worldUp);
+		nvmath::vec3f xAxis = nvmath::normalize(nvmath::cross(yAxis, camOffset));
+		nvmath::vec3f zAxis = nvmath::cross(xAxis, yAxis);
 
-			nvmath::vec2f angles = offset * -1.0f * 0.005f;
-			nvmath::vec2f vert(std::cos(angles.y), std::sin(angles.y));
-			nvmath::vec2f hori(std::cos(angles.x), std::sin(angles.x));
+		nvmath::vec2f angles = offset * -1.0f * 0.005f;
+		nvmath::vec2f vert(std::cos(angles.y), std::sin(angles.y));
+		nvmath::vec2f hori(std::cos(angles.x), std::sin(angles.x));
 
-			nvmath::vec3f angle(0.0f, nvmath::dot(camOffset, yAxis), nvmath::dot(camOffset, zAxis));
-			float newZ = angle.y * vert.y + angle.z * vert.x;
-			if (newZ > 0.0f) {
-				angle = nvmath::vec3f(0.0f, angle.y * vert.x - angle.z * vert.y, newZ);
-			}
-			angle = nvmath::vec3f(angle.z * hori.y, angle.y, angle.z * hori.x);
-
-			_camera.position = _camera.lookAt + xAxis * angle.x + yAxis * angle.y + zAxis * angle.z;
+		nvmath::vec3f angle(0.0f, nvmath::dot(camOffset, yAxis), nvmath::dot(camOffset, zAxis));
+		float newZ = angle.y * vert.y + angle.z * vert.x;
+		if (newZ > 0.0f) {
+			angle = nvmath::vec3f(0.0f, angle.y * vert.x - angle.z * vert.y, newZ);
 		}
-		break;
+		angle = nvmath::vec3f(angle.z * hori.y, angle.y, angle.z * hori.x);
+
+		_camera.position = _camera.lookAt + xAxis * angle.x + yAxis * angle.y + zAxis * angle.z;
+	}
+	break;
 	case GLFW_MOUSE_BUTTON_RIGHT:
 		_camera.fovYRadians = std::clamp(_camera.fovYRadians + 0.005f * offset.y, 0.01f, nv_pi - 0.01f);
 		break;
 	case GLFW_MOUSE_BUTTON_MIDDLE:
-		{
-			nvmath::vec3f offset3D = -offset.x * _camera.unitRight + offset.y * _camera.unitUp;
-			offset3D *= 0.05f;
-			_camera.position += offset3D;
-			_camera.lookAt += offset3D;
-		}
-		break;
+	{
+		nvmath::vec3f offset3D = -offset.x * _camera.unitRight + offset.y * _camera.unitUp;
+		offset3D *= 0.05f;
+		_camera.position += offset3D;
+		_camera.lookAt += offset3D;
+	}
+	break;
 	default:
 		cameraChanged = false;
 		break;

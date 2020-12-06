@@ -88,3 +88,8 @@ add_shader(restir "src/shaders/raytrace.rgen")
 add_shader(restir "src/shaders/raytrace.rchit")
 add_shader(restir "src/shaders/raytrace.rmiss")
 add_shader(restir "src/shaders/raytraceShadow.rmiss")
+
+add_shader(restir "src/shaders/unbiasedRaytrace.rgen")
+add_shader(restir "src/shaders/unbiasedRaytrace.rchit")
+add_shader(restir "src/shaders/unbiasedRaytrace.rmiss")
+add_shader(restir "src/shaders/unbiasedRaytraceShadow.rmiss")
