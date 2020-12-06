@@ -184,6 +184,7 @@ protected:
 	bool _viewParamChanged = false;
 	bool _renderPathChanged = false;
 
+	bool _enableUnbias = true;
 
 	nvmath::vec2f _lastMouse;
 	int _pressedMouseButton = -1;
@@ -262,7 +263,10 @@ protected:
 			}
 
 #ifndef RENDERDOC_CAPTURE
-			_unbiasedRtPass.issueCommands(_mainCommandBuffers[i].get(), _swapchain.getImageExtent(), _dynamicDispatcher);
+			if (_enableUnbias) 
+			{
+				_unbiasedRtPass.issueCommands(_mainCommandBuffers[i].get(), _swapchain.getImageExtent(), _dynamicDispatcher);
+			}
 #endif
 			_mainCommandBuffers[i]->end();
 

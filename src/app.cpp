@@ -661,6 +661,10 @@ void App::updateGui() {
 	_renderPathChanged = ImGui::SliderInt("Spatial Reuse Iterations", &_spatialReuseIterations, 0, 10) || _renderPathChanged;
 	_renderPathChanged = ImGui::SliderFloat("Depth Threshold", &posThreshold, 0.0, 1.0) || _renderPathChanged;
 	_renderPathChanged = ImGui::SliderFloat("Normal Threshold", &norThreshold, 5.0, 45.0) || _renderPathChanged;
+
+	ImGui::Separator();
+	_renderPathChanged = ImGui::Checkbox("Use Unbiased Pass", &_enableUnbias) || _renderPathChanged;
+
 	ImGui::Render();
 }
 
