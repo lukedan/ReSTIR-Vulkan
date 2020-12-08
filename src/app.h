@@ -144,9 +144,10 @@ protected:
 	std::array<vk::UniqueDescriptorSet, numGBuffers> _lightingPassDescriptorSets;
 
 	RtPass _rtPass;
-	std::array<vk::UniqueDescriptorSet, numGBuffers> _rtPassDescriptors;
-	std::array<vk::UniqueDescriptorSet, numGBuffers> _rtPassLightSampleDescriptors;
-	std::array<vk::UniqueDescriptorSet, numGBuffers> _rtPassTemporalDescriptors;
+	std::array<vk::UniqueDescriptorSet, numGBuffers> _restirFrameDescriptors;
+	vk::UniqueDescriptorSet _restirStaticDescriptor;
+	vk::UniqueDescriptorSet _restirHardwareRayTraceDescriptor;
+	vk::UniqueDescriptorSet _restirSoftwareRayTraceDescriptor;
 
 	UnbiasedRtPass _unbiasedRtPass;
 	std::array<vk::UniqueDescriptorSet, numGBuffers> _unbiasedRtPassDescriptors;
@@ -226,9 +227,9 @@ protected:
 		for (std::size_t i = 0; i < numGBuffers; ++i) {
 			_lightSamplePass.descriptorSet = _lightSampleDescriptors[i].get();
 			_swVisibilityTestPass.descriptorSet = _swVisibilityTestDescriptors[i].get();
-			_rtPass.descriptorSet = _rtPassDescriptors[i].get();
-			_rtPass.lightSampleDescriptorSet = _rtPassLightSampleDescriptors[i].get();
-			_rtPass.temporalDescriptorSet = _rtPassTemporalDescriptors[i].get();
+			_rtPass.staticDescriptorSet = _restirStaticDescriptor.get();
+			_rtPass.frameDescriptorSet = _restirFrameDescriptors[i].get();
+			_rtPass.raytraceDescriptorSet = _restirHardwareRayTraceDescriptor.get();
 			_unbiasedRtPass.descriptorSet = _unbiasedRtPassDescriptors[i].get();
 			_temporalReusePass.descriptorSet = _temporalReuseDescriptors[i].get();
 
@@ -299,6 +300,14 @@ protected:
 			}
 		}
 
+		_rtPass.initializeStaticDescriptorSetFor(
+			_sceneBuffers, _restirUniformBuffer.get(), _device.get(), _restirStaticDescriptor.get()
+		);
+#ifndef RENDERDOC_CAPTURE
+		_rtPass.initializeHardwareRayTracingDescriptorSet(
+			_device.get(), _restirHardwareRayTraceDescriptor.get(), _dynamicDispatcher
+		);
+#endif
 		for (std::size_t i = 0; i < numGBuffers; ++i) {
 			_lightSamplePass.initializeDescriptorSetFor(
 				_gBuffers[i], _sceneBuffers, _restirUniformBuffer.get(), _reservoirBuffers[i].get(), _reservoirBufferSize,
@@ -310,23 +319,11 @@ protected:
 				_device.get(), _swVisibilityTestDescriptors[i].get()
 			);
 
-#ifndef RENDERDOC_CAPTURE
-			_rtPass.createDescriptorSetForRayTracing(
-				_device.get(),
-				_gBuffers[i], _restirUniformBuffer.get(), _reservoirBuffers[i].get(), _reservoirBufferSize,
-				_rtPassDescriptors[i].get(),
-				_dynamicDispatcher
-			);
-			_rtPass.initializeLightSampleDescriptorSetFor(
-				_gBuffers[i], _sceneBuffers, _restirUniformBuffer.get(), _reservoirBuffers[i].get(), _reservoirBufferSize,
-				_device.get(), _rtPassLightSampleDescriptors[i].get()
-			);
-			_rtPass.initializeTemporalDescriptorSetFor(
-				_gBuffers[i], _gBuffers[(i + numGBuffers - 1) % numGBuffers], _restirUniformBuffer.get(),
+			_rtPass.initializeFrameDescriptorSetFor(
+				_gBuffers[i], _gBuffers[(i + numGBuffers - 1) % numGBuffers],
 				_reservoirBuffers[i].get(), _reservoirBuffers[(i + numGBuffers - 1) % numGBuffers].get(), _reservoirBufferSize,
-				_device.get(), _rtPassTemporalDescriptors[i].get()
+				_device.get(), _restirFrameDescriptors[i].get()
 			);
-#endif
 
 			_temporalReusePass.initializeDescriptorSetFor(
 				_gBuffers[i], _gBuffers[(i + numGBuffers - 1) % numGBuffers], _restirUniformBuffer.get(),

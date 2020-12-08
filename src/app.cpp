@@ -1,5 +1,6 @@
 #include "app.h"
 
+#include <cinttypes>
 #include <sstream>
 
 #include <imgui.h>
@@ -468,7 +469,7 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 	}
 	_spatialReusePass.screenSize = _swapchain.getImageExtent();
 
-#ifndef RENDERDOC_CAPTURE
+
 	// Hardware RT pass for visibility test
 	_rtPass = RtPass::create(_device.get(), _dynamicDispatcher);
 	_rtPass.createAccelerationStructure(_device.get(), _physicalDevice, _allocator, _dynamicDispatcher,
@@ -476,33 +477,30 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 	_rtPass.createShaderBindingTable(_device.get(), _allocator, _physicalDevice, _dynamicDispatcher);
 	{
 		std::array<vk::DescriptorSetLayout, numGBuffers> setLayouts;
-		std::fill(setLayouts.begin(), setLayouts.end(), _rtPass.getDescriptorSetLayout());
+		std::fill(setLayouts.begin(), setLayouts.end(), _rtPass.getFrameDescriptorSetLayout());
 		vk::DescriptorSetAllocateInfo allocInfo;
 		allocInfo
 			.setDescriptorPool(_staticDescriptorPool.get())
 			.setSetLayouts(setLayouts);
 		auto newSets = _device->allocateDescriptorSetsUnique(allocInfo);
-		std::move(newSets.begin(), newSets.end(), _rtPassDescriptors.begin());
+		std::move(newSets.begin(), newSets.end(), _restirFrameDescriptors.begin());
 	}
 	{
-		std::array<vk::DescriptorSetLayout, numGBuffers> setLayouts;
-		std::fill(setLayouts.begin(), setLayouts.end(), _rtPass.getLightSampleDescriptorSetLayout());
+		vk::DescriptorSetLayout setLayout = _rtPass.getStaticDescriptorSetLayout();
 		vk::DescriptorSetAllocateInfo allocInfo;
 		allocInfo
 			.setDescriptorPool(_staticDescriptorPool.get())
-			.setSetLayouts(setLayouts);
-		auto newSets = _device->allocateDescriptorSetsUnique(allocInfo);
-		std::move(newSets.begin(), newSets.end(), _rtPassLightSampleDescriptors.begin());
+			.setSetLayouts(setLayout);
+		_restirStaticDescriptor = std::move(_device->allocateDescriptorSetsUnique(allocInfo)[0]);
 	}
+#ifndef RENDERDOC_CAPTURE
 	{
-		std::array<vk::DescriptorSetLayout, numGBuffers> setLayouts;
-		std::fill(setLayouts.begin(), setLayouts.end(), _rtPass.getTemporalDescriptorSetLayout());
+		vk::DescriptorSetLayout setLayout = _rtPass.getHardwareRayTraceDescriptorSetLayout();
 		vk::DescriptorSetAllocateInfo allocInfo;
 		allocInfo
 			.setDescriptorPool(_staticDescriptorPool.get())
-			.setSetLayouts(setLayouts);
-		auto newSets = _device->allocateDescriptorSetsUnique(allocInfo);
-		std::move(newSets.begin(), newSets.end(), _rtPassTemporalDescriptors.begin());
+			.setSetLayouts(setLayout);
+		_restirHardwareRayTraceDescriptor = std::move(_device->allocateDescriptorSetsUnique(allocInfo)[0]);
 	}
 #endif
 
@@ -661,9 +659,12 @@ void App::updateGui() {
 	_renderPathChanged = ImGui::SliderInt("Spatial Reuse Iterations", &_spatialReuseIterations, 0, 10) || _renderPathChanged;
 	_renderPathChanged = ImGui::SliderFloat("Depth Threshold", &posThreshold, 0.0, 1.0) || _renderPathChanged;
 	_renderPathChanged = ImGui::SliderFloat("Normal Threshold", &norThreshold, 5.0, 45.0) || _renderPathChanged;
+	_renderPathChanged = ImGui::Checkbox("Unbiased Spatial Reuse", &_enableUnbias) || _renderPathChanged;
 
 	ImGui::Separator();
-	_renderPathChanged = ImGui::Checkbox("Use Unbiased Pass", &_enableUnbias) || _renderPathChanged;
+
+	ImGui::LabelText("Resolution", "%" PRIu32 " x %" PRIu32, _swapchain.getImageExtent().width, _swapchain.getImageExtent().height);
+	ImGui::LabelText("FPS", "%f", _fpsCounter.getFpsAverageWindow());
 
 	ImGui::Render();
 }
