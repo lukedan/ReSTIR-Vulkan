@@ -84,6 +84,8 @@ add_shader(restir "src/shaders/temporalReuse.comp")
 add_shader(restir "src/shaders/quad.vert")
 add_shader(restir "src/shaders/lighting.frag")
 
+add_shader(restir "src/shaders/restirOmniSoftware.comp")
+
 add_shader(restir "src/shaders/raytrace.rgen")
 add_shader(restir "src/shaders/raytrace.rchit")
 add_shader(restir "src/shaders/raytrace.rmiss")

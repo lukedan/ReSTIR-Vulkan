@@ -122,40 +122,45 @@ protected:
 
 	[[nodiscard]] virtual vk::UniqueRenderPass _createPass(vk::Device) = 0;
 	[[nodiscard]] virtual std::vector<PipelineCreationInfo> _getPipelineCreationInfo() = 0;
+	[[nodiscard]] vk::UniquePipeline _createGraphicsPipeline(
+		const GraphicsPipelineCreationInfo &info, uint32_t subpass, vk::Device dev
+	) {
+		// checks that storages are properly bound
+		assert(info.vertexInputState.pVertexBindingDescriptions == info.vertexInputBindingStorage.data());
+		assert(info.vertexInputState.pVertexAttributeDescriptions == info.vertexInputAttributeStorage.data());
+		assert(info.colorBlendState.pAttachments == info.attachmentColorBlendStorage.data());
+		assert(info.viewportState.pViewports == info.viewportStorage.data());
+		assert(info.viewportState.pScissors == info.scissorStorage.data());
+
+		vk::PipelineDynamicStateCreateInfo dynamicStateInfo;
+		dynamicStateInfo.setDynamicStates(info.dynamicStates);
+
+		vk::GraphicsPipelineCreateInfo thisPipelineInfo;
+		thisPipelineInfo
+			.setPVertexInputState(&info.vertexInputState)
+			.setPInputAssemblyState(&info.inputAssemblyState)
+			.setPViewportState(&info.viewportState)
+			.setPRasterizationState(&info.rasterizationState)
+			.setPDepthStencilState(&info.depthStencilState)
+			.setPMultisampleState(&info.multisampleState)
+			.setPColorBlendState(&info.colorBlendState)
+			.setStages(info.shaderStages)
+			.setLayout(info.pipelineLayout)
+			.setPDynamicState(&dynamicStateInfo)
+			.setRenderPass(_pass.get())
+			.setSubpass(subpass);
+		auto [result, pipe] = dev.createGraphicsPipelineUnique(nullptr, thisPipelineInfo).asTuple();
+		vkCheck(result);
+		return std::move(pipe);
+	}
 	[[nodiscard]] virtual std::vector<vk::UniquePipeline> _createPipelines(vk::Device dev) {
 		std::vector<PipelineCreationInfo> pipelineInfo = _getPipelineCreationInfo();
 		std::vector<vk::UniquePipeline> pipelines(pipelineInfo.size());
 		for (std::size_t i = 0; i < pipelineInfo.size(); ++i) {
 			if (std::holds_alternative<GraphicsPipelineCreationInfo>(pipelineInfo[i])) {
-				const auto &info = std::get<GraphicsPipelineCreationInfo>(pipelineInfo[i]);
-
-				// checks that storages are properly bound
-				assert(info.vertexInputState.pVertexBindingDescriptions == info.vertexInputBindingStorage.data());
-				assert(info.vertexInputState.pVertexAttributeDescriptions == info.vertexInputAttributeStorage.data());
-				assert(info.colorBlendState.pAttachments == info.attachmentColorBlendStorage.data());
-				assert(info.viewportState.pViewports == info.viewportStorage.data());
-				assert(info.viewportState.pScissors == info.scissorStorage.data());
-
-				vk::PipelineDynamicStateCreateInfo dynamicStateInfo;
-				dynamicStateInfo.setDynamicStates(info.dynamicStates);
-
-				vk::GraphicsPipelineCreateInfo thisPipelineInfo;
-				thisPipelineInfo
-					.setPVertexInputState(&info.vertexInputState)
-					.setPInputAssemblyState(&info.inputAssemblyState)
-					.setPViewportState(&info.viewportState)
-					.setPRasterizationState(&info.rasterizationState)
-					.setPDepthStencilState(&info.depthStencilState)
-					.setPMultisampleState(&info.multisampleState)
-					.setPColorBlendState(&info.colorBlendState)
-					.setStages(info.shaderStages)
-					.setLayout(info.pipelineLayout)
-					.setPDynamicState(&dynamicStateInfo)
-					.setRenderPass(_pass.get())
-					.setSubpass(static_cast<uint32_t>(i));
-				auto [result, pipe] = dev.createGraphicsPipelineUnique(nullptr, thisPipelineInfo).asTuple();
-				vkCheck(result);
-				pipelines[i] = std::move(pipe);
+				pipelines[i] = _createGraphicsPipeline(
+					std::get<GraphicsPipelineCreationInfo>(pipelineInfo[i]), static_cast<uint32_t>(i), dev
+				);
 			} else if (std::holds_alternative<vk::ComputePipelineCreateInfo>(pipelineInfo[i])) {
 				const auto &info = std::get<vk::ComputePipelineCreateInfo>(pipelineInfo[i]);
 				auto [result, pipe] = dev.createComputePipelineUnique(nullptr, info);

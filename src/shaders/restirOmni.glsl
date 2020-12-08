@@ -8,8 +8,6 @@
 #include "include/structs/light.glsl"
 
 
-layout(location = 0) rayPayloadEXT bool isShadowed;
-
 layout (binding = 0, set = 0) buffer PointLights {
 	int count;
 	pointLight lights[];
@@ -39,21 +37,67 @@ layout (binding = 6, set = 1) uniform sampler2D uniPrevFrameNormal;
 layout (binding = 7, set = 1) uniform sampler2D uniPrevDepth;
 
 layout (binding = 8, set = 1) buffer Reservoirs {
-    Reservoir reservoirs[];
+	Reservoir reservoirs[];
 };
 layout (binding = 9, set = 1) buffer PrevFrameReservoirs {
 	Reservoir prevFrameReservoirs[];
 };
 
 #ifdef HARDWARE_RAY_TRACING
+layout (location = 0) rayPayloadEXT bool isShadowed;
 layout (binding = 0, set = 2) uniform accelerationStructureEXT acc;
 #else
+#	include "include/structs/aabbTree.glsl"
+layout (binding = 0, set = 2) buffer AabbTree {
+	int root;
+	AabbTreeNode nodes[];
+} aabbTree;
+layout (binding = 1, set = 2) buffer Triangles {
+	Triangle triangles[];
+};
+
+layout (local_size_x = OMNI_GROUP_SIZE_X, local_size_y = OMNI_GROUP_SIZE_Y, local_size_z = 1) in;
+
+#	define NODE_BUFFER aabbTree
+#	define TRIANGLE_BUFFER triangles
+#	include "include/softwareRaytracing.glsl"
 #endif
 
 
+bool testVisibility(vec3 p1, vec3 p2) {
+	float tMin = 0.001f;
+	vec3 dir = p2 - p1;
+
+#ifdef HARDWARE_RAY_TRACING
+	isShadowed = true;
+
+	float curTMax = length(dir);
+	dir /= curTMax;
+
+	traceRayEXT(
+		acc,            // acceleration structure
+		gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsOpaqueEXT | gl_RayFlagsSkipClosestHitShaderEXT,       // rayFlags
+		0xFF,           // cullMask
+		0,              // sbtRecordOffset
+		0,              // sbtRecordStride
+		0,              // missIndex
+		p1,             // ray origin
+		tMin,           // ray min range
+		dir,            // ray direction
+		curTMax - 2.0f * tMin,           // ray max range
+		0               // payload (location = 0)
+	);
+
+	return isShadowed;
+#else
+	vec3 offset = tMin * normalize(dir);
+	return raytrace(p1 + offset, dir - 2 * offset);
+#endif
+}
+
 vec3 pickPointOnTriangle(float r1, float r2, vec3 p1, vec3 p2, vec3 p3) {
-    float sqrt_r1 = sqrt(r1);
-    return (1.0 - sqrt_r1) * p1 + (sqrt_r1 * (1.0 - r2)) * p2 + (r2 * sqrt_r1) * p3;
+	float sqrt_r1 = sqrt(r1);
+	return (1.0 - sqrt_r1) * p1 + (sqrt_r1 * (1.0 - r2)) * p2 + (r2 * sqrt_r1) * p3;
 }
 
 void aliasTableSample(float r1, float r2, out int index, out float probability) {
@@ -70,12 +114,17 @@ void aliasTableSample(float r1, float r2, out int index, out float probability) 
 
 
 void main() {
-    uvec2 pixelCoord = gl_LaunchIDEXT.xy;
+	uvec2 pixelCoord =
+#ifdef HARDWARE_RAY_TRACING
+		gl_LaunchIDEXT.xy;
+#else
+		gl_GlobalInvocationID.xy;
+#endif
 	if (any(greaterThanEqual(pixelCoord, uniforms.screenSize))) {
 		return;
 	}
 
-    // Light Sampling
+	// Light Sampling
 	vec3 albedo = texelFetch(uniAlbedo, ivec2(pixelCoord), 0).xyz;
 	vec3 normal = texelFetch(uniNormal, ivec2(pixelCoord), 0).xyz;
 	vec2 roughnessMetallic = texelFetch(uniMaterialProperties, ivec2(pixelCoord), 0).xy;
@@ -119,39 +168,15 @@ void main() {
 	
 	uint reservoirIndex = pixelCoord.y * uniforms.screenSize.x + pixelCoord.x;
 	
-    // Visibility Reuse
-    uint rayFlags = gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsOpaqueEXT | gl_RayFlagsSkipClosestHitShaderEXT;
-    float tMin     = 0.001;
+	// Visibility Reuse
+	for (int i = 0; i < RESERVOIR_SIZE; i++) {
+		bool shadowed = testVisibility(worldPos, res.samples[i].position_emissionLum.xyz);
 
-    for(int i = 0; i < RESERVOIR_SIZE; i++)
-    {
-        isShadowed = true;
-       
-        vec3 curLightPos = vec3(res.samples[i].position_emissionLum.xyz);
-        vec3 curDirection = vec3(curLightPos) - worldPos;
-        float curTMax = length(curDirection);
-        curDirection = normalize(curDirection);
-        vec3 origin    = worldPos + 0.001 * curDirection;
-
-        traceRayEXT(acc,     // acceleration structure
-            rayFlags,       // rayFlags
-            0xFF,           // cullMask
-            0,              // sbtRecordOffset
-            0,              // sbtRecordStride
-            0,              // missIndex
-            origin.xyz,     // ray origin
-            tMin,           // ray min range
-            curDirection.xyz,  // ray direction
-            curTMax - 0.002,           // ray max range
-            0               // payload (location = 0)
-        );
-
-        if(isShadowed)
-        {
-            res.samples[i].w = 0.0f;
-            res.samples[i].sumWeights = 0.0f;
-        }
-    } 
+		if (shadowed) {
+			res.samples[i].w = 0.0f;
+			res.samples[i].sumWeights = 0.0f;
+		}
+	} 
 
 	// Temporal reuse
 	vec4 prevFramePos = uniforms.prevFrameProjectionViewMatrix * vec4(worldPos, 1.0f);

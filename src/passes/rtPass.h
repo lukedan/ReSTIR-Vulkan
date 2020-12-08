@@ -3,6 +3,8 @@
 #define RESERVOIR_SIZE 4
 
 #include <vulkan/vulkan.hpp>
+
+#include "pass.h"
 #include "vma.h"
 
 //#define ORIGINAL
@@ -18,7 +20,7 @@ struct BlasInstanceForTlas
 	nvmath::mat4f              transform{ nvmath::mat4f(1) };  // Identity
 };
 
-class RtPass {
+class RtPass /*: public Pass*/ {
 public:
 	RtPass() = default;
 	RtPass(RtPass&&) = default;
@@ -285,6 +287,12 @@ public:
 			.setOffset(0)
 			.setStride(0)
 			.setSize(0);
+	}
+
+	inline static RtPass create(vk::Device dev, vk::DispatchLoaderDynamic& dld) {
+		RtPass pass = RtPass();
+		pass._initialize(dev, dld);
+		return std::move(pass);
 	}
 
 	void createAccelerationStructure(
@@ -591,29 +599,6 @@ public:
 		imageViewInfo.components.a = vk::ComponentSwizzle::eA;
 
 		_offscreenBufferView = dev.createImageViewUnique(imageViewInfo);
-
-		// Create camera uniform buffer
-		cameraUniformBuffer = allocator.createTypedBuffer<shader::LightingPassUniforms>(1, vk::BufferUsageFlagBits::eUniformBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU);
-	}
-
-	void updateCameraUniform(Camera& _camera)
-	{
-		auto* cameraUniformBegin = cameraUniformBuffer.mapAs<shader::LightingPassUniforms>();
-		cameraUniformBegin->cameraPos = _camera.position;
-		cameraUniformBuffer.unmap();
-		cameraUniformBuffer.flush();
-	}
-
-	inline static RtPass create(vk::Device dev, vk::DispatchLoaderDynamic& dld)
-	{
-		RtPass pass = RtPass();
-		pass._initialize(dev, dld);
-		return std::move(pass);
-	}
-
-	void setDispatchLoaderDynamic(vk::DispatchLoaderDynamic& dld)
-	{
-		_dld = dld;
 	}
 
 	void destroyAllocations(vma::Allocator& allocator) 
@@ -634,13 +619,17 @@ public:
 	vk::DescriptorSet staticDescriptorSet;
 	vk::DescriptorSet frameDescriptorSet;
 	vk::DescriptorSet raytraceDescriptorSet;
+
+	const vk::DispatchLoaderDynamic *dynamicLoader = nullptr;
 protected:
-	Shader _rayGen, _rayChit, _rayMiss, _rayShadowMiss;
+	Shader _rayGen, _rayChit, _rayMiss, _rayShadowMiss, _software;
+
 	vk::UniqueSampler _sampler;
 	vk::UniquePipelineLayout _pipelineLayout;
-	vk::UniqueDescriptorSetLayout _hardwareRayTraceDescriptorSetLayout;
 	vk::UniqueDescriptorSetLayout _staticDescriptorSetLayout;
 	vk::UniqueDescriptorSetLayout _frameDescriptorSetLayout;
+	vk::UniqueDescriptorSetLayout _hardwareRayTraceDescriptorSetLayout;
+	vk::UniqueDescriptorSetLayout _softwareRayTraceDescriptorSetLayout;
 
 	[[nodiscard]] vk::UniqueRenderPass _createPass(vk::Device);
 
@@ -689,6 +678,7 @@ protected:
 		_rayChit = Shader::load(dev, "shaders/raytrace.rchit.spv", "main", vk::ShaderStageFlagBits::eClosestHitKHR);
 		_rayMiss = Shader::load(dev, "shaders/raytrace.rmiss.spv", "main", vk::ShaderStageFlagBits::eMissKHR);
 		_rayShadowMiss = Shader::load(dev, "shaders/raytraceShadow.rmiss.spv", "main", vk::ShaderStageFlagBits::eMissKHR);
+		_software = Shader::load(dev, "shaders/restirOmniSoftware.comp.spv", "main", vk::ShaderStageFlagBits::eCompute);
 
 
 		std::array<vk::DescriptorSetLayoutBinding, 4> staticBindings{
@@ -737,6 +727,15 @@ protected:
 		_hardwareRayTraceDescriptorSetLayout = dev.createDescriptorSetLayoutUnique(hwRayTraceLayoutInfo);
 
 
+		std::array<vk::DescriptorSetLayoutBinding, 2> swRayTraceBindings{
+			vk::DescriptorSetLayoutBinding(0, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eCompute),
+			vk::DescriptorSetLayoutBinding(1, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eCompute)
+		};
+		vk::DescriptorSetLayoutCreateInfo swRayTraceLayoutInfo;
+		swRayTraceLayoutInfo.setBindings(swRayTraceBindings);
+		_softwareRayTraceDescriptorSetLayout = dev.createDescriptorSetLayoutUnique(swRayTraceLayoutInfo);
+
+
 		std::array<vk::DescriptorSetLayout, 3> descriptorLayouts{
 			_staticDescriptorSetLayout.get(), _frameDescriptorSetLayout.get(),_hardwareRayTraceDescriptorSetLayout.get()
 		};
@@ -756,7 +755,6 @@ private:
 	std::vector<vk::UniqueHandle<vk::Pipeline, vk::DispatchLoaderDynamic>> _pipelines;
 
 	vma::UniqueBuffer instance;
-	vma::UniqueBuffer cameraUniformBuffer;
 	std::vector<vk::DeviceMemory> memories;
 
 	// Acceleration Structure
