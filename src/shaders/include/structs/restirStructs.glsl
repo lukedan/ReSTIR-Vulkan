@@ -36,9 +36,13 @@ struct RestirUniforms {
 	uint frame;
 
 	uint initialLightSampleCount;
-	float posThreshold;
-	float norThreshold;
+
 	uint temporalSampleCountMultiplier;
+
+	float spatialPosThreshold;
+	float spatialNormalThreshold;
+	uint spatialNeighbors;
+	float spatialRadius;
 
 	int flags;
 };

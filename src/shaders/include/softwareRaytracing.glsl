@@ -41,7 +41,7 @@ const int aabbTreeStackSize = 32;
 
 bool raytrace(vec3 origin, vec3 dir) {
 	int stack[aabbTreeStackSize], top = 1;
-	stack[0] = NODE_BUFFER.root;
+	stack[0] = 0;
 	int candidates[geomTestInterval * 2], numCandidates = 0;
 	int counter = 0;
 	while (top > 0) {

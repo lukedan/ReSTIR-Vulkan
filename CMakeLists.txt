@@ -32,6 +32,7 @@ target_sources(restir
 		"src/passes/lightingPass.h"
 		"src/passes/lightSamplePass.h"
 		"src/passes/pass.h"
+		"src/passes/restirPass.h"
 		"src/passes/softwareVisibilityTestPass.h"
 		"src/passes/spatialReusePass.h"
 		"src/passes/temporalReusePass.h"
@@ -53,8 +54,7 @@ target_sources(restir
 		"src/transientCommandBuffer.h"
 		"src/shader.h"
 		"src/vma.cpp"
-		"src/vma.h" 
-		"src/passes/rtPass.h")
+		"src/vma.h")
 
 
 find_package(Vulkan REQUIRED)

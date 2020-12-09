@@ -15,7 +15,6 @@ layout (binding = 2) buffer Reservoirs {
 	Reservoir reservoirs[];
 };
 layout (binding = 3) buffer AabbTree {
-	int root;
 	AabbTreeNode nodes[];
 } aabbTree;
 layout (binding = 4) buffer Triangles {

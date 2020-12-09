@@ -18,7 +18,7 @@
 #include "passes/temporalReusePass.h"
 #include "passes/spatialReusePass.h"
 #include "passes/lightingPass.h"
-#include "passes/rtPass.h"
+#include "passes/restirPass.h"
 #include "passes/unbiasedRtPass.h"
 #include "passes/imguiPass.h"
 
@@ -141,7 +141,7 @@ protected:
 	vma::UniqueBuffer _lightingPassUniformBuffer;
 	std::array<vk::UniqueDescriptorSet, numGBuffers> _lightingPassDescriptorSets;
 
-	RtPass _rtPass;
+	RestirPass _rtPass;
 	std::array<vk::UniqueDescriptorSet, numGBuffers> _restirFrameDescriptors;
 	vk::UniqueDescriptorSet _restirStaticDescriptor;
 	vk::UniqueDescriptorSet _restirHardwareRayTraceDescriptor;
@@ -287,8 +287,8 @@ protected:
 
 	void _updateThresholdBuffers() {
 		auto* restirUniforms = _restirUniformBuffer.mapAs<shader::RestirUniforms>();
-		restirUniforms->posThreshold = posThreshold;
-		restirUniforms->norThreshold = norThreshold;
+		restirUniforms->spatialPosThreshold = posThreshold;
+		restirUniforms->spatialNormalThreshold = norThreshold;
 		_restirUniformBuffer.unmap();
 		_restirUniformBuffer.flush();
 	}

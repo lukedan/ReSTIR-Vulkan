@@ -25,9 +25,7 @@ struct AabbTreeBuffers {
 	[[nodiscard]] static AabbTreeBuffers create(const AabbTree &tree, vma::Allocator &allocator) {
 		AabbTreeBuffers result;
 		// align the array correctly
-		result.nodeBufferSize =
-			alignPreArrayBlock<shader::AabbTreeNode, int32_t>() +
-			sizeof(shader::AabbTreeNode) * tree.nodes.size();
+		result.nodeBufferSize = sizeof(shader::AabbTreeNode) * tree.nodes.size();
 		result.nodeBuffer = allocator.createBuffer(
 			static_cast<uint32_t>(result.nodeBufferSize),
 			vk::BufferUsageFlagBits::eStorageBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU
@@ -39,12 +37,8 @@ struct AabbTreeBuffers {
 			vk::BufferUsageFlagBits::eStorageBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU
 		);
 
-		int32_t *ptr = result.nodeBuffer.mapAs<int32_t>();
-		*ptr = tree.root;
-		auto *nodes = reinterpret_cast<shader::AabbTreeNode*>(
-			reinterpret_cast<uintptr_t>(ptr) + alignPreArrayBlock<shader::AabbTreeNode, int32_t>()
-			);
-		std::memcpy(nodes, tree.nodes.data(), sizeof(shader::AabbTreeNode) * tree.nodes.size());
+		auto *ptr = result.nodeBuffer.mapAs<shader::AabbTreeNode>();
+		std::memcpy(ptr, tree.nodes.data(), sizeof(shader::AabbTreeNode) * tree.nodes.size());
 		result.nodeBuffer.unmap();
 		result.nodeBuffer.flush();
 

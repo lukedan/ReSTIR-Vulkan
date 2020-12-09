@@ -412,8 +412,10 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 		auto* restirUniforms = _restirUniformBuffer.mapAs<shader::RestirUniforms>();
 		restirUniforms->screenSize = nvmath::uvec2(_swapchain.getImageExtent().width, _swapchain.getImageExtent().height);
 		restirUniforms->frame = 0;
-		restirUniforms->posThreshold = posThreshold;
-		restirUniforms->norThreshold = norThreshold;
+		restirUniforms->spatialPosThreshold = posThreshold;
+		restirUniforms->spatialNormalThreshold = norThreshold;
+		restirUniforms->spatialNeighbors = 4;
+		restirUniforms->spatialRadius = 30.0f;
 		_restirUniformBuffer.unmap();
 		_restirUniformBuffer.flush();
 	}
@@ -471,7 +473,7 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 
 
 	// Hardware RT pass for visibility test
-	_rtPass = Pass::create<RtPass>(_device.get(), _dynamicDispatcher);
+	_rtPass = Pass::create<RestirPass>(_device.get(), _dynamicDispatcher);
 #ifndef RENDERDOC_CAPTURE
 	_rtPass.createAccelerationStructure(_device.get(), _physicalDevice, _allocator,
 		_commandPool.get(), _graphicsComputeQueue, _sceneBuffers, _gltfScene);

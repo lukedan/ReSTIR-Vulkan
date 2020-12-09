@@ -20,12 +20,12 @@ struct BlasInstanceForTlas
 	nvmath::mat4f              transform{ nvmath::mat4f(1) };  // Identity
 };
 
-class RtPass : public Pass {
+class RestirPass : public Pass {
 	friend Pass;
 public:
-	RtPass() = default;
-	RtPass(RtPass&&) = default;
-	RtPass& operator=(RtPass&&) = default;
+	RestirPass() = default;
+	RestirPass(RestirPass&&) = default;
+	RestirPass& operator=(RestirPass&&) = default;
 
 	[[nodiscard]] vk::DescriptorSetLayout getStaticDescriptorSetLayout() const {
 		return _staticDescriptorSetLayout.get();
@@ -643,7 +643,7 @@ public:
 	const vk::DispatchLoaderDynamic *dynamicLoader = nullptr;
 	bool useSoftwareRayTracing = false;
 protected:
-	explicit RtPass(const vk::DispatchLoaderDynamic &loader) : Pass(), dynamicLoader(&loader) {
+	explicit RestirPass(const vk::DispatchLoaderDynamic &loader) : Pass(), dynamicLoader(&loader) {
 	}
 
 	Shader _rayGen, _rayChit, _rayMiss, _rayShadowMiss, _software;

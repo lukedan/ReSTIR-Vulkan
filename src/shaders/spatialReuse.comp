@@ -24,9 +24,6 @@ layout (binding = 6) buffer Resultreservoirs
 };
 
 
-#define RAND_NEIGHBOURS 3
-#define RAND_RADIUS 30.0
-
 void main() {
 	uvec2 pixelCoord = gl_GlobalInvocationID.xy;
 	if (any(greaterThanEqual(pixelCoord, uniforms.screenSize))) {
@@ -44,12 +41,12 @@ void main() {
 	Reservoir res = reservoirs[reservoirIndex];
 
 	Rand rand = seedRand(uniforms.frame * 31, pixelCoord.y * 10007 + pixelCoord.x);
-	for(int i = 0; i < RAND_NEIGHBOURS; i++)
+	for(int i = 0; i < uniforms.spatialNeighbors; i++)
 	{
 		ivec2 randNeighbor = ivec2(0, 0);
 		
 		float angle = randFloat(rand) * 2.0 * M_PI;
-		float radius = randFloat(rand) * RAND_RADIUS;
+		float radius = randFloat(rand) * uniforms.spatialRadius;
 
 		ivec2 randNeighborOffset = ivec2(floor(cos(angle) * radius), floor(sin(angle) * radius));
 		randNeighbor.x = clamp(int(pixelCoord.x) + randNeighborOffset.x, 0, int(uniforms.screenSize.x) - 1);
@@ -61,7 +58,7 @@ void main() {
 		vec3 neighborPos = texelFetch(uniWorldPosition, ivec2(randNeighbor), 0).xyz;
 		vec3 neighborNor = texelFetch(uniNormal, ivec2(randNeighbor), 0).xyz;
 
-		if(abs(neighborPos.z - worldPos.z) > uniforms.posThreshold * abs(worldPos.z) || dot(neighborNor, normal) < cos(radians(uniforms.norThreshold)))
+		if(abs(neighborPos.z - worldPos.z) > uniforms.spatialPosThreshold * abs(worldPos.z) || dot(neighborNor, normal) < cos(radians(uniforms.spatialNormalThreshold)))
 			continue;
 
 		Reservoir randRes = reservoirs[randIndex];

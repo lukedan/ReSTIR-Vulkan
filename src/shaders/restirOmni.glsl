@@ -49,7 +49,6 @@ layout (binding = 0, set = 2) uniform accelerationStructureEXT acc;
 #else
 #	include "include/structs/aabbTree.glsl"
 layout (binding = 0, set = 2) buffer AabbTree {
-	int root;
 	AabbTreeNode nodes[];
 } aabbTree;
 layout (binding = 1, set = 2) buffer Triangles {

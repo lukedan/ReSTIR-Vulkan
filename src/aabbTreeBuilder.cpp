@@ -78,7 +78,8 @@ AabbTree AabbTree::build(const nvh::GltfScene &scene) {
 	result.nodes.resize(result.triangles.size() - 1);
 	int32_t alloc = 0;
 	std::deque<BuildStep> q;
-	q.emplace_back(&result.root, 0, result.triangles.size());
+	int32_t dummyRoot = -1;
+	q.emplace_back(&dummyRoot, 0, result.triangles.size());
 	while (!q.empty()) {
 		BuildStep step = q.front();
 		q.pop_front();
@@ -117,11 +118,6 @@ AabbTree AabbTree::build(const nvh::GltfScene &scene) {
 						centroidMax = nvmath::nv_max(centroidMax, cur.centroid);
 						aabbMin = nvmath::nv_min(aabbMin, cur.aabbMin);
 						aabbMax = nvmath::nv_max(aabbMax, cur.aabbMax);
-						/*
-						if (abs(aabbMin.x) > 1000) {
-							__debugbreak();
-						}
-						*/
 					}
 					outerHeuristic = surfaceAreaHeuristic(aabbMin, aabbMax);
 				}
@@ -213,5 +209,6 @@ AabbTree AabbTree::build(const nvh::GltfScene &scene) {
 		}
 	}
 
+	assert(dummyRoot == 0);
 	return result;
 }
