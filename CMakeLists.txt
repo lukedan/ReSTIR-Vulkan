@@ -18,6 +18,10 @@ elseif(CMAKE_COMPILER_IS_GNUCXX)
 		PRIVATE -Wall -Wextra -Wconversion)
 endif()
 
+# for RenderDoc capturing
+# target_compile_definitions(restir
+#	PRIVATE RENDERDOC_CAPTURE)
+
 target_sources(restir
 	PRIVATE
 		"src/vertex.h"

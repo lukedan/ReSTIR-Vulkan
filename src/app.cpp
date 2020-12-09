@@ -471,10 +471,12 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 
 
 	// Hardware RT pass for visibility test
-	_rtPass = RtPass::create(_device.get(), _dynamicDispatcher);
-	_rtPass.createAccelerationStructure(_device.get(), _physicalDevice, _allocator, _dynamicDispatcher,
+	_rtPass = Pass::create<RtPass>(_device.get(), _dynamicDispatcher);
+#ifndef RENDERDOC_CAPTURE
+	_rtPass.createAccelerationStructure(_device.get(), _physicalDevice, _allocator,
 		_commandPool.get(), _graphicsComputeQueue, _sceneBuffers, _gltfScene);
-	_rtPass.createShaderBindingTable(_device.get(), _allocator, _physicalDevice, _dynamicDispatcher);
+	_rtPass.createShaderBindingTable(_device.get(), _allocator, _physicalDevice);
+#endif
 	{
 		std::array<vk::DescriptorSetLayout, numGBuffers> setLayouts;
 		std::fill(setLayouts.begin(), setLayouts.end(), _rtPass.getFrameDescriptorSetLayout());
@@ -503,6 +505,14 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 		_restirHardwareRayTraceDescriptor = std::move(_device->allocateDescriptorSetsUnique(allocInfo)[0]);
 	}
 #endif
+	{
+		vk::DescriptorSetLayout setLayout = _rtPass.getSoftwareRayTraceDescriptorSetLayout();
+		vk::DescriptorSetAllocateInfo allocInfo;
+		allocInfo
+			.setDescriptorPool(_staticDescriptorPool.get())
+			.setSetLayouts(setLayout);
+		_restirSoftwareRayTraceDescriptor = std::move(_device->allocateDescriptorSetsUnique(allocInfo)[0]);
+	}
 
 	_temporalReusePass = Pass::create<TemporalReusePass>(_device.get());
 	{
@@ -642,7 +652,11 @@ void App::updateGui() {
 	const char* visibilityTestMethods[]{
 		"Disabled",
 		"Software",
+#ifdef RENDERDOC_CAPTURE
+		"Hardware (Unavailable)"
+#else
 		"Hardware"
+#endif
 	};
 	_renderPathChanged = ImGui::Combo(
 		"Visibility Test", reinterpret_cast<int*>(&_visibilityTestMethod),
@@ -651,7 +665,7 @@ void App::updateGui() {
 
 	ImGui::Separator();
 
-	_renderPathChanged = ImGui::Checkbox("Use Temporal Reuse", &_enableTemporalReuse) || _renderPathChanged;
+	ImGui::Checkbox("Use Temporal Reuse", &_enableTemporalReuse);
 	ImGui::SliderInt("Temporal Sample Count Clamping", &_temporalReuseSampleMultiplier, 0.0f, 100.0f);
 
 	ImGui::Separator();
@@ -764,6 +778,12 @@ void App::mainLoop() {
 			restirUniforms->prevFrameProjectionViewMatrix = prevFrameProjectionView;
 			restirUniforms->temporalSampleCountMultiplier = _temporalReuseSampleMultiplier;
 
+			if (_enableTemporalReuse) {
+				restirUniforms->flags |= RESTIR_TEMPORAL_REUSE_FLAG;
+			} else {
+				restirUniforms->flags &= ~RESTIR_TEMPORAL_REUSE_FLAG;
+			}
+
 			if (_cameraUpdated || _viewParamChanged) {
 				_graphicsComputeQueue.waitIdle();
 
@@ -789,6 +809,12 @@ void App::mainLoop() {
 				_updateThresholdBuffers();
 				_recordMainCommandBuffers();
 				restirUniforms->frame = 0;
+
+				if (_visibilityTestMethod != VisibilityTestMethod::disabled) {
+					restirUniforms->flags |= RESTIR_VISIBILITY_REUSE_FLAG;
+				} else {
+					restirUniforms->flags &= ~RESTIR_VISIBILITY_REUSE_FLAG;
+				}
 
 				_renderPathChanged = false;
 			}

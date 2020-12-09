@@ -91,7 +91,7 @@ bool testVisibility(vec3 p1, vec3 p2) {
 	return isShadowed;
 #else
 	vec3 offset = tMin * normalize(dir);
-	return raytrace(p1 + offset, dir - 2 * offset);
+	return !raytrace(p1 + offset, dir - 2 * offset);
 #endif
 }
 
@@ -169,56 +169,60 @@ void main() {
 	uint reservoirIndex = pixelCoord.y * uniforms.screenSize.x + pixelCoord.x;
 	
 	// Visibility Reuse
-	for (int i = 0; i < RESERVOIR_SIZE; i++) {
-		bool shadowed = testVisibility(worldPos, res.samples[i].position_emissionLum.xyz);
+	if ((uniforms.flags & RESTIR_VISIBILITY_REUSE_FLAG) != 0) {
+		for (int i = 0; i < RESERVOIR_SIZE; i++) {
+			bool shadowed = testVisibility(worldPos, res.samples[i].position_emissionLum.xyz);
 
-		if (shadowed) {
-			res.samples[i].w = 0.0f;
-			res.samples[i].sumWeights = 0.0f;
+			if (shadowed) {
+				res.samples[i].w = 0.0f;
+				res.samples[i].sumWeights = 0.0f;
+			}
 		}
-	} 
+	}
 
 	// Temporal reuse
-	vec4 prevFramePos = uniforms.prevFrameProjectionViewMatrix * vec4(worldPos, 1.0f);
-	prevFramePos.xyz /= prevFramePos.w;
-	prevFramePos.xy = (prevFramePos.xy + 1.0f) * 0.5f * vec2(uniforms.screenSize);
-	if (
-		all(greaterThan(prevFramePos.xy, vec2(0.0f))) &&
-		all(lessThan(prevFramePos.xy, vec2(uniforms.screenSize)))
-	) {
-		ivec2 prevFrag = ivec2(prevFramePos.xy);
+	if ((uniforms.flags & RESTIR_TEMPORAL_REUSE_FLAG) != 0) {
+		vec4 prevFramePos = uniforms.prevFrameProjectionViewMatrix * vec4(worldPos, 1.0f);
+		prevFramePos.xyz /= prevFramePos.w;
+		prevFramePos.xy = (prevFramePos.xy + 1.0f) * 0.5f * vec2(uniforms.screenSize);
+		if (
+			all(greaterThan(prevFramePos.xy, vec2(0.0f))) &&
+			all(lessThan(prevFramePos.xy, vec2(uniforms.screenSize)))
+		) {
+			ivec2 prevFrag = ivec2(prevFramePos.xy);
 
 #ifdef COMPARE_DEPTH
-		float depthDiff = prevFramePos.z - texelFetch(uniPrevDepth, prevFrag, 0).x;
-		if (depthDiff < 0.001f * prevFramePos.z) {
+			float depthDiff = prevFramePos.z - texelFetch(uniPrevDepth, prevFrag, 0).x;
+			if (depthDiff < 0.001f * prevFramePos.z) {
 #else
-		// highest quality results can be obtained by directly comparing the world positions
-		// the performance impact of this is unclear
-		vec3 positionDiff = worldPos - texelFetch(uniPrevFrameWorldPosition, prevFrag, 0).xyz;
-		if (dot(positionDiff, positionDiff) < 0.01f) {
+			// highest quality results can be obtained by directly comparing the world positions
+			// the performance impact of this is unclear
+			vec3 positionDiff = worldPos - texelFetch(uniPrevFrameWorldPosition, prevFrag, 0).xyz;
+			if (dot(positionDiff, positionDiff) < 0.01f) {
 #endif
-			vec3 albedoDiff = albedo - texelFetch(uniPrevFrameAlbedo, prevFrag, 0).rgb;
-			if (dot(albedoDiff, albedoDiff) < 0.01f) {
-				float normalDot = dot(normal, texelFetch(uniPrevFrameNormal, prevFrag, 0).xyz);
-				if (normalDot > 0.5f) {
-					Reservoir prevRes = prevFrameReservoirs[prevFrag.y * uniforms.screenSize.x + prevFrag.x];
+				vec3 albedoDiff = albedo - texelFetch(uniPrevFrameAlbedo, prevFrag, 0).rgb;
+				if (dot(albedoDiff, albedoDiff) < 0.01f) {
+					float normalDot = dot(normal, texelFetch(uniPrevFrameNormal, prevFrag, 0).xyz);
+					if (normalDot > 0.5f) {
+						Reservoir prevRes = prevFrameReservoirs[prevFrag.y * uniforms.screenSize.x + prevFrag.x];
 
-					// clamp the number of samples
-					prevRes.numStreamSamples = min(
-						prevRes.numStreamSamples, uniforms.temporalSampleCountMultiplier * res.numStreamSamples
-					);
-
-					vec2 metallicRoughness = texelFetch(uniMaterialProperties, ivec2(pixelCoord), 0).xy;
-
-					float pHat[RESERVOIR_SIZE];
-					for (int i = 0; i < RESERVOIR_SIZE; ++i) {
-						pHat[i] = evaluatePHat(
-							worldPos, prevRes.samples[i].position_emissionLum.xyz, uniforms.cameraPos.xyz,
-							normal, albedoLum, prevRes.samples[i].position_emissionLum.w, metallicRoughness.x, metallicRoughness.y
+						// clamp the number of samples
+						prevRes.numStreamSamples = min(
+							prevRes.numStreamSamples, uniforms.temporalSampleCountMultiplier * res.numStreamSamples
 						);
-					}
 
-					combineReservoirs(res, prevRes, pHat, rand);
+						vec2 metallicRoughness = texelFetch(uniMaterialProperties, ivec2(pixelCoord), 0).xy;
+
+						float pHat[RESERVOIR_SIZE];
+						for (int i = 0; i < RESERVOIR_SIZE; ++i) {
+							pHat[i] = evaluatePHat(
+								worldPos, prevRes.samples[i].position_emissionLum.xyz, uniforms.cameraPos.xyz,
+								normal, albedoLum, prevRes.samples[i].position_emissionLum.w, metallicRoughness.x, metallicRoughness.y
+							);
+						}
+
+						combineReservoirs(res, prevRes, pHat, rand);
+					}
 				}
 			}
 		}

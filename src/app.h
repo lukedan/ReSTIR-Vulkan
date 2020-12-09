@@ -1,7 +1,5 @@
 #pragma once
 
-/*#define RENDERDOC_CAPTURE*/
-
 #define VK_ENABLE_BETA_EXTENSIONS
 
 #define ONE_SHADER
@@ -226,11 +224,23 @@ protected:
 	void _recordMainCommandBuffers() {
 		for (std::size_t i = 0; i < numGBuffers; ++i) {
 			_lightSamplePass.descriptorSet = _lightSampleDescriptors[i].get();
+
 			_swVisibilityTestPass.descriptorSet = _swVisibilityTestDescriptors[i].get();
+
 			_rtPass.staticDescriptorSet = _restirStaticDescriptor.get();
 			_rtPass.frameDescriptorSet = _restirFrameDescriptors[i].get();
-			_rtPass.raytraceDescriptorSet = _restirHardwareRayTraceDescriptor.get();
+#ifdef RENDERDOC_CAPTURE
+			_rtPass.useSoftwareRayTracing = true;
+#else
+			_rtPass.useSoftwareRayTracing = _visibilityTestMethod != VisibilityTestMethod::hardware;
+#endif
+			_rtPass.raytraceDescriptorSet =
+				_rtPass.useSoftwareRayTracing ?
+				_restirSoftwareRayTraceDescriptor.get() :
+				_restirHardwareRayTraceDescriptor.get();
+
 			_unbiasedRtPass.descriptorSet = _unbiasedRtPassDescriptors[i].get();
+
 			_temporalReusePass.descriptorSet = _temporalReuseDescriptors[i].get();
 
 			vk::CommandBufferBeginInfo beginInfo;
@@ -239,7 +249,8 @@ protected:
 			_gBufferPass.issueCommands(_mainCommandBuffers[i].get(), _gBuffers[i].getFramebuffer());
 
 #ifdef ONE_SHADER
-			_rtPass.issueCommands(_mainCommandBuffers[i].get(), _swapchain.getImageExtent(), _dynamicDispatcher);
+			_rtPass.bufferExtent = _swapchain.getImageExtent();
+			_rtPass.issueCommands(_mainCommandBuffers[i].get(), nullptr);
 #else
 			_lightSamplePass.issueCommands(_mainCommandBuffers[i].get(), nullptr);
 			switch (_visibilityTestMethod) {
@@ -264,8 +275,7 @@ protected:
 			}
 
 #ifndef RENDERDOC_CAPTURE
-			if (_enableUnbias) 
-			{
+			if (_enableUnbias) {
 				_unbiasedRtPass.issueCommands(_mainCommandBuffers[i].get(), _swapchain.getImageExtent(), _dynamicDispatcher);
 			}
 #endif
@@ -275,8 +285,7 @@ protected:
 		}
 	}
 
-	void _updateThresholdBuffers()
-	{
+	void _updateThresholdBuffers() {
 		auto* restirUniforms = _restirUniformBuffer.mapAs<shader::RestirUniforms>();
 		restirUniforms->posThreshold = posThreshold;
 		restirUniforms->norThreshold = norThreshold;
@@ -305,9 +314,12 @@ protected:
 		);
 #ifndef RENDERDOC_CAPTURE
 		_rtPass.initializeHardwareRayTracingDescriptorSet(
-			_device.get(), _restirHardwareRayTraceDescriptor.get(), _dynamicDispatcher
+			_device.get(), _restirHardwareRayTraceDescriptor.get()
 		);
 #endif
+		_rtPass.initializeSoftwareRayTracingDescriptorSet(
+			_aabbTreeBuffers, _device.get(), _restirSoftwareRayTraceDescriptor.get()
+		);
 		for (std::size_t i = 0; i < numGBuffers; ++i) {
 			_lightSamplePass.initializeDescriptorSetFor(
 				_gBuffers[i], _sceneBuffers, _restirUniformBuffer.get(), _reservoirBuffers[i].get(), _reservoirBufferSize,

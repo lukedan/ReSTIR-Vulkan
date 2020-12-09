@@ -26,6 +26,9 @@ struct Reservoir {
 };
 
 
+#define RESTIR_VISIBILITY_REUSE_FLAG (1 << 0)
+#define RESTIR_TEMPORAL_REUSE_FLAG (1 << 1)
+
 struct RestirUniforms {
 	mat4 prevFrameProjectionViewMatrix;
 	vec4 cameraPos;
@@ -36,4 +39,6 @@ struct RestirUniforms {
 	float posThreshold;
 	float norThreshold;
 	uint temporalSampleCountMultiplier;
+
+	int flags;
 };
