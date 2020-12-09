@@ -29,7 +29,7 @@ public:
 		vk::Buffer resultReservoirBuffer,
 		vk::Device device, vk::DescriptorSet set
 	) {
-		std::array<vk::WriteDescriptorSet, 7> writes;
+		std::array<vk::WriteDescriptorSet, 8> writes;
 
 		// currently no world position buffer, so use depth as a placeholder
 		vk::DescriptorBufferInfo uniformInfo(uniformBuffer, 0, sizeof(shader::RestirUniforms));
@@ -37,6 +37,7 @@ public:
 		vk::DescriptorImageInfo albedoImageInfo(_sampler.get(), gbuffer.getAlbedoView(), vk::ImageLayout::eShaderReadOnlyOptimal);
 		vk::DescriptorImageInfo normalImageInfo(_sampler.get(), gbuffer.getNormalView(), vk::ImageLayout::eShaderReadOnlyOptimal);
 		vk::DescriptorImageInfo materialImageInfo(_sampler.get(), gbuffer.getMaterialPropertiesView(), vk::ImageLayout::eShaderReadOnlyOptimal);
+		vk::DescriptorImageInfo depthImageInfo(_sampler.get(), gbuffer.getDepthView(), vk::ImageLayout::eShaderReadOnlyOptimal);
 		vk::DescriptorBufferInfo reservoirInfo(reservoirBuffer, 0, reservoirBufferSize);
 		vk::DescriptorBufferInfo resultReservoirInfo(resultReservoirBuffer, 0, reservoirBufferSize);
 
@@ -68,11 +69,16 @@ public:
 		writes[5]
 			.setDstSet(set)
 			.setDstBinding(5)
-			.setDescriptorType(vk::DescriptorType::eStorageBuffer)
-			.setBufferInfo(reservoirInfo);
+			.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
+			.setImageInfo(depthImageInfo);
 		writes[6]
 			.setDstSet(set)
 			.setDstBinding(6)
+			.setDescriptorType(vk::DescriptorType::eStorageBuffer)
+			.setBufferInfo(reservoirInfo);
+		writes[7]
+			.setDstSet(set)
+			.setDstBinding(7)
 			.setDescriptorType(vk::DescriptorType::eStorageBuffer)
 			.setBufferInfo(resultReservoirInfo);
 
@@ -109,14 +115,15 @@ protected:
 
 		_sampler = createSampler(dev, vk::Filter::eNearest, vk::Filter::eNearest, vk::SamplerMipmapMode::eNearest);
 
-		std::array<vk::DescriptorSetLayoutBinding, 7> bindings{
+		std::array<vk::DescriptorSetLayoutBinding, 8> bindings{
 			vk::DescriptorSetLayoutBinding(0, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eCompute),
 			vk::DescriptorSetLayoutBinding(1, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eCompute),
 			vk::DescriptorSetLayoutBinding(2, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eCompute),
 			vk::DescriptorSetLayoutBinding(3, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eCompute),
 			vk::DescriptorSetLayoutBinding(4, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eCompute),
-			vk::DescriptorSetLayoutBinding(5, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eCompute),
-			vk::DescriptorSetLayoutBinding(6, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eCompute)
+			vk::DescriptorSetLayoutBinding(5, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eCompute),
+			vk::DescriptorSetLayoutBinding(6, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eCompute),
+			vk::DescriptorSetLayoutBinding(7, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eCompute)
 		};
 
 		vk::DescriptorSetLayoutCreateInfo descriptorInfo;
