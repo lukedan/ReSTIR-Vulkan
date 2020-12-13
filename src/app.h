@@ -116,6 +116,7 @@ protected:
 
 	vma::UniqueBuffer _restirUniformBuffer;
 	std::array<vma::UniqueBuffer, numGBuffers> _reservoirBuffers;
+	vma::UniqueBuffer _reservoirTemporaryBuffer;
 	vk::DeviceSize _reservoirBufferSize;
 
 	SpatialReusePass _spatialReusePass;
@@ -126,14 +127,15 @@ protected:
 	vma::UniqueBuffer _lightingPassUniformBuffer;
 	std::array<vk::UniqueDescriptorSet, numGBuffers> _lightingPassDescriptorSets;
 
-	RestirPass _rtPass;
+	RestirPass _restirPass;
 	std::array<vk::UniqueDescriptorSet, numGBuffers> _restirFrameDescriptors;
 	vk::UniqueDescriptorSet _restirStaticDescriptor;
 	vk::UniqueDescriptorSet _restirHardwareRayTraceDescriptor;
 	vk::UniqueDescriptorSet _restirSoftwareRayTraceDescriptor;
 
-	UnbiasedReusePass _unbiasedRtPass;
-	std::array<vk::UniqueDescriptorSet, numGBuffers> _unbiasedRtPassDescriptors;
+	UnbiasedReusePass _unbiasedReusePass;
+	std::array<vk::UniqueDescriptorSet, numGBuffers> _unbiasedReusePassFrameDescriptors;
+	vk::UniqueDescriptorSet _unbiasedReusePassRaytraceDescriptors;
 
 	ImGuiPass _imguiPass;
 
@@ -145,8 +147,8 @@ protected:
 	AabbTreeBuffers _aabbTreeBuffers;
 
 	float posThreshold = 0.1f;
-
 	float norThreshold = 25.0f;
+	int spatialReuseNeighbors = 5;
 
 	// synchronization
 	std::vector<vk::UniqueSemaphore> _imageAvailableSemaphore;
@@ -168,7 +170,7 @@ protected:
 	bool _viewParamChanged = false;
 	bool _renderPathChanged = false;
 
-	bool _enableUnbias = true;
+	bool _unbiasedSpatialReuse = true;
 
 	nvmath::vec2f _lastMouse;
 	int _pressedMouseButton = -1;
@@ -208,51 +210,45 @@ protected:
 
 	void _recordMainCommandBuffers() {
 		for (std::size_t i = 0; i < numGBuffers; ++i) {
-			_rtPass.staticDescriptorSet = _restirStaticDescriptor.get();
-			_rtPass.frameDescriptorSet = _restirFrameDescriptors[i].get();
-#ifdef RENDERDOC_CAPTURE
-			_rtPass.useSoftwareRayTracing = true;
-#else
-			_rtPass.useSoftwareRayTracing = _visibilityTestMethod != VisibilityTestMethod::hardware;
-#endif
-			_rtPass.raytraceDescriptorSet =
-				_rtPass.useSoftwareRayTracing ?
-				_restirSoftwareRayTraceDescriptor.get() :
-				_restirHardwareRayTraceDescriptor.get();
-
-			_unbiasedRtPass.descriptorSet = _unbiasedRtPassDescriptors[i].get();
-
 			vk::CommandBufferBeginInfo beginInfo;
 			_mainCommandBuffers[i]->begin(beginInfo);
 
 			_gBufferPass.issueCommands(_mainCommandBuffers[i].get(), _gBuffers[i].getFramebuffer());
 
-			_rtPass.bufferExtent = _swapchain.getImageExtent();
-			_rtPass.issueCommands(_mainCommandBuffers[i].get(), nullptr);
-			for (int j = 0; j < _spatialReuseIterations; ++j) {
-				_spatialReusePass.descriptorSet = _spatialReuseDescriptors[i].get();
-				_spatialReusePass.issueCommands(_mainCommandBuffers[i].get(), nullptr);
-				_spatialReusePass.descriptorSet = _spatialReuseSecondDescriptors[i].get();
-				_spatialReusePass.issueCommands(_mainCommandBuffers[i].get(), nullptr);
+			_restirPass.staticDescriptorSet = _restirStaticDescriptor.get();
+			_restirPass.frameDescriptorSet = _restirFrameDescriptors[i].get();
+#ifdef RENDERDOC_CAPTURE
+			_restirPass.useSoftwareRayTracing = true;
+#else
+			_restirPass.useSoftwareRayTracing = _visibilityTestMethod != VisibilityTestMethod::hardware;
+#endif
+			_restirPass.raytraceDescriptorSet =
+				_restirPass.useSoftwareRayTracing ?
+				_restirSoftwareRayTraceDescriptor.get() :
+				_restirHardwareRayTraceDescriptor.get();
+
+			_restirPass.bufferExtent = _swapchain.getImageExtent();
+			_restirPass.issueCommands(_mainCommandBuffers[i].get(), nullptr);
+
+			if (_unbiasedSpatialReuse) {
+#ifndef RENDERDOC_CAPTURE
+				_unbiasedReusePass.frameDescriptorSet = _unbiasedReusePassFrameDescriptors[i].get();
+				_unbiasedReusePass.raytraceDescriptorSet = _unbiasedReusePassRaytraceDescriptors.get();
+				_unbiasedReusePass.issueCommands(_mainCommandBuffers[i].get(), _swapchain.getImageExtent(), _dynamicDispatcher);
+#endif
+			} else {
+				for (int j = 0; j < _spatialReuseIterations; ++j) {
+					_spatialReusePass.descriptorSet = _spatialReuseDescriptors[i].get();
+					_spatialReusePass.issueCommands(_mainCommandBuffers[i].get(), nullptr);
+					_spatialReusePass.descriptorSet = _spatialReuseSecondDescriptors[i].get();
+					_spatialReusePass.issueCommands(_mainCommandBuffers[i].get(), nullptr);
+				}
 			}
 
-#ifndef RENDERDOC_CAPTURE
-			if (_enableUnbias) {
-				_unbiasedRtPass.issueCommands(_mainCommandBuffers[i].get(), _swapchain.getImageExtent(), _dynamicDispatcher);
-			}
-#endif
 			_mainCommandBuffers[i]->end();
 
 
 		}
-	}
-
-	void _updateThresholdBuffers() {
-		auto* restirUniforms = _restirUniformBuffer.mapAs<shader::RestirUniforms>();
-		restirUniforms->spatialPosThreshold = posThreshold;
-		restirUniforms->spatialNormalThreshold = norThreshold;
-		_restirUniformBuffer.unmap();
-		_restirUniformBuffer.flush();
 	}
 
 	void _updateRestirBuffers() {
@@ -269,61 +265,64 @@ protected:
 				// zero-initialize reservoir buffers
 				cmdBuf->fillBuffer(_reservoirBuffers[i].get(), 0, VK_WHOLE_SIZE, 0);
 			}
+			_reservoirTemporaryBuffer = _allocator.createTypedBuffer<shader::Reservoir>(
+				numPixels,
+				vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst,
+				VMA_MEMORY_USAGE_GPU_ONLY
+				);
+			cmdBuf->fillBuffer(_reservoirTemporaryBuffer.get(), 0, VK_WHOLE_SIZE, 0);
 		}
 
-		_rtPass.initializeStaticDescriptorSetFor(
+		_restirPass.initializeStaticDescriptorSetFor(
 			_sceneBuffers, _restirUniformBuffer.get(), _device.get(), _restirStaticDescriptor.get()
 		);
 #ifndef RENDERDOC_CAPTURE
-		_rtPass.initializeHardwareRayTracingDescriptorSet(
+		_restirPass.initializeHardwareRayTracingDescriptorSet(
 			_sceneRtBuffers, _device.get(), _restirHardwareRayTraceDescriptor.get()
 		);
 #endif
-		_rtPass.initializeSoftwareRayTracingDescriptorSet(
+		_restirPass.initializeSoftwareRayTracingDescriptorSet(
 			_aabbTreeBuffers, _device.get(), _restirSoftwareRayTraceDescriptor.get()
 		);
 		for (std::size_t i = 0; i < numGBuffers; ++i) {
-			_rtPass.initializeFrameDescriptorSetFor(
+			_restirPass.initializeFrameDescriptorSetFor(
 				_gBuffers[i], _gBuffers[(i + numGBuffers - 1) % numGBuffers],
-				_reservoirBuffers[i].get(), _reservoirBuffers[(i + numGBuffers - 1) % numGBuffers].get(), _reservoirBufferSize,
+				_unbiasedSpatialReuse ?
+				_reservoirTemporaryBuffer.get() :
+				_reservoirBuffers[i].get(),
+				_reservoirBuffers[(i + numGBuffers - 1) % numGBuffers].get(),
+				_reservoirBufferSize,
 				_device.get(), _restirFrameDescriptors[i].get()
 			);
 
-			_spatialReusePass.initializeDescriptorSetFor(
-				_gBuffers[i], _restirUniformBuffer.get(), _reservoirBuffers[i].get(), _reservoirBufferSize,
-				_reservoirBuffers[(i + numGBuffers - 1) % numGBuffers].get(),
-				_device.get(), _spatialReuseDescriptors[i].get()
-			);
-			_spatialReusePass.initializeDescriptorSetFor(
-				_gBuffers[i], _restirUniformBuffer.get(), _reservoirBuffers[(i + numGBuffers - 1) % numGBuffers].get(), _reservoirBufferSize,
-				_reservoirBuffers[i].get(), _device.get(), _spatialReuseSecondDescriptors[i].get()
-			);
-
+			if (_unbiasedSpatialReuse) {
+				_unbiasedReusePass.initializeFrameDescriptorSet(
+					_device.get(),
+					_gBuffers[i], _restirUniformBuffer.get(),
+					_reservoirTemporaryBuffer.get(), _reservoirBuffers[i].get(), _reservoirBufferSize,
+					_unbiasedReusePassFrameDescriptors[i].get()
+				);
 #ifndef RENDERDOC_CAPTURE
-			_unbiasedRtPass.createDescriptorSetForRayTracing(
-				_device.get(),
-				_sceneRtBuffers, _gBuffers[i], _restirUniformBuffer.get(), _reservoirBuffers[i].get(), _reservoirBufferSize,
-				_unbiasedRtPassDescriptors[i].get(),
-				_dynamicDispatcher
-			);
+				_unbiasedReusePass.initializeHardwareRaytraceDescriptorSet(
+					_device.get(), _sceneRtBuffers, _unbiasedReusePassRaytraceDescriptors.get()
+				);
 #endif
+			} else {
+				_spatialReusePass.initializeDescriptorSetFor(
+					_gBuffers[i], _restirUniformBuffer.get(), _reservoirBuffers[i].get(), _reservoirBufferSize,
+					_reservoirBuffers[(i + numGBuffers - 1) % numGBuffers].get(),
+					_device.get(), _spatialReuseDescriptors[i].get()
+				);
+				_spatialReusePass.initializeDescriptorSetFor(
+					_gBuffers[i], _restirUniformBuffer.get(), _reservoirBuffers[(i + numGBuffers - 1) % numGBuffers].get(), _reservoirBufferSize,
+					_reservoirBuffers[i].get(), _device.get(), _spatialReuseSecondDescriptors[i].get()
+				);
+			}
+
 		}
 	}
 
 	void _initializeLightingPassResources() {
-		_lightingPassUniformBuffer = _allocator.createTypedBuffer<shader::LightingPassUniforms>(
-			1, vk::BufferUsageFlagBits::eUniformBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU
-			);
-
-		std::array<vk::DescriptorSetLayout, numGBuffers> lightingPassDescLayout;
-		std::fill(lightingPassDescLayout.begin(), lightingPassDescLayout.end(), _lightingPass.getDescriptorSetLayout());
-		vk::DescriptorSetAllocateInfo lightingPassDescAlloc;
-		lightingPassDescAlloc
-			.setDescriptorPool(_staticDescriptorPool.get())
-			.setSetLayouts(lightingPassDescLayout);
-		auto descriptorSets = _device->allocateDescriptorSetsUnique(lightingPassDescAlloc);
-		std::move(descriptorSets.begin(), descriptorSets.end(), _lightingPassDescriptorSets.begin());
-
 		for (std::size_t i = 0; i < numGBuffers; ++i) {
 			_lightingPass.initializeDescriptorSetFor(
 				_gBuffers[i], _sceneBuffers,

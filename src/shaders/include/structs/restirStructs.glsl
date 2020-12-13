@@ -10,7 +10,10 @@
 #define OMNI_GROUP_SIZE_X 64
 #define OMNI_GROUP_SIZE_Y 1
 
-#define RESERVOIR_SIZE 4
+#define UNBIASED_REUSE_GROUP_SIZE_X 64
+#define UNBIASED_REUSE_GROUP_SIZE_Y 1
+
+#define RESERVOIR_SIZE 1
 
 struct LightSample {
 	vec4 position_emissionLum;

@@ -279,12 +279,8 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 	/** NOTE: A scene without emissive materials will be given 8 point lights and scenes with lightning material won't have point lights **/
 	/** cornellBox has emissive materials and others don't have **/
 	// loadScene("../../../scenes/cornellBox/cornellBox.gltf", _gltfScene);
-	// loadScene("../../../scenes/boxTextured/boxTextured.gltf", _gltfScene);
-	// loadScene("../../../scenes/duck/Duck.gltf", _gltfScene);
-	// loadScene("../../../scenes/fish/BarramundiFish.gltf", _gltfScene);
 	loadScene("../../../scenes/Sponza/glTF/Sponza.gltf", _gltfScene);
-	// loadScene("../../../scenes/office/scene.gltf", _gltfScene);
-	// loadScene("../../../scenes/C4DScenes/BistroInterior.gltf", _gltfScene);
+	/*loadScene("../../../scenes/BistroInterior_out/BistroInterior.gltf", _gltfScene);*/
 	//loadScene("../../../scenes/C4DScenes/BistroExterior.gltf", _gltfScene);
 
 	{ // create descriptor pools
@@ -450,13 +446,13 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 
 
 	// Hardware RT pass for visibility test
-	_rtPass = Pass::create<RestirPass>(_device.get(), _dynamicDispatcher);
+	_restirPass = Pass::create<RestirPass>(_device.get(), _dynamicDispatcher);
 #ifndef RENDERDOC_CAPTURE
-	_rtPass.createShaderBindingTable(_device.get(), _allocator, _physicalDevice);
+	_restirPass.createShaderBindingTable(_device.get(), _allocator, _physicalDevice);
 #endif
 	{
 		std::array<vk::DescriptorSetLayout, numGBuffers> setLayouts;
-		std::fill(setLayouts.begin(), setLayouts.end(), _rtPass.getFrameDescriptorSetLayout());
+		std::fill(setLayouts.begin(), setLayouts.end(), _restirPass.getFrameDescriptorSetLayout());
 		vk::DescriptorSetAllocateInfo allocInfo;
 		allocInfo
 			.setDescriptorPool(_staticDescriptorPool.get())
@@ -465,7 +461,7 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 		std::move(newSets.begin(), newSets.end(), _restirFrameDescriptors.begin());
 	}
 	{
-		vk::DescriptorSetLayout setLayout = _rtPass.getStaticDescriptorSetLayout();
+		vk::DescriptorSetLayout setLayout = _restirPass.getStaticDescriptorSetLayout();
 		vk::DescriptorSetAllocateInfo allocInfo;
 		allocInfo
 			.setDescriptorPool(_staticDescriptorPool.get())
@@ -474,7 +470,7 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 	}
 #ifndef RENDERDOC_CAPTURE
 	{
-		vk::DescriptorSetLayout setLayout = _rtPass.getHardwareRayTraceDescriptorSetLayout();
+		vk::DescriptorSetLayout setLayout = _restirPass.getHardwareRayTraceDescriptorSetLayout();
 		vk::DescriptorSetAllocateInfo allocInfo;
 		allocInfo
 			.setDescriptorPool(_staticDescriptorPool.get())
@@ -483,7 +479,7 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 	}
 #endif
 	{
-		vk::DescriptorSetLayout setLayout = _rtPass.getSoftwareRayTraceDescriptorSetLayout();
+		vk::DescriptorSetLayout setLayout = _restirPass.getSoftwareRayTraceDescriptorSetLayout();
 		vk::DescriptorSetAllocateInfo allocInfo;
 		allocInfo
 			.setDescriptorPool(_staticDescriptorPool.get())
@@ -494,17 +490,26 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 
 #ifndef RENDERDOC_CAPTURE
 	// Hardware RT pass for visibility test
-	_unbiasedRtPass = UnbiasedReusePass::create(_device.get(), _dynamicDispatcher);
-	_unbiasedRtPass.createShaderBindingTable(_device.get(), _allocator, _physicalDevice, _dynamicDispatcher);
+	_unbiasedReusePass = UnbiasedReusePass::create(_device.get(), _dynamicDispatcher);
+	_unbiasedReusePass.setDispatchLoaderDynamic(_dynamicDispatcher);
+	_unbiasedReusePass.createShaderBindingTable(_device.get(), _allocator, _physicalDevice, _dynamicDispatcher);
 	{
 		std::array<vk::DescriptorSetLayout, numGBuffers> setLayouts;
-		std::fill(setLayouts.begin(), setLayouts.end(), _unbiasedRtPass.getDescriptorSetLayout());
+		std::fill(setLayouts.begin(), setLayouts.end(), _unbiasedReusePass.getFrameDescriptorSetLayout());
 		vk::DescriptorSetAllocateInfo allocInfo;
 		allocInfo
 			.setDescriptorPool(_staticDescriptorPool.get())
 			.setSetLayouts(setLayouts);
 		auto newSets = _device->allocateDescriptorSetsUnique(allocInfo);
-		std::move(newSets.begin(), newSets.end(), _unbiasedRtPassDescriptors.begin());
+		std::move(newSets.begin(), newSets.end(), _unbiasedReusePassFrameDescriptors.begin());
+	}
+	{
+		vk::DescriptorSetLayout setLayout = _unbiasedReusePass.getRaytraceDescriptorSetLayout();
+		vk::DescriptorSetAllocateInfo allocInfo;
+		allocInfo
+			.setDescriptorPool(_staticDescriptorPool.get())
+			.setSetLayouts(setLayout);
+		_unbiasedReusePassRaytraceDescriptors = std::move(_device->allocateDescriptorSetsUnique(allocInfo)[0]);
 	}
 #endif
 
@@ -513,6 +518,19 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 
 	// create lighting pass
 	_lightingPass = Pass::create<LightingPass>(_device.get(), _swapchain.getImageFormat());
+	_lightingPassUniformBuffer = _allocator.createTypedBuffer<shader::LightingPassUniforms>(
+		1, vk::BufferUsageFlagBits::eUniformBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU
+		);
+	{
+		std::array<vk::DescriptorSetLayout, numGBuffers> lightingPassDescLayout;
+		std::fill(lightingPassDescLayout.begin(), lightingPassDescLayout.end(), _lightingPass.getDescriptorSetLayout());
+		vk::DescriptorSetAllocateInfo lightingPassDescAlloc;
+		lightingPassDescAlloc
+			.setDescriptorPool(_staticDescriptorPool.get())
+			.setSetLayouts(lightingPassDescLayout);
+		auto descriptorSets = _device->allocateDescriptorSetsUnique(lightingPassDescAlloc);
+		std::move(descriptorSets.begin(), descriptorSets.end(), _lightingPassDescriptorSets.begin());
+	}
 	_initializeLightingPassResources();
 
 	_lightingPass.imageExtent = _swapchain.getImageExtent();
@@ -626,14 +644,18 @@ void App::updateGui() {
 	ImGui::Separator();
 
 	ImGui::Checkbox("Use Temporal Reuse", &_enableTemporalReuse);
-	ImGui::SliderInt("Temporal Sample Count Clamping", &_temporalReuseSampleMultiplier, 0.0f, 100.0f);
+	if (_enableTemporalReuse) {
+		ImGui::SliderInt("Temporal Sample Count Clamping", &_temporalReuseSampleMultiplier, 0.0f, 100.0f);
+	}
 
 	ImGui::Separator();
 
-	_renderPathChanged = ImGui::SliderInt("Spatial Reuse Iterations", &_spatialReuseIterations, 0, 10) || _renderPathChanged;
-	_renderPathChanged = ImGui::SliderFloat("Depth Threshold", &posThreshold, 0.0, 1.0) || _renderPathChanged;
-	_renderPathChanged = ImGui::SliderFloat("Normal Threshold", &norThreshold, 5.0, 45.0) || _renderPathChanged;
-	_renderPathChanged = ImGui::Checkbox("Unbiased Spatial Reuse", &_enableUnbias) || _renderPathChanged;
+	_renderPathChanged = ImGui::Checkbox("Unbiased Spatial Reuse", &_unbiasedSpatialReuse) || _renderPathChanged;
+	if (!_unbiasedSpatialReuse) {
+		_renderPathChanged = ImGui::SliderInt("Spatial Reuse Iterations", &_spatialReuseIterations, 0, 10) || _renderPathChanged;
+		_renderPathChanged = ImGui::SliderFloat("Depth Threshold", &posThreshold, 0.0, 1.0) || _renderPathChanged;
+		_renderPathChanged = ImGui::SliderFloat("Normal Threshold", &norThreshold, 5.0, 45.0) || _renderPathChanged;
+	}
 
 	ImGui::Separator();
 
@@ -760,12 +782,15 @@ void App::mainLoop() {
 
 				_cameraUpdated = false;
 				_viewParamChanged = false;
-			}
-			else if (_renderPathChanged) {
-				_updateThresholdBuffers();
+			} else if (_renderPathChanged) {
+				_device->waitIdle();
+				_updateRestirBuffers();
 				_recordMainCommandBuffers();
-				restirUniforms->frame = 0;
+				_initializeLightingPassResources();
 
+				restirUniforms->frame = 0;
+				restirUniforms->spatialPosThreshold = posThreshold;
+				restirUniforms->spatialNormalThreshold = norThreshold;
 				if (_visibilityTestMethod != VisibilityTestMethod::disabled) {
 					restirUniforms->flags |= RESTIR_VISIBILITY_REUSE_FLAG;
 				} else {
@@ -845,8 +870,7 @@ void App::mainLoop() {
 			if (_presentQueue.presentKHR(presentInfo) == vk::Result::eSuboptimalKHR) {
 				needsResize = true;
 			}
-		}
-		catch (const vk::OutOfDateKHRError&) {
+		} catch (const vk::OutOfDateKHRError&) {
 			needsResize = true;
 		}
 

@@ -18,9 +18,7 @@ layout (binding = 5) uniform sampler2D uniDepth;
 layout (binding = 6) buffer Reservoirs {
 	Reservoir reservoirs[];
 };
-
-layout (binding = 7) buffer Resultreservoirs
-{
+layout (binding = 7) buffer Resultreservoirs {
 	Reservoir resultReservoirs[];
 };
 
@@ -48,7 +46,7 @@ void main() {
 		ivec2 randNeighbor = ivec2(0, 0);
 		
 		float angle = randFloat(rand) * 2.0 * M_PI;
-		float radius = randFloat(rand) * uniforms.spatialRadius;
+		float radius = sqrt(randFloat(rand)) * uniforms.spatialRadius;
 
 		ivec2 randNeighborOffset = ivec2(floor(cos(angle) * radius), floor(sin(angle) * radius));
 		randNeighbor.x = clamp(int(pixelCoord.x) + randNeighborOffset.x, 0, int(uniforms.screenSize.x) - 1);

@@ -10,19 +10,25 @@ public:
 	UnbiasedReusePass(UnbiasedReusePass&&) = default;
 	UnbiasedReusePass& operator=(UnbiasedReusePass&&) = default;
 
-	[[nodiscard]] vk::DescriptorSetLayout getDescriptorSetLayout() const {
+	[[nodiscard]] vk::DescriptorSetLayout getFrameDescriptorSetLayout() const {
 		return _descriptorSetLayout.get();
+	}
+	[[nodiscard]] vk::DescriptorSetLayout getRaytraceDescriptorSetLayout() const {
+		return _rayTraceDescriptorLayout.get();
 	}
 
 	void issueCommands(vk::CommandBuffer commandBuffer, vk::Extent2D extent, vk::DispatchLoaderDynamic dld) {
-		commandBuffer.pipelineBarrier(
-			vk::PipelineStageFlagBits::eAllCommands,
-			vk::PipelineStageFlagBits::eAllCommands,
-			{}, {}, {}, {}
+		commandBuffer.bindPipeline(vk::PipelineBindPoint::eRayTracingKHR, _pipelines[0].get());
+		commandBuffer.bindDescriptorSets(
+			vk::PipelineBindPoint::eRayTracingKHR, _pipelineLayout.get(), 0,
+			{ frameDescriptorSet, raytraceDescriptorSet }, {}
 		);
 
-		commandBuffer.bindPipeline(vk::PipelineBindPoint::eRayTracingKHR, _pipelines[0].get());
-		commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eRayTracingKHR, _pipelineLayout.get(), 0, { descriptorSet }, {});
+		commandBuffer.pipelineBarrier(
+			vk::PipelineStageFlagBits::eRayTracingShaderKHR | vk::PipelineStageFlagBits::eComputeShader,
+			vk::PipelineStageFlagBits::eRayTracingShaderKHR | vk::PipelineStageFlagBits::eComputeShader,
+			{}, {}, {}, {}
+		);
 		commandBuffer.traceRaysKHR(rayGenSBT, rayMissSBT, rayHitSBT, rayCallSBT, extent.width, extent.height, 1, dld);
 	}
 
@@ -86,21 +92,60 @@ public:
 		std::vector<vk::RayTracingShaderGroupCreateInfoKHR> shaderGroups;
 	};
 
-	void createDescriptorSetForRayTracing(
+	void initializeFrameDescriptorSet(
 		vk::Device dev,
-		const SceneRaytraceBuffers &rtBuffer,
-		const GBuffer& gbuffer,
-		vk::Buffer uniformBuffer,
-		vk::Buffer reservoirBuffer, vk::DeviceSize reservoirBufferSize,
-		vk::DescriptorSet set,
-		vk::DispatchLoaderDynamic& dld
+		const GBuffer& gbuffer, vk::Buffer uniformBuffer,
+		vk::Buffer reservoirBuffer, vk::Buffer resultReservoirBuffer, vk::DeviceSize reservoirBufferSize,
+		vk::DescriptorSet set
 	) {
-		std::array<vk::WriteDescriptorSet, 4> descriptorWrite;
+		std::array<vk::WriteDescriptorSet, 8> descriptorWrite;
 
+		// GBuffer Data
+		std::array<vk::DescriptorImageInfo, 5> imageInfo{
+			vk::DescriptorImageInfo(_sampler.get(), gbuffer.getWorldPositionView(), vk::ImageLayout::eShaderReadOnlyOptimal),
+			vk::DescriptorImageInfo(_sampler.get(), gbuffer.getAlbedoView(), vk::ImageLayout::eShaderReadOnlyOptimal),
+			vk::DescriptorImageInfo(_sampler.get(), gbuffer.getNormalView(), vk::ImageLayout::eShaderReadOnlyOptimal),
+			vk::DescriptorImageInfo(_sampler.get(), gbuffer.getMaterialPropertiesView(), vk::ImageLayout::eShaderReadOnlyOptimal),
+			vk::DescriptorImageInfo(_sampler.get(), gbuffer.getDepthView(), vk::ImageLayout::eShaderReadOnlyOptimal)
+		};
+		for (std::size_t i = 0; i < imageInfo.size(); ++i) {
+			descriptorWrite[i]
+				.setDstSet(set)
+				.setDstBinding(i)
+				.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
+				.setImageInfo(imageInfo[i]);
+		}
+
+		std::array<vk::DescriptorBufferInfo, 3> reservoirsBufferInfo{
+			vk::DescriptorBufferInfo(reservoirBuffer, 0, reservoirBufferSize),
+			vk::DescriptorBufferInfo(resultReservoirBuffer, 0, reservoirBufferSize),
+			vk::DescriptorBufferInfo(uniformBuffer, 0, sizeof(shader::RestirUniforms))
+		};
+
+		descriptorWrite[5]
+			.setDstSet(set)
+			.setDstBinding(5)
+			.setDescriptorType(vk::DescriptorType::eStorageBuffer)
+			.setBufferInfo(reservoirsBufferInfo[0]);
+		descriptorWrite[6]
+			.setDstSet(set)
+			.setDstBinding(6)
+			.setDescriptorType(vk::DescriptorType::eStorageBuffer)
+			.setBufferInfo(reservoirsBufferInfo[1]);
+		descriptorWrite[7]
+			.setDstSet(set)
+			.setDstBinding(7)
+			.setDescriptorType(vk::DescriptorType::eUniformBuffer)
+			.setBufferInfo(reservoirsBufferInfo[2]);
+
+		dev.updateDescriptorSets(descriptorWrite, {});
+	}
+
+	void initializeHardwareRaytraceDescriptorSet(vk::Device dev, const SceneRaytraceBuffers &rtBuffer, vk::DescriptorSet set) {
 		vk::AccelerationStructureKHR tlas = rtBuffer.getTopLevelAccelerationStructure();
 		vk::WriteDescriptorSetAccelerationStructureKHR descriptorAccelerationStructureInfo;
-		descriptorAccelerationStructureInfo.
-			setAccelerationStructureCount(1)
+		descriptorAccelerationStructureInfo
+			.setAccelerationStructureCount(1)
 			.setAccelerationStructures(tlas);
 
 		vk::WriteDescriptorSet accelerationStructureWrite;
@@ -111,43 +156,8 @@ public:
 			.setDstArrayElement(0)
 			.setDescriptorType(vk::DescriptorType::eAccelerationStructureKHR)
 			.setDescriptorCount(1);
-		descriptorWrite[0] = accelerationStructureWrite;
 
-
-		// GBuffer Data
-		std::array<vk::DescriptorImageInfo, 1> imageInfo{
-			vk::DescriptorImageInfo(_sampler.get(), gbuffer.getWorldPositionView(), vk::ImageLayout::eShaderReadOnlyOptimal)
-		};
-
-		descriptorWrite[1]
-			.setDstSet(set)
-			.setDstBinding(1)
-			.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
-			.setPImageInfo(&imageInfo[0])
-			.setDescriptorCount(1);
-
-		std::array<vk::DescriptorBufferInfo, 1> reservoirsBufferInfo
-		{
-			vk::DescriptorBufferInfo(reservoirBuffer, 0, reservoirBufferSize)
-		};
-
-		vk::WriteDescriptorSet reservoirsWrite;
-		reservoirsWrite
-			.setDstSet(set)
-			.setDstBinding(2)
-			.setDescriptorType(vk::DescriptorType::eStorageBuffer)
-			.setBufferInfo(reservoirsBufferInfo);
-		descriptorWrite[2] = reservoirsWrite;
-
-		vk::DescriptorBufferInfo restirUniformInfo(uniformBuffer, 0, sizeof(shader::RestirUniforms));
-
-		descriptorWrite[3]
-			.setDstSet(set)
-			.setDstBinding(3)
-			.setDescriptorType(vk::DescriptorType::eUniformBuffer)
-			.setBufferInfo(restirUniformInfo);
-
-		dev.updateDescriptorSets(descriptorWrite, {}, dld);
+		dev.updateDescriptorSets(accelerationStructureWrite, {}, *_dld);
 	}
 
 	void createShaderBindingTable(vk::Device& dev, vma::Allocator& allocator, vk::PhysicalDevice& physicalDev, vk::DispatchLoaderDynamic dld)
@@ -222,9 +232,9 @@ public:
 		return std::move(pass);
 	}
 
-	void setDispatchLoaderDynamic(vk::DispatchLoaderDynamic& dld)
+	void setDispatchLoaderDynamic(vk::DispatchLoaderDynamic &dld)
 	{
-		_dld = dld;
+		_dld = &dld;
 	}
 
 	//vk::DescriptorSet descriptorSet;
@@ -233,15 +243,15 @@ public:
 	vk::StridedBufferRegionKHR rayMissSBT;
 	vk::StridedBufferRegionKHR rayHitSBT;
 	vk::StridedBufferRegionKHR rayCallSBT;
-	vk::DescriptorSet descriptorSet;
+	vk::DescriptorSet frameDescriptorSet;
+	vk::DescriptorSet raytraceDescriptorSet;
 protected:
 	Shader _rayGen, _rayChit, _rayMiss, _rayShadowMiss;
 	vk::Format _swapchainFormat;
 	vk::UniqueSampler _sampler;
 	vk::UniquePipelineLayout _pipelineLayout;
 	vk::UniqueDescriptorSetLayout _descriptorSetLayout;
-
-	[[nodiscard]] vk::UniqueRenderPass _createPass(vk::Device);
+	vk::UniqueDescriptorSetLayout _rayTraceDescriptorLayout;
 
 	[[nodiscard]] std::vector<PipelineCreationInfo> _getPipelineCreationInfo()
 	{
@@ -287,41 +297,38 @@ protected:
 		_rayMiss = Shader::load(dev, "shaders/hwVisibilityTest.rmiss.spv", "main", vk::ShaderStageFlagBits::eMissKHR);
 		_rayShadowMiss = Shader::load(dev, "shaders/hwVisibilityTestShadow.rmiss.spv", "main", vk::ShaderStageFlagBits::eMissKHR);
 
-		// Acceleration structure descriptor binding
-		vk::DescriptorSetLayoutBinding accelerationStructureLayoutBinding;
-		accelerationStructureLayoutBinding.binding = 0;
-		accelerationStructureLayoutBinding.descriptorType = vk::DescriptorType::eAccelerationStructureKHR;
-		accelerationStructureLayoutBinding.descriptorCount = 1;
-		accelerationStructureLayoutBinding.stageFlags = vk::ShaderStageFlagBits::eRaygenKHR;
-
-		// Out image binding
-		vk::DescriptorSetLayoutBinding storageImageLayoutBinding;
-		storageImageLayoutBinding.binding = 1;
-		storageImageLayoutBinding.descriptorType = vk::DescriptorType::eStorageImage;
-		storageImageLayoutBinding.descriptorCount = 1;
-		storageImageLayoutBinding.stageFlags = vk::ShaderStageFlagBits::eRaygenKHR;
-
-
-
-		std::array<vk::DescriptorSetLayoutBinding, 4> bindings{
-			accelerationStructureLayoutBinding,
+		std::array<vk::DescriptorSetLayoutBinding, 8> bindings{
+			vk::DescriptorSetLayoutBinding(0, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eRaygenKHR),
 			vk::DescriptorSetLayoutBinding(1, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eRaygenKHR),
-			vk::DescriptorSetLayoutBinding(2, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eRaygenKHR),
-			vk::DescriptorSetLayoutBinding(3, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eRaygenKHR)
+			vk::DescriptorSetLayoutBinding(2, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eRaygenKHR),
+			vk::DescriptorSetLayoutBinding(3, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eRaygenKHR),
+			vk::DescriptorSetLayoutBinding(4, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eRaygenKHR),
+			vk::DescriptorSetLayoutBinding(5, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eRaygenKHR),
+			vk::DescriptorSetLayoutBinding(6, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eRaygenKHR),
+			vk::DescriptorSetLayoutBinding(7, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eRaygenKHR)
 		};
 
 		vk::DescriptorSetLayoutCreateInfo layoutInfo;
 		layoutInfo.setBindings(bindings);
 		_descriptorSetLayout = dev.createDescriptorSetLayoutUnique(layoutInfo);
 
-		std::array<vk::DescriptorSetLayout, 1> descriptorLayouts{ _descriptorSetLayout.get() };
+		// Acceleration structure descriptor binding
+		vk::DescriptorSetLayoutBinding accelerationStructureLayoutBinding;
+		accelerationStructureLayoutBinding
+			.setBinding(0)
+			.setDescriptorType(vk::DescriptorType::eAccelerationStructureKHR)
+			.setDescriptorCount(1)
+			.setStageFlags(vk::ShaderStageFlagBits::eRaygenKHR);
+
+		vk::DescriptorSetLayoutCreateInfo raytraceLayoutInfo;
+		raytraceLayoutInfo.setBindings(accelerationStructureLayoutBinding);
+		_rayTraceDescriptorLayout = dev.createDescriptorSetLayoutUnique(raytraceLayoutInfo);
+
+		std::array<vk::DescriptorSetLayout, 2> descriptorLayouts{ _descriptorSetLayout.get(), _rayTraceDescriptorLayout.get() };
 
 		vk::PipelineLayoutCreateInfo pipelineLayoutInfo;
 		pipelineLayoutInfo.setSetLayouts(descriptorLayouts);
 		_pipelineLayout = dev.createPipelineLayoutUnique(pipelineLayoutInfo);
-
-		//_pass
-		//_pass = createPass
 
 		//Pipeline
 		_pipelines = _createPipelines(dev, dld);
@@ -330,5 +337,5 @@ private:
 	vk::UniqueRenderPass _pass;
 	std::vector<vk::UniqueHandle<vk::Pipeline, vk::DispatchLoaderDynamic>> _pipelines;
 
-	vk::DispatchLoaderDynamic _dld;
+	vk::DispatchLoaderDynamic *_dld = nullptr;
 };
