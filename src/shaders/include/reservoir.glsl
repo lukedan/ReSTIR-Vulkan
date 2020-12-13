@@ -4,24 +4,26 @@
 #include "structs/restirStructs.glsl"
 
 void updateReservoirAt(
-	inout Reservoir res, int i, float weight, vec3 position, float emissionLum, int lightIdx, float pHat, inout Rand rand
+	inout Reservoir res, int i, float weight, vec3 position, vec4 normal, float emissionLum, int lightIdx, float pHat, float w, inout Rand rand
 ) {
 	res.samples[i].sumWeights += weight;
 	float replacePossibility = weight / res.samples[i].sumWeights;
 	if (randFloat(rand) < replacePossibility) {
 		res.samples[i].position_emissionLum = vec4(position, emissionLum);
+		res.samples[i].normal = normal;
 		res.samples[i].lightIndex = lightIdx;
 		res.samples[i].pHat = pHat;
+		res.samples[i].w = w;
 	}
 }
 
-void addSampleToReservoir(inout Reservoir res, vec3 position, float emissionLum, int lightIdx, float pHat, float sampleP, inout Rand rand) {
+void addSampleToReservoir(inout Reservoir res, vec3 position, vec4 normal, float emissionLum, int lightIdx, float pHat, float sampleP, inout Rand rand) {
 	float weight = pHat / sampleP;
 	res.numStreamSamples += 1;
 
 	for (int i = 0; i < RESERVOIR_SIZE; ++i) {
-		updateReservoirAt(res, i, weight, position, emissionLum, lightIdx, pHat, rand);
-		res.samples[i].w = res.samples[i].sumWeights / (res.numStreamSamples * res.samples[i].pHat);
+		float w = (res.samples[i].sumWeights + weight) / (res.numStreamSamples * pHat);
+		updateReservoirAt(res, i, weight, position, normal, emissionLum, lightIdx, pHat, w, rand);
 	}
 }
 
@@ -33,11 +35,13 @@ void combineReservoirs(inout Reservoir self, Reservoir other, float pHat[RESERVO
 		if (weight > 0.0f) {
 			updateReservoirAt(
 				self, i, weight,
-				other.samples[i].position_emissionLum.xyz, other.samples[i].position_emissionLum.w,
-				other.samples[i].lightIndex, pHat[i], rand
+				other.samples[i].position_emissionLum.xyz, other.samples[i].normal, other.samples[i].position_emissionLum.w,
+				other.samples[i].lightIndex, pHat[i], other.samples[i].w, rand
 			);
 		}
-		self.samples[i].w = self.samples[i].sumWeights / (self.numStreamSamples * self.samples[i].pHat);
+		if (self.samples[i].w > 0.0f) {
+			self.samples[i].w = self.samples[i].sumWeights / (self.numStreamSamples * self.samples[i].pHat);
+		}
 	}
 }
 

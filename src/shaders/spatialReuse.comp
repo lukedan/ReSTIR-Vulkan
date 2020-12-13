@@ -71,7 +71,8 @@ void main() {
 		for(int j = 0; j < RESERVOIR_SIZE; j++)
 		{
 			float newPHat = evaluatePHat(
-				worldPos, randRes.samples[j].position_emissionLum.xyz, uniforms.cameraPos.xyz, normal,
+				worldPos, randRes.samples[j].position_emissionLum.xyz, uniforms.cameraPos.xyz,
+				normal, randRes.samples[j].normal.xyz, randRes.samples[j].normal.w > 0.5f,
 				albedoLum, randRes.samples[j].position_emissionLum.w, roughnessMetallic.x, roughnessMetallic.y);
 			newPHats[j] = newPHat;
 		}

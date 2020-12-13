@@ -135,7 +135,8 @@ protected:
 
 	UnbiasedReusePass _unbiasedReusePass;
 	std::array<vk::UniqueDescriptorSet, numGBuffers> _unbiasedReusePassFrameDescriptors;
-	vk::UniqueDescriptorSet _unbiasedReusePassRaytraceDescriptors;
+	vk::UniqueDescriptorSet _unbiasedReusePassSwRaytraceDescriptors;
+	vk::UniqueDescriptorSet _unbiasedReusePassHwRaytraceDescriptors;
 
 	ImGuiPass _imguiPass;
 
@@ -231,11 +232,18 @@ protected:
 			_restirPass.issueCommands(_mainCommandBuffers[i].get(), nullptr);
 
 			if (_unbiasedSpatialReuse) {
-#ifndef RENDERDOC_CAPTURE
 				_unbiasedReusePass.frameDescriptorSet = _unbiasedReusePassFrameDescriptors[i].get();
-				_unbiasedReusePass.raytraceDescriptorSet = _unbiasedReusePassRaytraceDescriptors.get();
-				_unbiasedReusePass.issueCommands(_mainCommandBuffers[i].get(), _swapchain.getImageExtent(), _dynamicDispatcher);
+#ifdef RENDERDOC_CAPTURE
+				_unbiasedReusePass.useSoftwareRayTracing = true;
+#else
+				_unbiasedReusePass.useSoftwareRayTracing = _visibilityTestMethod != VisibilityTestMethod::hardware;
 #endif
+				_unbiasedReusePass.raytraceDescriptorSet =
+					_unbiasedReusePass.useSoftwareRayTracing ?
+					_unbiasedReusePassSwRaytraceDescriptors.get() :
+					_unbiasedReusePassHwRaytraceDescriptors.get();
+				_unbiasedReusePass.bufferExtent = _swapchain.getImageExtent();
+				_unbiasedReusePass.issueCommands(_mainCommandBuffers[i].get(), _dynamicDispatcher);
 			} else {
 				for (int j = 0; j < _spatialReuseIterations; ++j) {
 					_spatialReusePass.descriptorSet = _spatialReuseDescriptors[i].get();
@@ -302,9 +310,12 @@ protected:
 					_reservoirTemporaryBuffer.get(), _reservoirBuffers[i].get(), _reservoirBufferSize,
 					_unbiasedReusePassFrameDescriptors[i].get()
 				);
+				_unbiasedReusePass.initializeSoftwareRaytraceDescriptorSet(
+					_device.get(), _aabbTreeBuffers, _unbiasedReusePassSwRaytraceDescriptors.get()
+				);
 #ifndef RENDERDOC_CAPTURE
 				_unbiasedReusePass.initializeHardwareRaytraceDescriptorSet(
-					_device.get(), _sceneRtBuffers, _unbiasedReusePassRaytraceDescriptors.get()
+					_device.get(), _sceneRtBuffers, _unbiasedReusePassHwRaytraceDescriptors.get()
 				);
 #endif
 			} else {

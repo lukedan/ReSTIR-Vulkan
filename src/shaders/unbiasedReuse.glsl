@@ -48,7 +48,12 @@ layout (local_size_x = UNBIASED_REUSE_GROUP_SIZE_X, local_size_y = UNBIASED_REUS
 #define NUM_NEIGHBORS 3
 
 void main() {
-    uvec2 pixelCoord = gl_LaunchIDEXT.xy;
+	uvec2 pixelCoord =
+#ifdef HARDWARE_RAY_TRACING
+		gl_LaunchIDEXT.xy;
+#else
+		gl_GlobalInvocationID.xy;
+#endif
 	if (any(greaterThanEqual(pixelCoord, uniforms.screenSize))) {
 		return;
 	}
@@ -67,6 +72,7 @@ void main() {
     Rand rand = seedRand(uniforms.frame * 17, pixelCoord.y * 10007 + pixelCoord.x);
 	ivec2 neighborPositions[NUM_NEIGHBORS];
 	uint neighborNumSamples[NUM_NEIGHBORS];
+	uint originalNumSamples = res.numStreamSamples;
     for (int i = 0; i < NUM_NEIGHBORS; ++i) {
         float angle = randFloat(rand) * 2.0 * M_PI;
         float radius = sqrt(randFloat(rand)) * uniforms.spatialRadius;
@@ -76,17 +82,6 @@ void main() {
 
         uint neighborIndex = randNeighbor.y * uniforms.screenSize.x + randNeighbor.x;
 
-        // Discard over biased neighbors
-		/*float neighborDepth = texelFetch(uniDepth, ivec2(randNeighbor), 0).x;
-		vec3 neighborNor = texelFetch(uniNormal, ivec2(randNeighbor), 0).xyz;
-
-		if (
-			abs(neighborDepth - worldDepth) > uniforms.spatialPosThreshold * abs(worldDepth) ||
-			dot(neighborNor, normal) < cos(radians(uniforms.spatialNormalThreshold))
-		) {
-			continue;
-		}*/
-
 		Reservoir randRes = reservoirs[neighborIndex];
 
 		neighborPositions[i] = randNeighbor;
@@ -95,14 +90,16 @@ void main() {
 		res.numStreamSamples += randRes.numStreamSamples;
 		for (int j = 0; j < RESERVOIR_SIZE; ++j) {
 			float newPHat = evaluatePHat(
-				worldPos, randRes.samples[j].position_emissionLum.xyz, uniforms.cameraPos.xyz, normal,
+				worldPos, randRes.samples[j].position_emissionLum.xyz, uniforms.cameraPos.xyz,
+				normal, randRes.samples[j].normal.xyz, randRes.samples[j].normal.w > 0.5f,
 				albedoLum, randRes.samples[j].position_emissionLum.w, roughnessMetallic.x, roughnessMetallic.y);
 			float weight = newPHat * randRes.samples[j].w * randRes.numStreamSamples;
 			if (weight > 0.0f) {
 				updateReservoirAt(
 					res, j, weight,
-					randRes.samples[j].position_emissionLum.xyz, randRes.samples[j].position_emissionLum.w,
-					randRes.samples[j].lightIndex, newPHat, rand
+					randRes.samples[j].position_emissionLum.xyz, randRes.samples[j].normal,
+					randRes.samples[j].position_emissionLum.w,
+					randRes.samples[j].lightIndex, newPHat, randRes.samples[j].w, rand
 				);
 			}
         }
@@ -116,7 +113,7 @@ void main() {
 	}
 	for (int i = 0; i < RESERVOIR_SIZE; ++i) {
 		vec3 lightPos = res.samples[i].position_emissionLum.xyz;
-		uint numSamples = 0;
+		uint numSamples = originalNumSamples;
 		for (int j = 0; j < NUM_NEIGHBORS; ++j) {
 			if (dot(lightPos - neighborWorldPos[j], neighborNormal[j]) < 0.0f) {
 				continue;
@@ -138,6 +135,7 @@ void main() {
 			res.samples[i].w = res.samples[i].sumWeights / (numSamples * res.samples[i].pHat);
 		} else {
 			res.samples[i].w = 0.0f;
+			res.samples[i].sumWeights = 0.0f;
 		}
 	}
 

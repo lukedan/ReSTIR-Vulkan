@@ -17,6 +17,7 @@
 
 struct LightSample {
 	vec4 position_emissionLum;
+	vec4 normal;
 	int lightIndex; // negative for triangle lights
 	float pHat;
 	float sumWeights;

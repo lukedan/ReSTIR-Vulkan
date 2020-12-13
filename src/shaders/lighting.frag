@@ -59,7 +59,8 @@ void main() {
 				emission = pointLights.lights[lightIndex].color_luminance.rgb;
 			}
 			vec3 pHat = evaluatePHatFull(
-				worldPos, reservoir.samples[i].position_emissionLum.xyz, uniforms.cameraPos.xyz, normal,
+				worldPos, reservoir.samples[i].position_emissionLum.xyz, uniforms.cameraPos.xyz,
+				normal, reservoir.samples[i].normal.xyz, reservoir.samples[i].normal.w > 0.5f,
 				albedo.rgb, emission, materialProps.x, materialProps.y
 			);
 			outColor += pHat * reservoir.samples[i].w;
@@ -93,7 +94,7 @@ void main() {
 		outColor = vec3(0.0f);
 		for (int i = 0; i < pointLights.count; ++i) {
 			outColor += evaluatePHatFull(
-				worldPos, pointLights.lights[i].pos.xyz, uniforms.cameraPos.xyz, normal,
+				worldPos, pointLights.lights[i].pos.xyz, uniforms.cameraPos.xyz, normal, vec3(0.0f), false,
 				albedo.rgb, pointLights.lights[i].color_luminance.rgb, roughness, metallic
 			);
 		}

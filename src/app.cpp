@@ -344,10 +344,12 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 		_allocator, _transientCommandBufferPool,
 		_device.get(), _graphicsComputeQueue
 	);
+#ifndef RENDERDOC_CAPTURE
 	_sceneRtBuffers = SceneRaytraceBuffers::create(
 		_device.get(), _physicalDevice, _allocator, _transientCommandBufferPool, _graphicsComputeQueue,
 		_sceneBuffers, _gltfScene, _dynamicDispatcher
 	);
+#endif
 	std::cout << "Building AABB tree...";
 	_aabbTree = AabbTree::build(_gltfScene);
 	std::cout << " done\n";
@@ -488,11 +490,11 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 	}
 
 
-#ifndef RENDERDOC_CAPTURE
-	// Hardware RT pass for visibility test
 	_unbiasedReusePass = UnbiasedReusePass::create(_device.get(), _dynamicDispatcher);
 	_unbiasedReusePass.setDispatchLoaderDynamic(_dynamicDispatcher);
+#ifndef RENDERDOC_CAPTURE
 	_unbiasedReusePass.createShaderBindingTable(_device.get(), _allocator, _physicalDevice, _dynamicDispatcher);
+#endif
 	{
 		std::array<vk::DescriptorSetLayout, numGBuffers> setLayouts;
 		std::fill(setLayouts.begin(), setLayouts.end(), _unbiasedReusePass.getFrameDescriptorSetLayout());
@@ -503,15 +505,24 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 		auto newSets = _device->allocateDescriptorSetsUnique(allocInfo);
 		std::move(newSets.begin(), newSets.end(), _unbiasedReusePassFrameDescriptors.begin());
 	}
+#ifndef RENDERDOC_CAPTURE
 	{
-		vk::DescriptorSetLayout setLayout = _unbiasedReusePass.getRaytraceDescriptorSetLayout();
+		vk::DescriptorSetLayout setLayout = _unbiasedReusePass.getHardwareRaytraceDescriptorSetLayout();
 		vk::DescriptorSetAllocateInfo allocInfo;
 		allocInfo
 			.setDescriptorPool(_staticDescriptorPool.get())
 			.setSetLayouts(setLayout);
-		_unbiasedReusePassRaytraceDescriptors = std::move(_device->allocateDescriptorSetsUnique(allocInfo)[0]);
+		_unbiasedReusePassHwRaytraceDescriptors = std::move(_device->allocateDescriptorSetsUnique(allocInfo)[0]);
 	}
 #endif
+	{
+		vk::DescriptorSetLayout setLayout = _unbiasedReusePass.getSoftwareRaytraceDescriptorSetLayout();
+		vk::DescriptorSetAllocateInfo allocInfo;
+		allocInfo
+			.setDescriptorPool(_staticDescriptorPool.get())
+			.setSetLayouts(setLayout);
+		_unbiasedReusePassSwRaytraceDescriptors = std::move(_device->allocateDescriptorSetsUnique(allocInfo)[0]);
+	}
 
 	_updateRestirBuffers();
 
@@ -561,7 +572,7 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 		vk::CommandBufferAllocateInfo bufferInfo;
 		bufferInfo
 			.setCommandPool(_commandPool.get())
-			.setCommandBufferCount(_mainCommandBuffers.size())
+			.setCommandBufferCount(static_cast<uint32_t>(_mainCommandBuffers.size()))
 			.setLevel(vk::CommandBufferLevel::ePrimary);
 		auto newBuffers = std::move(_device->allocateCommandBuffersUnique(bufferInfo));
 		std::move(newBuffers.begin(), newBuffers.end(), _mainCommandBuffers.begin());

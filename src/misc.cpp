@@ -411,7 +411,7 @@ std::vector<shader::triLight> collectTriangleLightsFromScene(const nvh::GltfScen
 
 // https://blog.csdn.net/haolexiao/article/details/65157026
 // Vose alias method
-[[nodiscard]] std::vector<shader::aliasTableColumn> createAliasTable(const nvh::GltfScene &scene, std::vector<shader::pointLight>& ptLights, std::vector<shader::triLight>& triLights) {
+[[nodiscard]] std::vector<shader::aliasTableColumn> createAliasTable(std::vector<shader::pointLight>& ptLights, std::vector<shader::triLight>& triLights) {
 	std::queue<int> biggerThanOneQueue;
 	std::queue<int> smallerThanOneQueue;
 	std::vector<float> lightProbVec;

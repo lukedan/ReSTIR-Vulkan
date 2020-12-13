@@ -48,7 +48,7 @@ public:
 	void initializeDescriptorSetFor(
 		const GBuffer &gBuffer, const SceneBuffers &sceneBuffers,
 		vk::Buffer uniformBuffer, vk::Buffer reservoirBuffer, vk::DeviceSize reservoirBufferSize,
-		vk::Device device, vk::DescriptorSet descriptorSet
+		vk::Device device, vk::DescriptorSet set
 	) {
 		std::vector<vk::WriteDescriptorSet> descriptorWrite;
 
@@ -60,7 +60,7 @@ public:
 		};
 		for (std::size_t i = 0; i < imageInfo.size(); ++i) {
 			descriptorWrite.emplace_back()
-				.setDstSet(descriptorSet)
+				.setDstSet(set)
 				.setDstBinding(static_cast<uint32_t>(i))
 				.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
 				.setPImageInfo(&imageInfo[i])
@@ -72,22 +72,22 @@ public:
 		vk::DescriptorBufferInfo pointLightsInfo(sceneBuffers.getPtLights(), 0, sceneBuffers.getPtLightsBufferSize());
 		vk::DescriptorBufferInfo triLightsInfo(sceneBuffers.getTriLights(), 0, sceneBuffers.getTriLightsBufferSize());
 		descriptorWrite.emplace_back()
-			.setDstSet(descriptorSet)
+			.setDstSet(set)
 			.setDstBinding(4)
 			.setDescriptorType(vk::DescriptorType::eUniformBuffer)
 			.setBufferInfo(uniformInfo);
 		descriptorWrite.emplace_back()
-			.setDstSet(descriptorSet)
+			.setDstSet(set)
 			.setDstBinding(5)
 			.setDescriptorType(vk::DescriptorType::eStorageBuffer)
 			.setBufferInfo(reservoirsInfo);
 		descriptorWrite.emplace_back()
-			.setDstSet(descriptorSet)
+			.setDstSet(set)
 			.setDstBinding(6)
 			.setDescriptorType(vk::DescriptorType::eStorageBuffer)
 			.setBufferInfo(pointLightsInfo);
 		descriptorWrite.emplace_back()
-			.setDstSet(descriptorSet)
+			.setDstSet(set)
 			.setDstBinding(7)
 			.setDescriptorType(vk::DescriptorType::eStorageBuffer)
 			.setBufferInfo(triLightsInfo);

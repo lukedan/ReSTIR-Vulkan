@@ -11,25 +11,41 @@ public:
 	UnbiasedReusePass& operator=(UnbiasedReusePass&&) = default;
 
 	[[nodiscard]] vk::DescriptorSetLayout getFrameDescriptorSetLayout() const {
-		return _descriptorSetLayout.get();
+		return _frameDescriptorSetLayout.get();
 	}
-	[[nodiscard]] vk::DescriptorSetLayout getRaytraceDescriptorSetLayout() const {
-		return _rayTraceDescriptorLayout.get();
+	[[nodiscard]] vk::DescriptorSetLayout getHardwareRaytraceDescriptorSetLayout() const {
+		return _hwRaytraceDescriptorLayout.get();
+	}
+	[[nodiscard]] vk::DescriptorSetLayout getSoftwareRaytraceDescriptorSetLayout() const {
+		return _swRaytraceDescriptorLayout.get();
 	}
 
-	void issueCommands(vk::CommandBuffer commandBuffer, vk::Extent2D extent, vk::DispatchLoaderDynamic dld) {
-		commandBuffer.bindPipeline(vk::PipelineBindPoint::eRayTracingKHR, _pipelines[0].get());
-		commandBuffer.bindDescriptorSets(
-			vk::PipelineBindPoint::eRayTracingKHR, _pipelineLayout.get(), 0,
-			{ frameDescriptorSet, raytraceDescriptorSet }, {}
-		);
-
+	void issueCommands(vk::CommandBuffer commandBuffer, vk::DispatchLoaderDynamic dld) {
 		commandBuffer.pipelineBarrier(
 			vk::PipelineStageFlagBits::eRayTracingShaderKHR | vk::PipelineStageFlagBits::eComputeShader,
 			vk::PipelineStageFlagBits::eRayTracingShaderKHR | vk::PipelineStageFlagBits::eComputeShader,
 			{}, {}, {}, {}
 		);
-		commandBuffer.traceRaysKHR(rayGenSBT, rayMissSBT, rayHitSBT, rayCallSBT, extent.width, extent.height, 1, dld);
+
+		if (useSoftwareRayTracing) {
+			commandBuffer.bindPipeline(vk::PipelineBindPoint::eCompute, _softwarePipeline.get());
+			commandBuffer.bindDescriptorSets(
+				vk::PipelineBindPoint::eCompute, _swPipelineLayout.get(), 0,
+				{ frameDescriptorSet, raytraceDescriptorSet }, {}
+			);
+			commandBuffer.dispatch(
+				ceilDiv<uint32_t>(bufferExtent.width, UNBIASED_REUSE_GROUP_SIZE_X),
+				ceilDiv<uint32_t>(bufferExtent.height, UNBIASED_REUSE_GROUP_SIZE_Y),
+				1
+			);
+		} else {
+			commandBuffer.bindPipeline(vk::PipelineBindPoint::eRayTracingKHR, _hwRaytracePipeline.get());
+			commandBuffer.bindDescriptorSets(
+				vk::PipelineBindPoint::eRayTracingKHR, _hwPipelineLayout.get(), 0,
+				{ frameDescriptorSet, raytraceDescriptorSet }, {}
+			);
+			commandBuffer.traceRaysKHR(rayGenSBT, rayMissSBT, rayHitSBT, rayCallSBT, bufferExtent.width, bufferExtent.height, 1, dld);
+		}
 	}
 
 	struct PipelineCreationInfo
@@ -160,6 +176,25 @@ public:
 		dev.updateDescriptorSets(accelerationStructureWrite, {}, *_dld);
 	}
 
+	void initializeSoftwareRaytraceDescriptorSet(vk::Device dev, const AabbTreeBuffers &aabbTree, vk::DescriptorSet set) {
+		std::array<vk::WriteDescriptorSet, 2> writes;
+		vk::DescriptorBufferInfo nodeInfo(aabbTree.nodeBuffer.get(), 0, aabbTree.nodeBufferSize);
+		vk::DescriptorBufferInfo triangleInfo(aabbTree.triangleBuffer.get(), 0, aabbTree.triangleBufferSize);
+
+		writes[0]
+			.setDstSet(set)
+			.setDstBinding(0)
+			.setDescriptorType(vk::DescriptorType::eStorageBuffer)
+			.setBufferInfo(nodeInfo);
+		writes[1]
+			.setDstSet(set)
+			.setDstBinding(1)
+			.setDescriptorType(vk::DescriptorType::eStorageBuffer)
+			.setBufferInfo(triangleInfo);
+
+		dev.updateDescriptorSets(writes, {});
+	}
+
 	void createShaderBindingTable(vk::Device& dev, vma::Allocator& allocator, vk::PhysicalDevice& physicalDev, vk::DispatchLoaderDynamic dld)
 	{
 		vk::PhysicalDeviceRayTracingPropertiesKHR rtProperties;
@@ -188,7 +223,7 @@ public:
 		// Set shader info
 		uint8_t* dstData = _shaderBindingTable.mapAs<uint8_t>();
 		std::vector<uint8_t> shaderHandleStorage(shaderBindingTableSize);
-		dev.getRayTracingShaderGroupHandlesKHR(_pipelines[0].get(), 0, shaderGroupSize, shaderBindingTableSize, shaderHandleStorage.data(), dld);
+		dev.getRayTracingShaderGroupHandlesKHR(_hwRaytracePipeline.get(), 0, shaderGroupSize, shaderBindingTableSize, shaderHandleStorage.data(), dld);
 
 		for (uint32_t g = 0; g < shaderGroupSize; g++)
 		{
@@ -245,18 +280,21 @@ public:
 	vk::StridedBufferRegionKHR rayCallSBT;
 	vk::DescriptorSet frameDescriptorSet;
 	vk::DescriptorSet raytraceDescriptorSet;
+	vk::Extent2D bufferExtent;
+	bool useSoftwareRayTracing = false;
 protected:
-	Shader _rayGen, _rayChit, _rayMiss, _rayShadowMiss;
+	Shader _rayGen, _rayChit, _rayMiss, _rayShadowMiss, _software;
 	vk::Format _swapchainFormat;
 	vk::UniqueSampler _sampler;
-	vk::UniquePipelineLayout _pipelineLayout;
-	vk::UniqueDescriptorSetLayout _descriptorSetLayout;
-	vk::UniqueDescriptorSetLayout _rayTraceDescriptorLayout;
+	vk::UniquePipelineLayout _hwPipelineLayout;
+	vk::UniquePipelineLayout _swPipelineLayout;
+	vk::UniqueDescriptorSetLayout _frameDescriptorSetLayout;
+	vk::UniqueDescriptorSetLayout _hwRaytraceDescriptorLayout;
+	vk::UniqueDescriptorSetLayout _swRaytraceDescriptorLayout;
 
-	[[nodiscard]] std::vector<PipelineCreationInfo> _getPipelineCreationInfo()
-	{
-		std::vector<PipelineCreationInfo> result;
-		PipelineCreationInfo& info = result.emplace_back();
+	[[nodiscard]] vk::UniqueHandle<vk::Pipeline, vk::DispatchLoaderDynamic> _createHardwareRaytracePipeline(vk::Device dev, vk::DispatchLoaderDynamic& dld) {
+		// Set ray tracing pipeline
+		PipelineCreationInfo info;
 		info.shaderGroups.emplace_back(PipelineCreationInfo::getRtGenShaderGroupCreate());
 		info.shaderGroups.emplace_back(PipelineCreationInfo::getRtHitShaderGroupCreate());
 		info.shaderGroups.emplace_back(PipelineCreationInfo::getRtMissShaderGroupCreate());
@@ -266,27 +304,14 @@ protected:
 		info.shaderStages.emplace_back(_rayMiss.getStageInfo());
 		info.shaderStages.emplace_back(_rayShadowMiss.getStageInfo());
 
-		return result;
-	}
-
-	[[nodiscard]] std::vector<vk::UniqueHandle<vk::Pipeline, vk::DispatchLoaderDynamic>>  _createPipelines(vk::Device dev, vk::DispatchLoaderDynamic& dld) {
-		std::vector<PipelineCreationInfo> pipelineInfo = _getPipelineCreationInfo();
-		std::vector<vk::UniqueHandle<vk::Pipeline, vk::DispatchLoaderDynamic>> pipelines(pipelineInfo.size());
-		for (std::size_t i = 0; i < pipelineInfo.size(); i++)
-		{
-			const PipelineCreationInfo& info = pipelineInfo[i];
-
-			// Set ray tracing pipeline
-			vk::RayTracingPipelineCreateInfoKHR rtPipelineInfo;
-			rtPipelineInfo.setStages(info.shaderStages);
-			rtPipelineInfo.setGroups(info.shaderGroups);
-			rtPipelineInfo.setMaxRecursionDepth(1);
-			rtPipelineInfo.setLibraries({});
-			rtPipelineInfo.libraries.setLibraryCount(0);
-			rtPipelineInfo.setLayout(_pipelineLayout.get());
-			pipelines[i] = dev.createRayTracingPipelineKHRUnique(nullptr, rtPipelineInfo, nullptr, dld);
-		}
-		return pipelines;
+		vk::RayTracingPipelineCreateInfoKHR rtPipelineInfo;
+		rtPipelineInfo.setStages(info.shaderStages);
+		rtPipelineInfo.setGroups(info.shaderGroups);
+		rtPipelineInfo.setMaxRecursionDepth(1);
+		rtPipelineInfo.setLibraries({});
+		rtPipelineInfo.libraries.setLibraryCount(0);
+		rtPipelineInfo.setLayout(_hwPipelineLayout.get());
+		return dev.createRayTracingPipelineKHRUnique(nullptr, rtPipelineInfo, nullptr, dld);
 	}
 
 	void _initialize(vk::Device dev, vk::DispatchLoaderDynamic& dld) {
@@ -297,20 +322,25 @@ protected:
 		_rayMiss = Shader::load(dev, "shaders/hwVisibilityTest.rmiss.spv", "main", vk::ShaderStageFlagBits::eMissKHR);
 		_rayShadowMiss = Shader::load(dev, "shaders/hwVisibilityTestShadow.rmiss.spv", "main", vk::ShaderStageFlagBits::eMissKHR);
 
-		std::array<vk::DescriptorSetLayoutBinding, 8> bindings{
-			vk::DescriptorSetLayoutBinding(0, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eRaygenKHR),
-			vk::DescriptorSetLayoutBinding(1, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eRaygenKHR),
-			vk::DescriptorSetLayoutBinding(2, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eRaygenKHR),
-			vk::DescriptorSetLayoutBinding(3, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eRaygenKHR),
-			vk::DescriptorSetLayoutBinding(4, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eRaygenKHR),
-			vk::DescriptorSetLayoutBinding(5, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eRaygenKHR),
-			vk::DescriptorSetLayoutBinding(6, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eRaygenKHR),
-			vk::DescriptorSetLayoutBinding(7, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eRaygenKHR)
+		_software = Shader::load(dev, "shaders/unbiasedReuseSoftware.comp.spv", "main", vk::ShaderStageFlagBits::eCompute);
+
+		vk::ShaderStageFlags stageFlags = vk::ShaderStageFlagBits::eRaygenKHR | vk::ShaderStageFlagBits::eCompute;
+
+		std::array<vk::DescriptorSetLayoutBinding, 8> frameBindings{
+			vk::DescriptorSetLayoutBinding(0, vk::DescriptorType::eCombinedImageSampler, 1, stageFlags),
+			vk::DescriptorSetLayoutBinding(1, vk::DescriptorType::eCombinedImageSampler, 1, stageFlags),
+			vk::DescriptorSetLayoutBinding(2, vk::DescriptorType::eCombinedImageSampler, 1, stageFlags),
+			vk::DescriptorSetLayoutBinding(3, vk::DescriptorType::eCombinedImageSampler, 1, stageFlags),
+			vk::DescriptorSetLayoutBinding(4, vk::DescriptorType::eCombinedImageSampler, 1, stageFlags),
+			vk::DescriptorSetLayoutBinding(5, vk::DescriptorType::eStorageBuffer, 1, stageFlags),
+			vk::DescriptorSetLayoutBinding(6, vk::DescriptorType::eStorageBuffer, 1, stageFlags),
+			vk::DescriptorSetLayoutBinding(7, vk::DescriptorType::eUniformBuffer, 1, stageFlags)
 		};
 
 		vk::DescriptorSetLayoutCreateInfo layoutInfo;
-		layoutInfo.setBindings(bindings);
-		_descriptorSetLayout = dev.createDescriptorSetLayoutUnique(layoutInfo);
+		layoutInfo.setBindings(frameBindings);
+		_frameDescriptorSetLayout = dev.createDescriptorSetLayoutUnique(layoutInfo);
+
 
 		// Acceleration structure descriptor binding
 		vk::DescriptorSetLayoutBinding accelerationStructureLayoutBinding;
@@ -322,20 +352,48 @@ protected:
 
 		vk::DescriptorSetLayoutCreateInfo raytraceLayoutInfo;
 		raytraceLayoutInfo.setBindings(accelerationStructureLayoutBinding);
-		_rayTraceDescriptorLayout = dev.createDescriptorSetLayoutUnique(raytraceLayoutInfo);
+		_hwRaytraceDescriptorLayout = dev.createDescriptorSetLayoutUnique(raytraceLayoutInfo);
 
-		std::array<vk::DescriptorSetLayout, 2> descriptorLayouts{ _descriptorSetLayout.get(), _rayTraceDescriptorLayout.get() };
 
-		vk::PipelineLayoutCreateInfo pipelineLayoutInfo;
-		pipelineLayoutInfo.setSetLayouts(descriptorLayouts);
-		_pipelineLayout = dev.createPipelineLayoutUnique(pipelineLayoutInfo);
+		std::array<vk::DescriptorSetLayoutBinding, 2> swRaytraceBindings{
+			vk::DescriptorSetLayoutBinding(0, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eCompute),
+			vk::DescriptorSetLayoutBinding(1, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eCompute)
+		};
+
+		vk::DescriptorSetLayoutCreateInfo swRaytraceLayoutInfo;
+		swRaytraceLayoutInfo.setBindings(swRaytraceBindings);
+		_swRaytraceDescriptorLayout = dev.createDescriptorSetLayoutUnique(swRaytraceLayoutInfo);
+
+
+		std::array<vk::DescriptorSetLayout, 2> hwDescriptorLayouts{ _frameDescriptorSetLayout.get(), _hwRaytraceDescriptorLayout.get() };
+
+		vk::PipelineLayoutCreateInfo hwPipelineLayoutInfo;
+		hwPipelineLayoutInfo.setSetLayouts(hwDescriptorLayouts);
+		_hwPipelineLayout = dev.createPipelineLayoutUnique(hwPipelineLayoutInfo);
+
+
+		std::array<vk::DescriptorSetLayout, 2> swDescriptorLayouts{ _frameDescriptorSetLayout.get(), _swRaytraceDescriptorLayout.get() };
+
+		vk::PipelineLayoutCreateInfo swPipelineLayoutInfo;
+		swPipelineLayoutInfo.setSetLayouts(swDescriptorLayouts);
+		_swPipelineLayout = dev.createPipelineLayoutUnique(swPipelineLayoutInfo);
+
 
 		//Pipeline
-		_pipelines = _createPipelines(dev, dld);
+#ifndef RENDERDOC_CAPTURE
+		_hwRaytracePipeline = _createHardwareRaytracePipeline(dev, dld);
+#endif
+
+		vk::ComputePipelineCreateInfo swPipelineInfo;
+		swPipelineInfo
+			.setLayout(_swPipelineLayout.get())
+			.setStage(_software.getStageInfo());
+		_softwarePipeline = dev.createComputePipelineUnique(nullptr, swPipelineInfo);
 	}
 private:
 	vk::UniqueRenderPass _pass;
-	std::vector<vk::UniqueHandle<vk::Pipeline, vk::DispatchLoaderDynamic>> _pipelines;
+	vk::UniqueHandle<vk::Pipeline, vk::DispatchLoaderDynamic> _hwRaytracePipeline;
+	vk::UniquePipeline _softwarePipeline;
 
 	vk::DispatchLoaderDynamic *_dld = nullptr;
 };

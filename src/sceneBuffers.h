@@ -81,11 +81,9 @@ public:
 			pointLights = generateRandomPointLights(200, scene.m_dimensions.min, scene.m_dimensions.max);
 		}
 
-		std::vector<shader::aliasTableColumn> aliasTable = createAliasTable(scene, pointLights, triangleLights);
+		std::vector<shader::aliasTableColumn> aliasTable = createAliasTable(pointLights, triangleLights);
 
 		SceneBuffers result;
-
-		int tempsize = sizeof(shader::aliasTableColumn);
 
 		result._vertices = allocator.createTypedBuffer<Vertex>(
 			scene.m_positions.size(), vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eShaderDeviceAddress, VMA_MEMORY_USAGE_CPU_TO_GPU
@@ -349,7 +347,7 @@ public:
 			vk::DeviceSize blasScratchSize;
 
 			result._asAllocations.emplace_back(_createAccelerationStructure(
-				dev, pd, allocator,
+				dev, allocator,
 				result._allBlas.at(index).get(),
 				vk::AccelerationStructureMemoryRequirementsTypeKHR::eObject,
 				&blasScratchSize,
@@ -442,7 +440,7 @@ public:
 		vk::DeviceSize tlasScratchSize;
 
 		result._asAllocations.emplace_back(_createAccelerationStructure(
-			dev, pd, allocator,
+			dev, allocator,
 			result._topLevelAS.get(),
 			vk::AccelerationStructureMemoryRequirementsTypeKHR::eObject,
 			&tlasScratchSize,
@@ -471,7 +469,7 @@ public:
 
 
 		result._instance = _createMappedBuffer(
-			dev, geometryInstances.data(), sizeof(vk::AccelerationStructureInstanceKHR) * geometryInstances.size(), allocator
+			geometryInstances.data(), sizeof(vk::AccelerationStructureInstanceKHR) * geometryInstances.size(), allocator
 		);
 
 		vk::AccelerationStructureGeometryKHR tlasAccelerationGeometry;
@@ -527,7 +525,6 @@ private:
 	vma::Allocator *_allocator = nullptr;
 
 	[[nodiscard]] inline static vma::UniqueBuffer _createMappedBuffer(
-		vk::Device& dev,
 		void* srcData,
 		uint32_t byteLength,
 		vma::Allocator& allocator
@@ -571,7 +568,6 @@ private:
 
 	[[nodiscard]] inline static VmaAllocation _createAccelerationStructure(
 		vk::Device dev,
-		vk::PhysicalDevice pd,
 		vma::Allocator &allocator,
 		vk::AccelerationStructureKHR ac,
 		vk::AccelerationStructureMemoryRequirementsTypeKHR memoryType,
@@ -590,7 +586,6 @@ private:
 
 		vk::UniqueBuffer tmpbuffer = dev.createBufferUnique(asBufferInfo, nullptr);
 		vk::MemoryRequirements bufRequirements = dev.getBufferMemoryRequirements(tmpbuffer.get());
-		uint32_t allocationMemoryBits = bufRequirements.memoryTypeBits | asRequirements.memoryTypeBits;
 
 		VmaAllocationCreateInfo allocationInfo{};
 		allocationInfo.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;

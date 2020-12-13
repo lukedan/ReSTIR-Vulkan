@@ -4,7 +4,30 @@ cmake_policy(SET CMP0092 NEW) # don't add /W3 for MSVC
 
 project(restir)
 
-include("cmake/glslc.cmake")
+file(GLOB_RECURSE ALL_SHADER_FILES LIST_DIRECTORIES false "src/shaders/*.*")
+
+function(add_shader TARGET SHADER)
+	# Find glslc shader compiler.
+	find_program(GLSLC glslc)
+
+	get_filename_component(SHADER_FILE ${SHADER} NAME)
+	set(OUTPUT_PATH ${CMAKE_CURRENT_BINARY_DIR}/shaders/${SHADER_FILE}.spv)
+
+	# Add a custom command to compile GLSL to SPIR-V.
+	get_filename_component(OUTPUT_DIR ${OUTPUT_PATH} DIRECTORY)
+	file(MAKE_DIRECTORY ${OUTPUT_DIR})
+	add_custom_command(
+		OUTPUT ${OUTPUT_PATH}
+		COMMAND ${GLSLC} -g -O -o ${OUTPUT_PATH}  ${SHADER} --target-env=vulkan1.2
+		DEPENDS ${ALL_SHADER_FILES}
+		IMPLICIT_DEPENDS CXX ${SHADER}
+		WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+		VERBATIM)
+
+	# Make sure our native build depends on this output.
+	set_source_files_properties(${OUTPUT_PATH} PROPERTIES GENERATED TRUE)
+	target_sources(${TARGET} PRIVATE ${OUTPUT_PATH})
+endfunction(add_shader)
 
 add_executable(restir)
 
@@ -89,3 +112,4 @@ add_shader(restir "src/shaders/restirOmniHardware.rgen")
 add_shader(restir "src/shaders/restirOmniSoftware.comp")
 
 add_shader(restir "src/shaders/unbiasedReuseHardware.rgen")
+add_shader(restir "src/shaders/unbiasedReuseSoftware.comp")
