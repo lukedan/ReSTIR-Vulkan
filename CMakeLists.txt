@@ -18,9 +18,10 @@ elseif(CMAKE_COMPILER_IS_GNUCXX)
 		PRIVATE -Wall -Wextra -Wconversion)
 endif()
 
-# for RenderDoc capturing
-# target_compile_definitions(restir
-#	PRIVATE RENDERDOC_CAPTURE)
+target_compile_definitions(restir
+	PRIVATE
+#		RENDERDOC_CAPTURE
+		VK_ENABLE_BETA_EXTENSIONS)
 
 target_sources(restir
 	PRIVATE
@@ -30,12 +31,9 @@ target_sources(restir
 		"src/passes/gBufferPass.cpp"
 		"src/passes/gBufferPass.h"
 		"src/passes/lightingPass.h"
-		"src/passes/lightSamplePass.h"
 		"src/passes/pass.h"
 		"src/passes/restirPass.h"
-		"src/passes/softwareVisibilityTestPass.h"
 		"src/passes/spatialReusePass.h"
-		"src/passes/temporalReusePass.h"
 		"src/aabbTreeBuilder.cpp"
 		"src/aabbTreeBuilder.h"
 		"src/app.cpp"
@@ -78,24 +76,16 @@ add_shader(restir "src/shaders/simple.frag")
 add_shader(restir "src/shaders/gBuffer.vert")
 add_shader(restir "src/shaders/gBuffer.frag")
 
-add_shader(restir "src/shaders/lightSample.comp")
-
-add_shader(restir "src/shaders/softwareVisibilityTest.comp")
 add_shader(restir "src/shaders/spatialReuse.comp")
-
-add_shader(restir "src/shaders/temporalReuse.comp")
 
 add_shader(restir "src/shaders/quad.vert")
 add_shader(restir "src/shaders/lighting.frag")
 
+add_shader(restir "src/shaders/hwVisibilityTest.rchit")
+add_shader(restir "src/shaders/hwVisibilityTest.rmiss")
+add_shader(restir "src/shaders/hwVisibilityTestShadow.rmiss")
+
+add_shader(restir "src/shaders/restirOmniHardware.rgen")
 add_shader(restir "src/shaders/restirOmniSoftware.comp")
 
-add_shader(restir "src/shaders/raytrace.rgen")
-add_shader(restir "src/shaders/raytrace.rchit")
-add_shader(restir "src/shaders/raytrace.rmiss")
-add_shader(restir "src/shaders/raytraceShadow.rmiss")
-
-add_shader(restir "src/shaders/unbiasedRaytrace.rgen")
-add_shader(restir "src/shaders/unbiasedRaytrace.rchit")
-add_shader(restir "src/shaders/unbiasedRaytrace.rmiss")
-add_shader(restir "src/shaders/unbiasedRaytraceShadow.rmiss")
+add_shader(restir "src/shaders/unbiasedReuseHardware.rgen")

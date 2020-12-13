@@ -425,33 +425,6 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 	}
 
 
-	_lightSamplePass = Pass::create<LightSamplePass>(_device.get());
-	{
-		std::array<vk::DescriptorSetLayout, numGBuffers> setLayouts;
-		std::fill(setLayouts.begin(), setLayouts.end(), _lightSamplePass.getDescriptorSetLayout());
-		vk::DescriptorSetAllocateInfo allocInfo;
-		allocInfo
-			.setDescriptorPool(_staticDescriptorPool.get())
-			.setSetLayouts(setLayouts);
-		auto newSets = _device->allocateDescriptorSetsUnique(allocInfo);
-		std::move(newSets.begin(), newSets.end(), _lightSampleDescriptors.begin());
-	}
-	_lightSamplePass.screenSize = _swapchain.getImageExtent();
-
-
-	_swVisibilityTestPass = Pass::create<SoftwareVisibilityTestPass>(_device.get());
-	{
-		std::array<vk::DescriptorSetLayout, numGBuffers> setLayouts;
-		std::fill(setLayouts.begin(), setLayouts.end(), _swVisibilityTestPass.getDescriptorSetLayout());
-		vk::DescriptorSetAllocateInfo allocInfo;
-		allocInfo
-			.setDescriptorPool(_staticDescriptorPool.get())
-			.setSetLayouts(setLayouts);
-		auto newSets = _device->allocateDescriptorSetsUnique(allocInfo);
-		std::move(newSets.begin(), newSets.end(), _swVisibilityTestDescriptors.begin());
-	}
-	_swVisibilityTestPass.screenSize = _swapchain.getImageExtent();
-
 	_spatialReusePass = Pass::create<SpatialReusePass>(_device.get());
 	{
 		std::array<vk::DescriptorSetLayout, numGBuffers> setLayouts;
@@ -517,19 +490,6 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 			.setSetLayouts(setLayout);
 		_restirSoftwareRayTraceDescriptor = std::move(_device->allocateDescriptorSetsUnique(allocInfo)[0]);
 	}
-
-	_temporalReusePass = Pass::create<TemporalReusePass>(_device.get());
-	{
-		std::array<vk::DescriptorSetLayout, numGBuffers> setLayouts;
-		std::fill(setLayouts.begin(), setLayouts.end(), _temporalReusePass.getDescriptorSetLayout());
-		vk::DescriptorSetAllocateInfo allocInfo;
-		allocInfo
-			.setDescriptorPool(_staticDescriptorPool.get())
-			.setSetLayouts(setLayouts);
-		auto newSets = _device->allocateDescriptorSetsUnique(allocInfo);
-		std::move(newSets.begin(), newSets.end(), _temporalReuseDescriptors.begin());
-	}
-	_temporalReusePass.screenSize = _swapchain.getImageExtent();
 
 
 #ifndef RENDERDOC_CAPTURE
@@ -727,12 +687,8 @@ void App::mainLoop() {
 			_restirUniformBuffer.unmap();
 			_restirUniformBuffer.flush();
 
-			_lightSamplePass.screenSize = windowSize;
-			_swVisibilityTestPass.screenSize = windowSize;
-
 			_spatialReusePass.screenSize = windowSize;
 
-			_temporalReusePass.screenSize = windowSize;
 			_updateRestirBuffers();
 
 			_initializeLightingPassResources();

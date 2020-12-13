@@ -1,6 +1,5 @@
 #pragma once
 
-#define ONE_SHADER
 #include "misc.h"
 #include "vma.h"
 #include "glfwWindow.h"
@@ -11,9 +10,6 @@
 #include "fpsCounter.h"
 
 #include "passes/gBufferPass.h"
-#include "passes/lightSamplePass.h"
-#include "passes/softwareVisibilityTestPass.h"
-#include "passes/temporalReusePass.h"
 #include "passes/spatialReusePass.h"
 #include "passes/lightingPass.h"
 #include "passes/restirPass.h"
@@ -122,18 +118,9 @@ protected:
 	std::array<vma::UniqueBuffer, numGBuffers> _reservoirBuffers;
 	vk::DeviceSize _reservoirBufferSize;
 
-	LightSamplePass _lightSamplePass;
-	std::array<vk::UniqueDescriptorSet, numGBuffers> _lightSampleDescriptors;
-
-	SoftwareVisibilityTestPass _swVisibilityTestPass;
-	std::array<vk::UniqueDescriptorSet, numGBuffers> _swVisibilityTestDescriptors;
-
 	SpatialReusePass _spatialReusePass;
 	std::array<vk::UniqueDescriptorSet, numGBuffers> _spatialReuseDescriptors;
 	std::array<vk::UniqueDescriptorSet, numGBuffers> _spatialReuseSecondDescriptors;
-
-	TemporalReusePass _temporalReusePass;
-	std::array<vk::UniqueDescriptorSet, numGBuffers> _temporalReuseDescriptors;
 
 	LightingPass _lightingPass;
 	vma::UniqueBuffer _lightingPassUniformBuffer;
@@ -221,10 +208,6 @@ protected:
 
 	void _recordMainCommandBuffers() {
 		for (std::size_t i = 0; i < numGBuffers; ++i) {
-			_lightSamplePass.descriptorSet = _lightSampleDescriptors[i].get();
-
-			_swVisibilityTestPass.descriptorSet = _swVisibilityTestDescriptors[i].get();
-
 			_rtPass.staticDescriptorSet = _restirStaticDescriptor.get();
 			_rtPass.frameDescriptorSet = _restirFrameDescriptors[i].get();
 #ifdef RENDERDOC_CAPTURE
@@ -239,32 +222,13 @@ protected:
 
 			_unbiasedRtPass.descriptorSet = _unbiasedRtPassDescriptors[i].get();
 
-			_temporalReusePass.descriptorSet = _temporalReuseDescriptors[i].get();
-
 			vk::CommandBufferBeginInfo beginInfo;
 			_mainCommandBuffers[i]->begin(beginInfo);
 
 			_gBufferPass.issueCommands(_mainCommandBuffers[i].get(), _gBuffers[i].getFramebuffer());
 
-#ifdef ONE_SHADER
 			_rtPass.bufferExtent = _swapchain.getImageExtent();
 			_rtPass.issueCommands(_mainCommandBuffers[i].get(), nullptr);
-#else
-			_lightSamplePass.issueCommands(_mainCommandBuffers[i].get(), nullptr);
-			switch (_visibilityTestMethod) {
-			case VisibilityTestMethod::software:
-				_swVisibilityTestPass.issueCommands(_mainCommandBuffers[i].get(), nullptr);
-				break;
-			case VisibilityTestMethod::hardware:
-#ifndef RENDERDOC_CAPTURE
-				_rtPass.issueCommands(_mainCommandBuffers[i].get(), _swapchain.getImageExtent(), _dynamicDispatcher);
-#endif
-				break;
-			}
-			if (_enableTemporalReuse) {
-				_temporalReusePass.issueCommands(_mainCommandBuffers[i].get(), nullptr);
-			}
-#endif
 			for (int j = 0; j < _spatialReuseIterations; ++j) {
 				_spatialReusePass.descriptorSet = _spatialReuseDescriptors[i].get();
 				_spatialReusePass.issueCommands(_mainCommandBuffers[i].get(), nullptr);
@@ -319,26 +283,10 @@ protected:
 			_aabbTreeBuffers, _device.get(), _restirSoftwareRayTraceDescriptor.get()
 		);
 		for (std::size_t i = 0; i < numGBuffers; ++i) {
-			_lightSamplePass.initializeDescriptorSetFor(
-				_gBuffers[i], _sceneBuffers, _restirUniformBuffer.get(), _reservoirBuffers[i].get(), _reservoirBufferSize,
-				_device.get(), _lightSampleDescriptors[i].get()
-			);
-
-			_swVisibilityTestPass.initializeDescriptorSetFor(
-				_gBuffers[i], _aabbTreeBuffers, _restirUniformBuffer.get(), _reservoirBuffers[i].get(), _reservoirBufferSize,
-				_device.get(), _swVisibilityTestDescriptors[i].get()
-			);
-
 			_rtPass.initializeFrameDescriptorSetFor(
 				_gBuffers[i], _gBuffers[(i + numGBuffers - 1) % numGBuffers],
 				_reservoirBuffers[i].get(), _reservoirBuffers[(i + numGBuffers - 1) % numGBuffers].get(), _reservoirBufferSize,
 				_device.get(), _restirFrameDescriptors[i].get()
-			);
-
-			_temporalReusePass.initializeDescriptorSetFor(
-				_gBuffers[i], _gBuffers[(i + numGBuffers - 1) % numGBuffers], _restirUniformBuffer.get(),
-				_reservoirBuffers[i].get(), _reservoirBuffers[(i + numGBuffers - 1) % numGBuffers].get(), _reservoirBufferSize,
-				_device.get(), _temporalReuseDescriptors[i].get()
 			);
 
 			_spatialReusePass.initializeDescriptorSetFor(
