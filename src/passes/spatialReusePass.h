@@ -16,6 +16,8 @@ public:
 		);
 		buffer.bindPipeline(vk::PipelineBindPoint::eCompute, getPipelines()[0].get());
 		buffer.bindDescriptorSets(vk::PipelineBindPoint::eCompute, _layout.get(), 0, { descriptorSet }, {});
+		std::array<const int, 1> iterations = { iter };
+		buffer.pushConstants(_layout.get(), vk::ShaderStageFlagBits::eCompute, 0, sizeof(int), &iterations[0]);
 		buffer.dispatch(
 			ceilDiv<uint32_t>(screenSize.width, LIGHT_SAMPLE_GROUP_SIZE_X),
 			ceilDiv<uint32_t>(screenSize.height, LIGHT_SAMPLE_GROUP_SIZE_Y),
@@ -88,6 +90,7 @@ public:
 
 	vk::DescriptorSet descriptorSet;
 	vk::Extent2D screenSize;
+	int iter;
 protected:
 	Shader _shader;
 	vk::UniqueDescriptorSetLayout _descriptorLayout;
@@ -133,7 +136,15 @@ protected:
 		std::array<vk::DescriptorSetLayout, 1> descriptorLayouts{ _descriptorLayout.get() };
 
 		vk::PipelineLayoutCreateInfo layoutInfo;
-		layoutInfo.setSetLayouts(descriptorLayouts);
+
+		std::array<vk::PushConstantRange, 1> ranges{
+			vk::PushConstantRange(vk::ShaderStageFlagBits::eCompute, 0, sizeof(int))
+		};
+
+		layoutInfo
+			.setSetLayouts(descriptorLayouts)
+			.setPushConstantRanges(ranges);
+
 		_layout = dev.createPipelineLayoutUnique(layoutInfo);
 
 		Pass::_initialize(dev);

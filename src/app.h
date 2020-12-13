@@ -247,8 +247,10 @@ protected:
 			} else {
 				for (int j = 0; j < _spatialReuseIterations; ++j) {
 					_spatialReusePass.descriptorSet = _spatialReuseDescriptors[i].get();
+					_spatialReusePass.iter = j * 2;
 					_spatialReusePass.issueCommands(_mainCommandBuffers[i].get(), nullptr);
 					_spatialReusePass.descriptorSet = _spatialReuseSecondDescriptors[i].get();
+					_spatialReusePass.iter = j * 2 + 1;
 					_spatialReusePass.issueCommands(_mainCommandBuffers[i].get(), nullptr);
 				}
 			}
