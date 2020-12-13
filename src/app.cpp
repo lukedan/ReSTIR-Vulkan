@@ -348,6 +348,10 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 		_allocator, _transientCommandBufferPool,
 		_device.get(), _graphicsComputeQueue
 	);
+	_sceneRtBuffers = SceneRaytraceBuffers::create(
+		_device.get(), _physicalDevice, _allocator, _transientCommandBufferPool, _graphicsComputeQueue,
+		_sceneBuffers, _gltfScene, _dynamicDispatcher
+	);
 	std::cout << "Building AABB tree...";
 	_aabbTree = AabbTree::build(_gltfScene);
 	std::cout << " done\n";
@@ -475,8 +479,6 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 	// Hardware RT pass for visibility test
 	_rtPass = Pass::create<RestirPass>(_device.get(), _dynamicDispatcher);
 #ifndef RENDERDOC_CAPTURE
-	_rtPass.createAccelerationStructure(_device.get(), _physicalDevice, _allocator,
-		_commandPool.get(), _graphicsComputeQueue, _sceneBuffers, _gltfScene);
 	_rtPass.createShaderBindingTable(_device.get(), _allocator, _physicalDevice);
 #endif
 	{
@@ -532,9 +534,7 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 
 #ifndef RENDERDOC_CAPTURE
 	// Hardware RT pass for visibility test
-	_unbiasedRtPass = UnbiasedRtPass::create(_device.get(), _dynamicDispatcher);
-	_unbiasedRtPass.createAccelerationStructure(_device.get(), _physicalDevice, _allocator, _dynamicDispatcher,
-		_commandPool.get(), _graphicsComputeQueue, _sceneBuffers, _gltfScene);
+	_unbiasedRtPass = UnbiasedReusePass::create(_device.get(), _dynamicDispatcher);
 	_unbiasedRtPass.createShaderBindingTable(_device.get(), _allocator, _physicalDevice, _dynamicDispatcher);
 	{
 		std::array<vk::DescriptorSetLayout, numGBuffers> setLayouts;
@@ -622,8 +622,6 @@ App::~App() {
 	ImGui_ImplVulkan_Shutdown();
 	ImGui_ImplGlfw_Shutdown();
 	ImGui::DestroyContext();
-	_unbiasedRtPass.destroyAllocations(_allocator);
-	_rtPass.destroyAllocations(_allocator);
 }
 
 void App::updateGui() {

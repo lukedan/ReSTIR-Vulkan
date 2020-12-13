@@ -1,7 +1,5 @@
 #pragma once
 
-#define VK_ENABLE_BETA_EXTENSIONS
-
 #define ONE_SHADER
 #include "misc.h"
 #include "vma.h"
@@ -19,7 +17,7 @@
 #include "passes/spatialReusePass.h"
 #include "passes/lightingPass.h"
 #include "passes/restirPass.h"
-#include "passes/unbiasedRtPass.h"
+#include "passes/unbiasedReusePass.h"
 #include "passes/imguiPass.h"
 
 enum class VisibilityTestMethod {
@@ -147,14 +145,14 @@ protected:
 	vk::UniqueDescriptorSet _restirHardwareRayTraceDescriptor;
 	vk::UniqueDescriptorSet _restirSoftwareRayTraceDescriptor;
 
-	UnbiasedRtPass _unbiasedRtPass;
+	UnbiasedReusePass _unbiasedRtPass;
 	std::array<vk::UniqueDescriptorSet, numGBuffers> _unbiasedRtPassDescriptors;
 
 	ImGuiPass _imguiPass;
 
 	nvh::GltfScene _gltfScene;
 	SceneBuffers _sceneBuffers;
-	int sampleNum = 50;
+	SceneRaytraceBuffers _sceneRtBuffers;
 
 	AabbTree _aabbTree;
 	AabbTreeBuffers _aabbTreeBuffers;
@@ -314,7 +312,7 @@ protected:
 		);
 #ifndef RENDERDOC_CAPTURE
 		_rtPass.initializeHardwareRayTracingDescriptorSet(
-			_device.get(), _restirHardwareRayTraceDescriptor.get()
+			_sceneRtBuffers, _device.get(), _restirHardwareRayTraceDescriptor.get()
 		);
 #endif
 		_rtPass.initializeSoftwareRayTracingDescriptorSet(
@@ -356,7 +354,7 @@ protected:
 #ifndef RENDERDOC_CAPTURE
 			_unbiasedRtPass.createDescriptorSetForRayTracing(
 				_device.get(),
-				_gBuffers[i], _restirUniformBuffer.get(), _reservoirBuffers[i].get(), _reservoirBufferSize,
+				_sceneRtBuffers, _gBuffers[i], _restirUniformBuffer.get(), _reservoirBuffers[i].get(), _reservoirBufferSize,
 				_unbiasedRtPassDescriptors[i].get(),
 				_dynamicDispatcher
 			);
