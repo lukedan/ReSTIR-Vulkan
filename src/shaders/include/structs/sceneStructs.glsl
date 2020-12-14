@@ -1,5 +1,3 @@
-#define RESERVOIR_SIZE 4
-
 struct ModelMatrices {
 	mat4 transform;
 	mat4 transformInverseTransposed;

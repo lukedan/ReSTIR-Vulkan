@@ -265,7 +265,10 @@ public:
 		// Set shader info
 		uint8_t* dstData = _shaderBindingTable.mapAs<uint8_t>();
 		std::vector<uint8_t> shaderHandleStorage(shaderBindingTableSize);
-		dev.getRayTracingShaderGroupHandlesKHR(_hwRayTracePipeline.get(), 0, shaderGroupSize, shaderBindingTableSize, shaderHandleStorage.data(), *dynamicLoader);
+		vk::Result res = dev.getRayTracingShaderGroupHandlesKHR(
+			_hwRayTracePipeline.get(), 0, shaderGroupSize, shaderBindingTableSize, shaderHandleStorage.data(), *dynamicLoader
+		);
+		vkCheck(res);
 
 		for (uint32_t g = 0; g < shaderGroupSize; g++)
 		{
@@ -348,7 +351,9 @@ protected:
 			pipelineInfo
 				.setStage(_software.getStageInfo())
 				.setLayout(_swPipelineLayout.get());
-			pipelines.emplace_back(dev.createComputePipelineUnique(nullptr, pipelineInfo));
+			auto [res, pipeline] = dev.createComputePipelineUnique(nullptr, pipelineInfo);
+			vkCheck(res);
+			pipelines.emplace_back(std::move(pipeline));
 		}
 
 		return pipelines;
@@ -459,7 +464,9 @@ protected:
 				.setMaxRecursionDepth(1)
 				.setLibraries({})
 				.setLayout(_hwPipelineLayout.get());
-			_hwRayTracePipeline = dev.createRayTracingPipelineKHRUnique(nullptr, rtPipelineInfo, nullptr, *dynamicLoader);
+			auto [res, pipeline] = dev.createRayTracingPipelineKHRUnique(nullptr, rtPipelineInfo, nullptr, *dynamicLoader);
+			vkCheck(res);
+			_hwRayTracePipeline = std::move(pipeline);
 		}
 #endif
 

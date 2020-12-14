@@ -9,8 +9,8 @@
 
 VKAPI_ATTR VkBool32 VKAPI_CALL _debugCallback(
 	VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
-	VkDebugUtilsMessageTypeFlagsEXT messageType,
-	const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
+	VkDebugUtilsMessageTypeFlagsEXT,
+	const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData,
 	void*
 ) {
 	if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) {
@@ -346,7 +346,7 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 	);
 #ifndef RENDERDOC_CAPTURE
 	_sceneRtBuffers = SceneRaytraceBuffers::create(
-		_device.get(), _physicalDevice, _allocator, _transientCommandBufferPool, _graphicsComputeQueue,
+		_device.get(), _allocator, _transientCommandBufferPool, _graphicsComputeQueue,
 		_sceneBuffers, _gltfScene, _dynamicDispatcher
 	);
 #endif
@@ -416,6 +416,13 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 		restirUniforms->frame = 0;
 		restirUniforms->spatialPosThreshold = posThreshold;
 		restirUniforms->spatialNormalThreshold = norThreshold;
+		restirUniforms->flags = 0;
+		if (_visibilityTestMethod != VisibilityTestMethod::disabled) {
+			restirUniforms->flags |= RESTIR_VISIBILITY_REUSE_FLAG;
+		}
+		if (_enableTemporalReuse) {
+			restirUniforms->flags |= RESTIR_TEMPORAL_REUSE_FLAG;
+		}
 		restirUniforms->spatialNeighbors = 4;
 		restirUniforms->spatialRadius = 30.0f;
 		_restirUniformBuffer.unmap();
@@ -656,7 +663,7 @@ void App::updateGui() {
 
 	ImGui::Checkbox("Use Temporal Reuse", &_enableTemporalReuse);
 	if (_enableTemporalReuse) {
-		ImGui::SliderInt("Temporal Sample Count Clamping", &_temporalReuseSampleMultiplier, 0.0f, 100.0f);
+		ImGui::SliderInt("Temporal Sample Count Clamping", &_temporalReuseSampleMultiplier, 0, 100);
 	}
 
 	ImGui::Separator();

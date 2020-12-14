@@ -241,7 +241,7 @@ public:
 		// Lights
 		// Point lights
 		int32_t* pointLightPtr = result._ptLightsBuffer.mapAs<int32_t>();
-		*pointLightPtr = pointLights.size();
+		*pointLightPtr = static_cast<int32_t>(pointLights.size());
 		auto* ptLights = reinterpret_cast<shader::pointLight*>(
 			reinterpret_cast<uintptr_t>(pointLightPtr) + alignPreArrayBlock<shader::pointLight, int32_t>()
 			);
@@ -251,7 +251,7 @@ public:
 		
 		// Tri lights
 		int32_t* triLightsPtr = result._triLightsBuffer.mapAs<int32_t>();
-		*triLightsPtr = triangleLights.size();
+		*triLightsPtr = static_cast<int32_t>(triangleLights.size());
 		auto* triLights = reinterpret_cast<shader::triLight*>(
 			reinterpret_cast<uintptr_t>(triLightsPtr) + alignPreArrayBlock<shader::triLight, int32_t>()
 			);
@@ -261,7 +261,7 @@ public:
 
 		// Alias table
 		int32_t* aliasTablePtr = result._aliasTableBuffer.mapAs<int32_t>();
-		*aliasTablePtr = aliasTable.size();
+		*aliasTablePtr = static_cast<int32_t>(aliasTable.size());
 		auto* aliasTableContentPtr = reinterpret_cast<shader::aliasTableColumn*>(
 			reinterpret_cast<uintptr_t>(aliasTablePtr) + alignPreArrayBlock<shader::aliasTableColumn, int32_t[4]>()
 			);
@@ -304,7 +304,6 @@ public:
 
 	[[nodiscard]] inline static SceneRaytraceBuffers create(
 		vk::Device dev,
-		vk::PhysicalDevice pd,
 		vma::Allocator &allocator,
 		TransientCommandBufferPool &cmdBufferPool,
 		vk::Queue queue,
@@ -322,7 +321,7 @@ public:
 		for (auto& primMesh : gltfScene.m_primMeshes) {
 			vk::AccelerationStructureCreateGeometryTypeInfoKHR blasCreateGeoInfo;
 			blasCreateGeoInfo.setGeometryType(vk::GeometryTypeKHR::eTriangles);
-			blasCreateGeoInfo.setMaxPrimitiveCount(primMesh.indexCount / 3.0f);
+			blasCreateGeoInfo.setMaxPrimitiveCount(primMesh.indexCount / 3);
 			blasCreateGeoInfo.setIndexType(vk::IndexType::eUint32);
 			blasCreateGeoInfo.setMaxVertexCount(primMesh.vertexCount);
 			blasCreateGeoInfo.setVertexFormat(vk::Format::eR32G32B32Sfloat);
@@ -469,7 +468,9 @@ public:
 
 
 		result._instance = _createMappedBuffer(
-			geometryInstances.data(), sizeof(vk::AccelerationStructureInstanceKHR) * geometryInstances.size(), allocator
+			geometryInstances.data(),
+			static_cast<uint32_t>(sizeof(vk::AccelerationStructureInstanceKHR) * geometryInstances.size()),
+			allocator
 		);
 
 		vk::AccelerationStructureGeometryKHR tlasAccelerationGeometry;
@@ -493,7 +494,7 @@ public:
 		tlasAccelerationBuildGeometryInfo.scratchData.deviceAddress = dev.getBufferAddress(tlasScratchBuffer.get());
 
 		vk::AccelerationStructureBuildOffsetInfoKHR tlasAccelerationBuildOffsetInfo;
-		tlasAccelerationBuildOffsetInfo.primitiveCount = tlas.size();
+		tlasAccelerationBuildOffsetInfo.primitiveCount = static_cast<uint32_t>(tlas.size());
 		tlasAccelerationBuildOffsetInfo.primitiveOffset = 0x0;
 		tlasAccelerationBuildOffsetInfo.firstVertex = 0;
 		tlasAccelerationBuildOffsetInfo.transformOffset = 0x0;

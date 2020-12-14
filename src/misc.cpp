@@ -416,7 +416,7 @@ std::vector<shader::triLight> collectTriangleLightsFromScene(const nvh::GltfScen
 	std::queue<int> smallerThanOneQueue;
 	std::vector<float> lightProbVec;
 	float powerSum = 0.f;
-	int lightNum = 0;
+	std::size_t lightNum = 0;
 
 	// Init samplers' probability
 	if (!ptLights.empty()) {

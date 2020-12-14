@@ -127,7 +127,7 @@ public:
 		for (std::size_t i = 0; i < imageInfo.size(); ++i) {
 			descriptorWrite[i]
 				.setDstSet(set)
-				.setDstBinding(i)
+				.setDstBinding(static_cast<uint32_t>(i))
 				.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
 				.setImageInfo(imageInfo[i]);
 		}
@@ -223,7 +223,10 @@ public:
 		// Set shader info
 		uint8_t* dstData = _shaderBindingTable.mapAs<uint8_t>();
 		std::vector<uint8_t> shaderHandleStorage(shaderBindingTableSize);
-		dev.getRayTracingShaderGroupHandlesKHR(_hwRaytracePipeline.get(), 0, shaderGroupSize, shaderBindingTableSize, shaderHandleStorage.data(), dld);
+		vk::Result res = dev.getRayTracingShaderGroupHandlesKHR(
+			_hwRaytracePipeline.get(), 0, shaderGroupSize, shaderBindingTableSize, shaderHandleStorage.data(), dld
+		);
+		vkCheck(res);
 
 		for (uint32_t g = 0; g < shaderGroupSize; g++)
 		{
@@ -305,13 +308,15 @@ protected:
 		info.shaderStages.emplace_back(_rayShadowMiss.getStageInfo());
 
 		vk::RayTracingPipelineCreateInfoKHR rtPipelineInfo;
-		rtPipelineInfo.setStages(info.shaderStages);
-		rtPipelineInfo.setGroups(info.shaderGroups);
-		rtPipelineInfo.setMaxRecursionDepth(1);
-		rtPipelineInfo.setLibraries({});
-		rtPipelineInfo.libraries.setLibraryCount(0);
-		rtPipelineInfo.setLayout(_hwPipelineLayout.get());
-		return dev.createRayTracingPipelineKHRUnique(nullptr, rtPipelineInfo, nullptr, dld);
+		rtPipelineInfo
+			.setStages(info.shaderStages)
+			.setGroups(info.shaderGroups)
+			.setMaxRecursionDepth(1)
+			.setLayout(_hwPipelineLayout.get());
+
+		auto [res, pipeline] = dev.createRayTracingPipelineKHRUnique(nullptr, rtPipelineInfo, nullptr, dld).asTuple();
+		vkCheck(res);
+		return std::move(pipeline);
 	}
 
 	void _initialize(vk::Device dev, vk::DispatchLoaderDynamic& dld) {
@@ -388,7 +393,9 @@ protected:
 		swPipelineInfo
 			.setLayout(_swPipelineLayout.get())
 			.setStage(_software.getStageInfo());
-		_softwarePipeline = dev.createComputePipelineUnique(nullptr, swPipelineInfo);
+		auto [res, pipeline] = dev.createComputePipelineUnique(nullptr, swPipelineInfo);
+		vkCheck(res);
+		_softwarePipeline = std::move(pipeline);
 	}
 private:
 	vk::UniqueRenderPass _pass;
