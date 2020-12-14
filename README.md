@@ -46,6 +46,12 @@ This is the final project for CIS 565: GPU Programming. The goal of the project 
 
 [MS2 Slides](media/milestone2_v2.pdf)
 
+### Milestone 3 (Dec. 7)
+ - Unbiased ReSTIR algorithm
+ - Experiments and data collection
+
+[MS3 Slides](media/milestone3_v1.pdf)
+
 ## Project models
 
 In general, models used in this project are from gltf2 offical samples repository and they have been included under the scene folder. But, there are still other models like 'BistroInterior' are from other resources and they are too large to download. Therefore, we decide to put them into the dropbox and here is the link of it: [Relevant models](https://www.dropbox.com/sh/ovoh6dj6vrld69j/AAAcs-dd6BEJCCuuM9MDsufXa?dl=0)
