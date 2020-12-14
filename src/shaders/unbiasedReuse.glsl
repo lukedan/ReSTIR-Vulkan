@@ -71,8 +71,16 @@ void main() {
 
     Rand rand = seedRand(uniforms.frame * 17, pixelCoord.y * 10007 + pixelCoord.x);
 	ivec2 neighborPositions[NUM_NEIGHBORS];
+#ifdef UNBIASED_MIS
+	float neighborSumPHat[RESERVOIR_SIZE][NUM_NEIGHBORS];
+	float originalSumPHat[RESERVOIR_SIZE];
+	for (int i = 0; i < RESERVOIR_SIZE; ++i) {
+		originalSumPHat[i] = res.samples[i].sumPHat;
+	}
+#else
 	uint neighborNumSamples[NUM_NEIGHBORS];
 	uint originalNumSamples = res.numStreamSamples;
+#endif
     for (int i = 0; i < NUM_NEIGHBORS; ++i) {
         float angle = randFloat(rand) * 2.0 * M_PI;
         float radius = sqrt(randFloat(rand)) * uniforms.spatialRadius;
@@ -85,7 +93,13 @@ void main() {
 		Reservoir randRes = reservoirs[neighborIndex];
 
 		neighborPositions[i] = randNeighbor;
+#ifdef UNBIASED_MIS
+		for (int j = 0; j < RESERVOIR_SIZE; ++j) {
+			neighborSumPHat[j][i] = randRes.samples[j].sumPHat;
+		}
+#else
 		neighborNumSamples[i] = randRes.numStreamSamples;
+#endif
 
 		res.numStreamSamples += randRes.numStreamSamples;
 		for (int j = 0; j < RESERVOIR_SIZE; ++j) {
@@ -99,7 +113,11 @@ void main() {
 					res, j, weight,
 					randRes.samples[j].position_emissionLum.xyz, randRes.samples[j].normal,
 					randRes.samples[j].position_emissionLum.w,
-					randRes.samples[j].lightIndex, newPHat, randRes.samples[j].w, rand
+					randRes.samples[j].lightIndex, newPHat, randRes.samples[j].w,
+#ifdef UNBIASED_MIS
+					randRes.samples[j].sumPHat,
+#endif
+					rand
 				);
 			}
         }
@@ -113,29 +131,53 @@ void main() {
 	}
 	for (int i = 0; i < RESERVOIR_SIZE; ++i) {
 		vec3 lightPos = res.samples[i].position_emissionLum.xyz;
+#ifdef UNBIASED_MIS
+		float sumPHat = originalSumPHat[i];
+#else
 		uint numSamples = originalNumSamples;
+#endif
 		for (int j = 0; j < NUM_NEIGHBORS; ++j) {
 			if (dot(lightPos - neighborWorldPos[j], neighborNormal[j]) < 0.0f) {
 				continue;
 			}
 
-			bool shadowed = testVisibility(neighborWorldPos[j], lightPos);
-			if (shadowed) {
-				continue;
+			if ((uniforms.flags & RESTIR_VISIBILITY_REUSE_FLAG) != 0) {
+				bool shadowed = testVisibility(neighborWorldPos[j], lightPos);
+				if (shadowed) {
+					continue;
+				}
 			}
 
+#ifdef UNBIASED_MIS
+			sumPHat += neighborSumPHat[i][j];
+#else
 			numSamples += neighborNumSamples[j];
+#endif
 		}
-		bool shadowed = testVisibility(worldPos, lightPos);
-		if (shadowed) {
-			numSamples = 0;
+		if ((uniforms.flags & RESTIR_VISIBILITY_REUSE_FLAG) != 0) {
+			bool shadowed = testVisibility(worldPos, lightPos);
+			if (shadowed) {
+#ifdef UNBIASED_MIS
+				sumPHat = 0.0f;
+#else
+				numSamples = 0;
+#endif
+			}
 		}
 
+#ifdef UNBIASED_MIS
+		if (sumPHat > 0.0f) {
+			res.samples[i].w = res.samples[i].sumWeights * res.samples[i].pHat / (sumPHat * res.samples[i].pHat);
+#else
 		if (numSamples > 0) {
 			res.samples[i].w = res.samples[i].sumWeights / (numSamples * res.samples[i].pHat);
+#endif
 		} else {
 			res.samples[i].w = 0.0f;
 			res.samples[i].sumWeights = 0.0f;
+#ifdef UNBIASED_MIS
+			res.samples[i].sumPHat = 0.0f;
+#endif
 		}
 	}
 

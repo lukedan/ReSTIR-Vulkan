@@ -104,40 +104,42 @@ void main() {
 
 	Reservoir res = newReservoir();
 	Rand rand = seedRand(uniforms.frame, pixelCoord.y * 10007 + pixelCoord.x);
-	for (int i = 0; i < uniforms.initialLightSampleCount; ++i) {			
-		int selected_idx;
-		float lightSampleProb;
-		aliasTableSample(randFloat(rand), randFloat(rand), selected_idx, lightSampleProb);
+	if (dot(normal, normal) != 0.0f) {
+		for (int i = 0; i < uniforms.initialLightSampleCount; ++i) {
+			int selected_idx;
+			float lightSampleProb;
+			aliasTableSample(randFloat(rand), randFloat(rand), selected_idx, lightSampleProb);
 
-		vec3 lightSamplePos;
-		vec4 lightNormal;
-		float lightSampleLum;
-		int lightSampleIndex;
-		if (pointLights.count != 0) {
-			pointLight light = pointLights.lights[selected_idx];
-			lightSamplePos = light.pos.xyz;
-			lightSampleLum = light.color_luminance.w;
-			lightSampleIndex = selected_idx;
-			lightNormal = vec4(0.0f);
-		} else {
-			triLight light = triangleLights.lights[selected_idx];
-			lightSamplePos = pickPointOnTriangle(randFloat(rand), randFloat(rand), light.p1.xyz, light.p2.xyz, light.p3.xyz);
-			lightSampleLum = light.emission_luminance.w;
-			lightSampleIndex = -1 - selected_idx;
+			vec3 lightSamplePos;
+			vec4 lightNormal;
+			float lightSampleLum;
+			int lightSampleIndex;
+			if (pointLights.count != 0) {
+				pointLight light = pointLights.lights[selected_idx];
+				lightSamplePos = light.pos.xyz;
+				lightSampleLum = light.color_luminance.w;
+				lightSampleIndex = selected_idx;
+				lightNormal = vec4(0.0f);
+			} else {
+				triLight light = triangleLights.lights[selected_idx];
+				lightSamplePos = pickPointOnTriangle(randFloat(rand), randFloat(rand), light.p1.xyz, light.p2.xyz, light.p3.xyz);
+				lightSampleLum = light.emission_luminance.w;
+				lightSampleIndex = -1 - selected_idx;
 
-			vec3 wi = normalize(worldPos - lightSamplePos);
-			vec3 normal = light.normalArea.xyz;
-			lightSampleProb /= abs(dot(wi, normal)) * light.normalArea.w;
-			lightNormal = vec4(normal, 1.0f);
+				vec3 wi = normalize(worldPos - lightSamplePos);
+				vec3 normal = light.normalArea.xyz;
+				lightSampleProb /= abs(dot(wi, normal)) * light.normalArea.w;
+				lightNormal = vec4(normal, 1.0f);
+			}
+
+			float pHat = evaluatePHat(
+				worldPos, lightSamplePos, uniforms.cameraPos.xyz,
+				normal, lightNormal.xyz, lightNormal.w > 0.5f,
+				albedoLum, lightSampleLum, roughnessMetallic.x, roughnessMetallic.y
+			);
+
+			addSampleToReservoir(res, lightSamplePos, lightNormal, lightSampleLum, lightSampleIndex, pHat, lightSampleProb, rand);
 		}
-		
-		float pHat = evaluatePHat(
-			worldPos, lightSamplePos, uniforms.cameraPos.xyz,
-			normal, lightNormal.xyz, lightNormal.w > 0.5f,
-			albedoLum, lightSampleLum, roughnessMetallic.x, roughnessMetallic.y
-		);
-
-		addSampleToReservoir(res, lightSamplePos, lightNormal, lightSampleLum, lightSampleIndex, pHat, lightSampleProb, rand);
 	}
 	
 	uint reservoirIndex = pixelCoord.y * uniforms.screenSize.x + pixelCoord.x;
@@ -150,6 +152,9 @@ void main() {
 			if (shadowed) {
 				res.samples[i].w = 0.0f;
 				res.samples[i].sumWeights = 0.0f;
+#ifdef UNBIASED_MIS
+				res.samples[i].sumPHat = 0.0f;
+#endif
 			}
 		}
 	}

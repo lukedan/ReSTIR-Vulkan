@@ -13,6 +13,7 @@
 #define UNBIASED_REUSE_GROUP_SIZE_X 64
 #define UNBIASED_REUSE_GROUP_SIZE_Y 1
 
+/*#define UNBIASED_MIS*/
 #define RESERVOIR_SIZE 1
 
 struct LightSample {
@@ -22,6 +23,9 @@ struct LightSample {
 	float pHat;
 	float sumWeights;
 	float w;
+#ifdef UNBIASED_MIS
+	float sumPHat;
+#endif
 };
 
 struct Reservoir {
