@@ -30,6 +30,12 @@ This is the final project for CIS 565: GPU Programming. The goal of the project 
 
  2. Build the project using the standard CMake building process. The executable expects the compiled shaders to be located in `shaders/`, and while this is usually automatically guaranteed by the building process, in some configurations they may need to be manually copied.
 
+## Scenes
+
+Specify GLTF scene files using the `-scene` flag. If the scene contains point lights that are used to simulate the effects of area lights, they can be ignored using `-ignore_point_lights`. If the scene doesn't contain any point lights or objects with emissive materials, a number of point lights will be randomly scattered in the scene. Currently this is hard-coded in [sceneBuffers.h](src/sceneBuffers.h).
+
+[Here are some models provided by Nvidia converted to GLTF format](https://www.dropbox.com/sh/ovoh6dj6vrld69j/AAAcs-dd6BEJCCuuM9MDsufXa?dl=0). Some additional sample models can be found at https://github.com/KhronosGroup/glTF-Sample-Models.
+
 ## Project Timeline
 ### Milestone 1 (Nov. 18)
  - GBuffer generation.
@@ -52,10 +58,6 @@ This is the final project for CIS 565: GPU Programming. The goal of the project 
 
 [MS3 Slides](media/milestone3_v1.pdf)
 
-## Project models
-
-In general, models used in this project are from gltf2 offical samples repository and they have been included under the scene folder. But, there are still other models like 'BistroInterior' are from other resources and they are too large to download. Therefore, we decide to put them into the dropbox and here is the link of it: [Relevant models](https://www.dropbox.com/sh/ovoh6dj6vrld69j/AAAcs-dd6BEJCCuuM9MDsufXa?dl=0)
-
 ## References and Acknowledgments
  - [1] [Spatiotemporal Variance-Guided Filtering: Real-Time Reconstruction for Path-Traced Global Illumination](https://cs.dartmouth.edu/wjarosz/publications/bitterli20spatiotemporal.html)
  - [2] [Dear ImGui](https://github.com/ocornut/imgui)
@@ -64,4 +66,3 @@ In general, models used in this project are from gltf2 offical samples repositor
  - [5] [MikkTSpace](http://www.mikktspace.com/)
  - [6] [MikkTSpace Houdini](https://github.com/teared/mikktspace-for-houdini)
  - [7] [FBX2glTF](https://github.com/facebookincubator/FBX2glTF)
- - [8] [Gltf Sample Models](https://github.com/KhronosGroup/glTF-Sample-Models)
