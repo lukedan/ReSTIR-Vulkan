@@ -81,11 +81,12 @@ target_sources(restir
 find_package(Vulkan REQUIRED)
 find_package(glfw3 CONFIG REQUIRED)
 find_package(imgui CONFIG REQUIRED)
+find_package(gflags CONFIG REQUIRED)
 add_subdirectory("thirdparty/MikkTSpace/")
 add_subdirectory("thirdparty/gltf/")
 
 
-target_link_libraries(restir PRIVATE Vulkan::Vulkan glfw imgui::imgui MikkTSpace gltf)
+target_link_libraries(restir PRIVATE Vulkan::Vulkan glfw imgui::imgui MikkTSpace gltf gflags_shared)
 
 target_include_directories(restir
 	PRIVATE

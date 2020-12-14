@@ -22,7 +22,7 @@ VKAPI_ATTR VkBool32 VKAPI_CALL _debugCallback(
 	return VK_FALSE;
 }
 
-App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
+App::App(std::string scene, bool ignorePointLights) : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 	IMGUI_CHECKVERSION();
 	ImGui::CreateContext();
 	// the callbacks are installed here but they're overriden below, so we still need to manually call those
@@ -276,12 +276,10 @@ App::App() : _window({ { GLFW_CLIENT_API, GLFW_NO_API } }) {
 		_swapchain = Swapchain::create(_device.get(), _swapchainInfo);
 	}
 
-	/** NOTE: A scene without emissive materials will be given 8 point lights and scenes with lightning material won't have point lights **/
-	/** cornellBox has emissive materials and others don't have **/
-	// loadScene("../../../scenes/cornellBox/cornellBox.gltf", _gltfScene);
-	loadScene("../../../scenes/Sponza/glTF/Sponza.gltf", _gltfScene);
-	/*loadScene("../../../scenes/BistroInterior_out/BistroInterior.gltf", _gltfScene);*/
-	//loadScene("../../../scenes/C4DScenes/BistroExterior.gltf", _gltfScene);
+	loadScene(scene, _gltfScene);
+	if (ignorePointLights) {
+		_gltfScene.m_lights.clear();
+	}
 
 	{ // create descriptor pools
 		std::array<vk::DescriptorPoolSize, 6> staticPoolSizes{

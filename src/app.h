@@ -28,7 +28,7 @@ public:
 	constexpr static std::size_t maxFramesInFlight = 2;
 	constexpr static std::size_t numGBuffers = 2;
 
-	App();
+	App(std::string scene, bool ignorePointLights);
 	~App();
 
 	void mainLoop();

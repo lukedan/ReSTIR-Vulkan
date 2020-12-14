@@ -13,10 +13,16 @@
 #include <stb_image_write.h>
 #undef STB_IMAGE_WRITE_IMPLEMENTATION
 
+#include <gflags/gflags.h>
+
 #include "app.h"
 
-int main() {
-	App app;
+DEFINE_string(scene, "", "Path to the scene file.");
+DEFINE_bool(ignore_point_lights, false, "Ignore point lights in the scene.");
+
+int main(int argc, char **argv) {
+	gflags::ParseCommandLineFlags(&argc, &argv, true);
+	App app(FLAGS_scene, FLAGS_ignore_point_lights);
 	app.mainLoop();
 	return 0;
 }

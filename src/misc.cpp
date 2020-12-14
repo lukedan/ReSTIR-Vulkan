@@ -355,17 +355,21 @@ std::vector<shader::pointLight> collectPointLightsFromScene(const nvh::GltfScene
 	return result;
 }
 
-std::vector<shader::pointLight> generateRandomPointLights(std::size_t count, nvmath::vec3 min, nvmath::vec3 max) {
+std::vector<shader::pointLight> generateRandomPointLights(
+	std::size_t count, nvmath::vec3 min, nvmath::vec3 max,
+	std::uniform_real_distribution<float> distR,
+	std::uniform_real_distribution<float> distG,
+	std::uniform_real_distribution<float> distB
+) {
 	std::uniform_real_distribution<float> distX(min.x, max.x);
 	std::uniform_real_distribution<float> distY(min.y, max.y);
 	std::uniform_real_distribution<float> distZ(min.z, max.z);
-	std::uniform_real_distribution<float> distRgb(0.0f, 3.0f);
 	std::default_random_engine rand;
 
 	std::vector<shader::pointLight> result(count);
 	for (shader::pointLight &light : result) {
 		light.pos = nvmath::vec4(distX(rand), distY(rand), distZ(rand), 1.0f);
-		light.color_luminance = nvmath::vec4(distRgb(rand), distRgb(rand), distRgb(rand), 0.0f);
+		light.color_luminance = nvmath::vec4(distR(rand), distG(rand), distB(rand), 0.0f);
 		light.color_luminance.w = shader::luminance(
 			light.color_luminance.x, light.color_luminance.y, light.color_luminance.z
 		);

@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <iostream>
 #include <optional>
+#include <random>
 
 #include <vulkan/vulkan.hpp>
 
@@ -130,7 +131,10 @@ void loadScene(const std::string& filename, nvh::GltfScene& m_gltfScene);
 
 [[nodiscard]] std::vector<shader::pointLight> collectPointLightsFromScene(const nvh::GltfScene&);
 [[nodiscard]] std::vector<shader::pointLight> generateRandomPointLights(
-	std::size_t count, nvmath::vec3 min, nvmath::vec3 max
+	std::size_t count, nvmath::vec3 min, nvmath::vec3 max,
+	std::uniform_real_distribution<float> distR = std::uniform_real_distribution<float>(0.0f, 1.0f),
+	std::uniform_real_distribution<float> distG = std::uniform_real_distribution<float>(0.0f, 1.0f),
+	std::uniform_real_distribution<float> distB = std::uniform_real_distribution<float>(0.0f, 1.0f)
 );
 
 [[nodiscard]] std::vector<shader::triLight> collectTriangleLightsFromScene(const nvh::GltfScene&);
