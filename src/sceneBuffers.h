@@ -86,10 +86,10 @@ public:
 		SceneBuffers result;
 
 		result._vertices = allocator.createTypedBuffer<Vertex>(
-			scene.m_positions.size(), vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eShaderDeviceAddress, VMA_MEMORY_USAGE_CPU_TO_GPU
+			scene.m_positions.size(), vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eShaderDeviceAddress | vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR, VMA_MEMORY_USAGE_CPU_TO_GPU
 			);
 		result._indices = allocator.createTypedBuffer<int32_t>(
-			scene.m_indices.size(), vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eShaderDeviceAddress, VMA_MEMORY_USAGE_CPU_TO_GPU
+			scene.m_indices.size(), vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eShaderDeviceAddress | vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR, VMA_MEMORY_USAGE_CPU_TO_GPU
 			);
 		result._matrices = allocator.createTypedBuffer<shader::ModelMatrices>(
 			scene.m_nodes.size(), vk::BufferUsageFlagBits::eUniformBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU
@@ -292,11 +292,6 @@ public:
 	SceneRaytraceBuffers() = default;
 	SceneRaytraceBuffers(SceneRaytraceBuffers&&) = default;
 	SceneRaytraceBuffers &operator=(SceneRaytraceBuffers&&) = default;
-	~SceneRaytraceBuffers() {
-		for (int i = 0; i < _asAllocations.size(); i++) {
-			_allocator->freeMemory(_asAllocations.at(i));
-		}
-	}
 
 	[[nodiscard]] vk::AccelerationStructureKHR getTopLevelAccelerationStructure() const {
 		return _topLevelAS.get();
@@ -317,24 +312,45 @@ public:
 
 		result._allBlas.resize(gltfScene.m_primMeshes.size());
 		int index = 0;
-		std::vector<vk::DeviceAddress> allBlasHandle;
 		for (auto& primMesh : gltfScene.m_primMeshes) {
-			vk::AccelerationStructureCreateGeometryTypeInfoKHR blasCreateGeoInfo;
-			blasCreateGeoInfo.setGeometryType(vk::GeometryTypeKHR::eTriangles);
-			blasCreateGeoInfo.setMaxPrimitiveCount(primMesh.indexCount / 3);
-			blasCreateGeoInfo.setIndexType(vk::IndexType::eUint32);
-			blasCreateGeoInfo.setMaxVertexCount(primMesh.vertexCount);
-			blasCreateGeoInfo.setVertexFormat(vk::Format::eR32G32B32Sfloat);
-			blasCreateGeoInfo.setAllowsTransforms(VK_FALSE);
+			vk::AccelerationStructureGeometryTrianglesDataKHR triangles;
+			triangles.setMaxVertex(primMesh.vertexCount);
+			triangles.setVertexFormat(vk::Format::eR32G32B32Sfloat);
+			triangles.vertexData.setDeviceAddress(dev.getBufferAddress(sceneBuffer.getVertices()));
+			triangles.setVertexStride(sizeof(Vertex));
+			triangles.setIndexType(vk::IndexType::eUint32);
+			triangles.indexData.setDeviceAddress(dev.getBufferAddress(sceneBuffer.getIndices()));
+
+			vk::AccelerationStructureGeometryKHR blasAccelerationGeometry;
+			blasAccelerationGeometry.setFlags(vk::GeometryFlagBitsKHR::eOpaque);
+			blasAccelerationGeometry.setGeometryType(vk::GeometryTypeKHR::eTriangles);
+			blasAccelerationGeometry.geometry.setTriangles(triangles);
+
+			vk::AccelerationStructureBuildGeometryInfoKHR blasAccelerationBuildGeometryInfo;
+			blasAccelerationBuildGeometryInfo.setType(vk::AccelerationStructureTypeKHR::eBottomLevel);
+			blasAccelerationBuildGeometryInfo.setFlags(vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace);
+			blasAccelerationBuildGeometryInfo.setDstAccelerationStructure(result._allBlas.at(index).get());
+			blasAccelerationBuildGeometryInfo.setGeometries(blasAccelerationGeometry);
+
+			vk::AccelerationStructureBuildSizesInfoKHR sizeInfo = dev.getAccelerationStructureBuildSizesKHR(
+				vk::AccelerationStructureBuildTypeKHR::eDevice,
+				blasAccelerationBuildGeometryInfo,
+				primMesh.indexCount / 3,
+				dynamicLoader
+			);
+
+			vma::UniqueBuffer blasScratchBuffer = _createScratchBuffer(sizeInfo.buildScratchSize, allocator);
+			blasAccelerationBuildGeometryInfo.scratchData.setDeviceAddress(dev.getBufferAddress(blasScratchBuffer.get()));
+
+			result._asAllocations.emplace_back(_createAccelerationStructureBuffer(
+				sizeInfo.accelerationStructureSize, allocator
+			));
 
 			vk::AccelerationStructureCreateInfoKHR blasCreateInfo;
-			blasCreateInfo.setPNext(nullptr);
-			blasCreateInfo.setCompactedSize(0);
+			blasCreateInfo.setBuffer(result._asAllocations.back().get());
+			blasCreateInfo.setOffset(0);
+			blasCreateInfo.setSize(sizeInfo.accelerationStructureSize);
 			blasCreateInfo.setType(vk::AccelerationStructureTypeKHR::eBottomLevel);
-			blasCreateInfo.setFlags(vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace);
-			blasCreateInfo.setMaxGeometryCount(1);
-			blasCreateInfo.setPGeometryInfos(&blasCreateGeoInfo);
-			blasCreateInfo.setDeviceAddress(VK_NULL_HANDLE);
 
 			try {
 				result._allBlas.at(index) = dev.createAccelerationStructureKHRUnique(blasCreateInfo, nullptr, dynamicLoader);
@@ -342,165 +358,88 @@ public:
 				std::cout << "Error in create bottom level AS" << std::endl;
 				exit(-1);
 			}
+			blasAccelerationBuildGeometryInfo.setDstAccelerationStructure(result._allBlas[index].get());
 
-			vk::DeviceSize blasScratchSize;
-
-			result._asAllocations.emplace_back(_createAccelerationStructure(
-				dev, allocator,
-				result._allBlas.at(index).get(),
-				vk::AccelerationStructureMemoryRequirementsTypeKHR::eObject,
-				&blasScratchSize,
-				dynamicLoader
-			));
-
-			vma::UniqueBuffer blasScratchBuffer = _createScratchBuffer(blasScratchSize, allocator);
-
-			vk::AccelerationStructureDeviceAddressInfoKHR devAddrInfo;
-			devAddrInfo.setAccelerationStructure(result._allBlas.at(index).get());
-			allBlasHandle.push_back(dev.getAccelerationStructureAddressKHR(devAddrInfo, dynamicLoader));
-
-			vk::AccelerationStructureGeometryKHR blasAccelerationGeometry;
-			blasAccelerationGeometry.setFlags(vk::GeometryFlagBitsKHR::eOpaque);
-			blasAccelerationGeometry.setGeometryType(vk::GeometryTypeKHR::eTriangles);
-			blasAccelerationGeometry.geometry.triangles.setVertexFormat(vk::Format::eR32G32B32Sfloat);
-			blasAccelerationGeometry.geometry.triangles.vertexData.setDeviceAddress(dev.getBufferAddress(sceneBuffer.getVertices()));
-			blasAccelerationGeometry.geometry.triangles.setVertexStride(sizeof(Vertex));
-			blasAccelerationGeometry.geometry.triangles.setIndexType(vk::IndexType::eUint32);
-			blasAccelerationGeometry.geometry.triangles.indexData.setDeviceAddress(dev.getBufferAddress(sceneBuffer.getIndices()));
-
-
-			std::vector<vk::AccelerationStructureGeometryKHR> blasAccelerationGeometries(
-				{ blasAccelerationGeometry });
-
-			const vk::AccelerationStructureGeometryKHR* blasPpGeometries = blasAccelerationGeometries.data();
-
-			vk::AccelerationStructureBuildGeometryInfoKHR blasAccelerationBuildGeometryInfo;
-			blasAccelerationBuildGeometryInfo.setType(vk::AccelerationStructureTypeKHR::eBottomLevel);
-			blasAccelerationBuildGeometryInfo.setFlags(vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace);
-			blasAccelerationBuildGeometryInfo.setUpdate(VK_FALSE);
-			blasAccelerationBuildGeometryInfo.setDstAccelerationStructure(result._allBlas.at(index).get());
-			blasAccelerationBuildGeometryInfo.setGeometryArrayOfPointers(VK_FALSE);
-			blasAccelerationBuildGeometryInfo.setGeometryCount(1);
-			blasAccelerationBuildGeometryInfo.setPpGeometries(&blasPpGeometries);
-			blasAccelerationBuildGeometryInfo.scratchData.setDeviceAddress(dev.getBufferAddress(blasScratchBuffer.get()));
-
-			vk::AccelerationStructureBuildOffsetInfoKHR blasAccelerationBuildOffsetInfo;
+			vk::AccelerationStructureBuildRangeInfoKHR blasAccelerationBuildOffsetInfo;
 			blasAccelerationBuildOffsetInfo.primitiveCount = primMesh.indexCount / 3;
 			blasAccelerationBuildOffsetInfo.primitiveOffset = primMesh.firstIndex * sizeof(uint32_t);
 			blasAccelerationBuildOffsetInfo.firstVertex = primMesh.vertexOffset;
 			blasAccelerationBuildOffsetInfo.transformOffset = 0;
 
-			std::array<vk::AccelerationStructureBuildOffsetInfoKHR*, 1> blasAccelerationBuildOffsets = {
-					&blasAccelerationBuildOffsetInfo };
-
 			{ // Add acceleration command buffer
 				TransientCommandBuffer cmdBuf = cmdBufferPool.begin(queue);
-				cmdBuf->buildAccelerationStructureKHR(1, &blasAccelerationBuildGeometryInfo, blasAccelerationBuildOffsets.data(), dynamicLoader);
+				cmdBuf->buildAccelerationStructuresKHR(blasAccelerationBuildGeometryInfo, { &blasAccelerationBuildOffsetInfo }, dynamicLoader);
 			}
 
 			index++;
 		}
 
 		// Top level acceleration structure
-		struct BlasInstanceForTlas {
-			uint32_t                   blasId{ 0 };      // Index of the BLAS in m_blas
-			uint32_t                   instanceId{ 0 };  // Instance Index (gl_InstanceID)
-			uint32_t                   hitGroupId{ 0 };  // Hit group index in the SBT
-			uint32_t                   mask{ 0xFF };     // Visibility mask, will be AND-ed with ray mask
-			vk::GeometryInstanceFlagsKHR flags = vk::GeometryInstanceFlagBitsKHR::eTriangleFacingCullDisable;
-			nvmath::mat4f              transform{ nvmath::mat4f(1) };  // Identity
-		};
-
-		std::vector<BlasInstanceForTlas> tlas;
+		std::vector<vk::AccelerationStructureInstanceKHR> tlas;
 		tlas.reserve(gltfScene.m_nodes.size());
 		for (auto& node : gltfScene.m_nodes) {
-			BlasInstanceForTlas inst;
-			inst.transform = node.worldMatrix;
-			inst.instanceId = node.primMesh;
-			inst.blasId = node.primMesh;
-			inst.flags = vk::GeometryInstanceFlagBitsKHR::eTriangleFacingCullDisable;
-			inst.hitGroupId = 0;
+			vk::AccelerationStructureInstanceKHR inst;
+			for (std::size_t y = 0; y < 3; ++y) {
+				for (std::size_t x = 0; x < 4; ++x) {
+					inst.transform.matrix[y][x] = node.worldMatrix.mat_array[x * 4 + y]; // transposed
+				}
+			}
+			inst.instanceCustomIndex = node.primMesh;
+			inst.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
+			inst.mask = 0xFF;
+			inst.instanceShaderBindingTableRecordOffset = 0;
+			inst.accelerationStructureReference = dev.getAccelerationStructureAddressKHR(result._allBlas[node.primMesh].get(), dynamicLoader);
 			tlas.emplace_back(inst);
 		}
 
-		vk::AccelerationStructureCreateGeometryTypeInfoKHR tlasAccelerationCreateGeometryInfo;
-		tlasAccelerationCreateGeometryInfo.geometryType = vk::GeometryTypeKHR::eInstances;
-		tlasAccelerationCreateGeometryInfo.maxPrimitiveCount = (static_cast<uint32_t>(tlas.size()));
-		tlasAccelerationCreateGeometryInfo.allowsTransforms = VK_FALSE;
-
-		vk::AccelerationStructureCreateInfoKHR tlasAccelerationInfo;
-		tlasAccelerationInfo.flags = vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace;
-		tlasAccelerationInfo.type = vk::AccelerationStructureTypeKHR::eTopLevel;
-		tlasAccelerationInfo.maxGeometryCount = 1;
-		tlasAccelerationInfo.pGeometryInfos = &tlasAccelerationCreateGeometryInfo;
-
-		result._topLevelAS = dev.createAccelerationStructureKHRUnique(tlasAccelerationInfo, nullptr, dynamicLoader);
-
-		vk::DeviceSize tlasScratchSize;
-
-		result._asAllocations.emplace_back(_createAccelerationStructure(
-			dev, allocator,
-			result._topLevelAS.get(),
-			vk::AccelerationStructureMemoryRequirementsTypeKHR::eObject,
-			&tlasScratchSize,
-			dynamicLoader
-		));
-
-		vma::UniqueBuffer tlasScratchBuffer = _createScratchBuffer(tlasScratchSize, allocator);
-
-		std::vector<vk::AccelerationStructureInstanceKHR> geometryInstances;
-		//geometryInstances.reserve(tlas.size());
-
-		for (const auto& inst : tlas) {
-			vk::DeviceAddress blasAddress = allBlasHandle[inst.blasId];
-
-			vk::AccelerationStructureInstanceKHR acInstance;
-			nvmath::mat4f transp = nvmath::transpose(inst.transform);
-			memcpy(&acInstance.transform, &transp, sizeof(acInstance.transform));
-			acInstance.setInstanceCustomIndex(inst.instanceId);
-			acInstance.setMask(inst.mask);
-			acInstance.setInstanceShaderBindingTableRecordOffset(inst.hitGroupId);
-			acInstance.setFlags(inst.flags);
-			acInstance.setAccelerationStructureReference(blasAddress);
-
-			geometryInstances.push_back(acInstance);
-		}
-
-
 		result._instance = _createMappedBuffer(
-			geometryInstances.data(),
-			static_cast<uint32_t>(sizeof(vk::AccelerationStructureInstanceKHR) * geometryInstances.size()),
-			allocator
+			tlas.data(),
+			static_cast<uint32_t>(sizeof(vk::AccelerationStructureInstanceKHR) * tlas.size()),
+			allocator,
+			vk::BufferUsageFlagBits::eShaderDeviceAddress | vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR
 		);
+
+		vk::AccelerationStructureGeometryInstancesDataKHR instances;
+		instances.arrayOfPointers = VK_FALSE;
+		instances.data.deviceAddress = dev.getBufferAddress(result._instance.get());
 
 		vk::AccelerationStructureGeometryKHR tlasAccelerationGeometry;
 		tlasAccelerationGeometry.flags = vk::GeometryFlagBitsKHR::eOpaque;
 		tlasAccelerationGeometry.geometryType = vk::GeometryTypeKHR::eInstances;
-		tlasAccelerationGeometry.geometry.instances.arrayOfPointers = VK_FALSE;
-		tlasAccelerationGeometry.geometry.instances.data.deviceAddress = dev.getBufferAddress(result._instance.get());
-
-		std::vector<vk::AccelerationStructureGeometryKHR> tlasAccelerationGeometries(
-			{ tlasAccelerationGeometry });
-		const vk::AccelerationStructureGeometryKHR* tlasPpGeometries = tlasAccelerationGeometries.data();
+		tlasAccelerationGeometry.geometry.setInstances(instances);
 
 		vk::AccelerationStructureBuildGeometryInfoKHR tlasAccelerationBuildGeometryInfo;
 		tlasAccelerationBuildGeometryInfo.type = vk::AccelerationStructureTypeKHR::eTopLevel;
 		tlasAccelerationBuildGeometryInfo.flags = vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace;
-		tlasAccelerationBuildGeometryInfo.update = VK_FALSE;
 		tlasAccelerationBuildGeometryInfo.dstAccelerationStructure = result._topLevelAS.get();
-		tlasAccelerationBuildGeometryInfo.geometryArrayOfPointers = VK_FALSE;
-		tlasAccelerationBuildGeometryInfo.geometryCount = 1;
-		tlasAccelerationBuildGeometryInfo.ppGeometries = &tlasPpGeometries;
+		tlasAccelerationBuildGeometryInfo.setGeometries(tlasAccelerationGeometry);
+
+		auto buildSize = dev.getAccelerationStructureBuildSizesKHR(
+			vk::AccelerationStructureBuildTypeKHR::eDevice,
+			tlasAccelerationBuildGeometryInfo,
+			{ static_cast<std::uint32_t>(tlas.size()) },
+			dynamicLoader);
+
+		result._asAllocations.emplace_back(_createAccelerationStructureBuffer(
+			buildSize.accelerationStructureSize, allocator
+		));
+
+		vk::AccelerationStructureCreateInfoKHR tlasAccelerationInfo;
+		tlasAccelerationInfo.type = vk::AccelerationStructureTypeKHR::eTopLevel;
+		tlasAccelerationInfo.setBuffer(result._asAllocations.back().get());
+		tlasAccelerationInfo.setSize(buildSize.accelerationStructureSize);
+
+		result._topLevelAS = dev.createAccelerationStructureKHRUnique(tlasAccelerationInfo, nullptr, dynamicLoader);
+		tlasAccelerationBuildGeometryInfo.setDstAccelerationStructure(result._topLevelAS.get());
+
+		vma::UniqueBuffer tlasScratchBuffer = _createScratchBuffer(buildSize.buildScratchSize, allocator);
 		tlasAccelerationBuildGeometryInfo.scratchData.deviceAddress = dev.getBufferAddress(tlasScratchBuffer.get());
 
-		vk::AccelerationStructureBuildOffsetInfoKHR tlasAccelerationBuildOffsetInfo;
+		vk::AccelerationStructureBuildRangeInfoKHR tlasAccelerationBuildOffsetInfo;
 		tlasAccelerationBuildOffsetInfo.primitiveCount = static_cast<uint32_t>(tlas.size());
 		tlasAccelerationBuildOffsetInfo.primitiveOffset = 0x0;
 		tlasAccelerationBuildOffsetInfo.firstVertex = 0;
 		tlasAccelerationBuildOffsetInfo.transformOffset = 0x0;
-
-		std::vector<vk::AccelerationStructureBuildOffsetInfoKHR*> accelerationBuildOffsets = {
-			&tlasAccelerationBuildOffsetInfo };
 
 		// Add acceleration command buffer
 		{
@@ -513,7 +452,7 @@ public:
 			cmdBuf->pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
 				vk::PipelineStageFlagBits::eAccelerationStructureBuildKHR, {}, barrier, {}, {}, dynamicLoader);
 
-			cmdBuf->buildAccelerationStructureKHR(tlasAccelerationBuildGeometryInfo, accelerationBuildOffsets.at(0), dynamicLoader);
+			cmdBuf->buildAccelerationStructuresKHR(tlasAccelerationBuildGeometryInfo, &tlasAccelerationBuildOffsetInfo, dynamicLoader);
 		}
 
 		return result;
@@ -522,18 +461,19 @@ private:
 	vma::UniqueBuffer _instance;
 	std::vector<vk::UniqueHandle<vk::AccelerationStructureKHR, vk::DispatchLoaderDynamic>> _allBlas;
 	vk::UniqueHandle<vk::AccelerationStructureKHR, vk::DispatchLoaderDynamic> _topLevelAS;
-	std::vector<VmaAllocation> _asAllocations;
+	std::vector<vma::UniqueBuffer> _asAllocations;
 	vma::Allocator *_allocator = nullptr;
 
 	[[nodiscard]] inline static vma::UniqueBuffer _createMappedBuffer(
 		void* srcData,
 		uint32_t byteLength,
-		vma::Allocator& allocator
+		vma::Allocator& allocator,
+		vk::BufferUsageFlags usage = vk::BufferUsageFlagBits::eShaderDeviceAddress
 	) {
 		vk::BufferCreateInfo bufferInfo;
 		bufferInfo
 			.setSize(byteLength)
-			.setUsage(vk::BufferUsageFlagBits::eShaderDeviceAddress)
+			.setUsage(usage)
 			.setSharingMode(vk::SharingMode::eExclusive);
 
 		VmaAllocationCreateInfo allocationInfo{};
@@ -549,76 +489,30 @@ private:
 		return mappedBuffer;
 	}
 
-	[[nodiscard]] inline static vk::MemoryRequirements _getAccelerationStructureMemoryRequirements(
-		vk::Device dev,
-		vk::AccelerationStructureKHR acceleration,
-		vk::AccelerationStructureMemoryRequirementsTypeKHR type,
-		const vk::DispatchLoaderDynamic &dynamicLoader
+	[[nodiscard]] inline static vma::UniqueBuffer _createAccelerationStructureBuffer(
+		vk::DeviceSize size,
+		vma::Allocator &allocator
 	) {
-		vk::MemoryRequirements2 memoryRequirements2;
-
-		vk::AccelerationStructureMemoryRequirementsInfoKHR accelerationMemoryRequirements;
-		accelerationMemoryRequirements.setPNext(nullptr);
-		accelerationMemoryRequirements.setType(type);
-		accelerationMemoryRequirements.setBuildType(vk::AccelerationStructureBuildTypeKHR::eDevice);
-		accelerationMemoryRequirements.setAccelerationStructure(acceleration);
-		memoryRequirements2 = dev.getAccelerationStructureMemoryRequirementsKHR(accelerationMemoryRequirements, dynamicLoader);
-
-		return memoryRequirements2.memoryRequirements;
-	}
-
-	[[nodiscard]] inline static VmaAllocation _createAccelerationStructure(
-		vk::Device dev,
-		vma::Allocator &allocator,
-		vk::AccelerationStructureKHR ac,
-		vk::AccelerationStructureMemoryRequirementsTypeKHR memoryType,
-		vk::DeviceSize *size,
-		const vk::DispatchLoaderDynamic &dynamicLoader
-	) {
-		vk::MemoryRequirements asRequirements = _getAccelerationStructureMemoryRequirements(dev, ac, memoryType, dynamicLoader);
-
-		*size = asRequirements.size;
-
 		vk::BufferCreateInfo asBufferInfo;
 		asBufferInfo
-			.setSize(asRequirements.size)
-			.setUsage(vk::BufferUsageFlagBits::eRayTracingKHR | vk::BufferUsageFlagBits::eShaderDeviceAddress)
+			.setSize(size)
+			.setUsage(vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR | vk::BufferUsageFlagBits::eShaderDeviceAddress)
 			.setSharingMode(vk::SharingMode::eExclusive);
-
-		vk::UniqueBuffer tmpbuffer = dev.createBufferUnique(asBufferInfo, nullptr);
-		vk::MemoryRequirements bufRequirements = dev.getBufferMemoryRequirements(tmpbuffer.get());
-
 		VmaAllocationCreateInfo allocationInfo{};
-		allocationInfo.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
-
-		VmaAllocation allocation = nullptr;
-		VmaAllocationInfo allocationDetail;
-
-		vkCheck(allocator.allocateMemory(asRequirements, allocation, allocationDetail, allocationInfo));
-
-		vk::BindAccelerationStructureMemoryInfoKHR accelerationMemoryBindInfo;
-		accelerationMemoryBindInfo
-			.setAccelerationStructure(ac)
-			.setMemory(static_cast<vk::DeviceMemory>(allocationDetail.deviceMemory))
-			.setMemoryOffset(allocationDetail.offset);
-
-		dev.bindAccelerationStructureMemoryKHR(accelerationMemoryBindInfo, dynamicLoader);
-
-		return allocation;
+		allocationInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+		return allocator.createBuffer(asBufferInfo, allocationInfo);
 	}
 
 	[[nodiscard]] inline static vma::UniqueBuffer _createScratchBuffer(vk::DeviceSize size, vma::Allocator& allocator) {
 		vk::BufferCreateInfo bufferInfo;
 		bufferInfo
 			.setSize(size)
-			.setUsage(vk::BufferUsageFlagBits::eRayTracingKHR |
+			.setUsage(vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR |
+				vk::BufferUsageFlagBits::eStorageBuffer |
 				vk::BufferUsageFlagBits::eShaderDeviceAddress |
 				vk::BufferUsageFlagBits::eTransferDst);
 		VmaAllocationCreateInfo allocInfo{};
 		allocInfo.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
-
-		vma::UniqueBuffer scratchBuffer = allocator.createBuffer(bufferInfo, allocInfo);
-
-		return scratchBuffer;
+		return allocator.createBuffer(bufferInfo, allocInfo);
 	}
 };

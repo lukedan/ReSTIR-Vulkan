@@ -210,7 +210,7 @@ namespace vma {
 			VmaAllocationInfo& allocationDetial,
 			VmaAllocationCreateInfo& createInfo
 		) {
-			VkMemoryRequirements requirements = memReq;
+			auto requirements = static_cast<VkMemoryRequirements>(memReq);
 			return vmaAllocateMemory(_allocator, &requirements, &createInfo, &allocation, &allocationDetial);
 		}
 

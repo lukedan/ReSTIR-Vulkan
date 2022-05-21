@@ -15,9 +15,11 @@ VKAPI_ATTR VkBool32 VKAPI_CALL _debugCallback(
 ) {
 	if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) {
 		std::cerr << pCallbackData->pMessage << std::endl;
+		if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
 #ifdef _MSC_VER
-		__debugbreak();
+			__debugbreak();
 #endif
+		}
 	}
 	return VK_FALSE;
 }
@@ -62,11 +64,14 @@ App::App(std::string scene, bool ignorePointLights) : _window({ { GLFW_CLIENT_AP
 #endif
 	};
 
-	vk::PhysicalDeviceRayTracingFeaturesKHR raytracingFeature;
-	raytracingFeature.setRayTracing(true);
+	vk::PhysicalDeviceRayTracingPipelineFeaturesKHR raytracingFeature;
+	raytracingFeature.setRayTracingPipeline(true);
+	vk::PhysicalDeviceAccelerationStructureFeaturesKHR accelerationStructureFeature;
+	accelerationStructureFeature.setAccelerationStructure(true);
 	std::vector<const char*> requiredDeviceRayTracingExtensions{
 #ifndef RENDERDOC_CAPTURE
-		VK_KHR_RAY_TRACING_EXTENSION_NAME
+		VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
+		VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
 #endif
 	};
 
@@ -147,6 +152,7 @@ App::App(std::string scene, bool ignorePointLights) : _window({ { GLFW_CLIENT_AP
 				);
 			if (supportsRTExtensions) {
 				featureStructs.emplace_back(&raytracingFeature);
+				featureStructs.emplace_back(&accelerationStructureFeature);
 				requiredDeviceExtensions.insert(
 					requiredDeviceExtensions.end(),
 					requiredDeviceRayTracingExtensions.begin(), requiredDeviceRayTracingExtensions.end()

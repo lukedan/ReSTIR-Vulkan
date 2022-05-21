@@ -10,7 +10,7 @@ namespace vma {
 	UniqueBuffer Allocator::createBuffer(
 		const vk::BufferCreateInfo &vkBufferInfo, const VmaAllocationCreateInfo &allocationInfo
 	) {
-		VkBufferCreateInfo bufferInfo = vkBufferInfo;
+		auto bufferInfo = static_cast<VkBufferCreateInfo>(vkBufferInfo);
 		UniqueBuffer result;
 		VkBuffer buffer;
 		vkCheck(vmaCreateBuffer(_allocator, &bufferInfo, &allocationInfo, &buffer, &result._allocation, nullptr));
@@ -22,7 +22,7 @@ namespace vma {
 	UniqueImage Allocator::createImage(
 		const vk::ImageCreateInfo &vkImageInfo, const VmaAllocationCreateInfo &allocationInfo
 	) {
-		VkImageCreateInfo imageInfo = vkImageInfo;
+		auto imageInfo = static_cast<VkImageCreateInfo>(vkImageInfo);
 		UniqueImage result;
 		VkImage image;
 		vkCheck(vmaCreateImage(_allocator, &imageInfo, &allocationInfo, &image, &result._allocation, nullptr));

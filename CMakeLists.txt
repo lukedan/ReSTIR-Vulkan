@@ -7,9 +7,6 @@ project(restir)
 file(GLOB_RECURSE ALL_SHADER_FILES LIST_DIRECTORIES false "src/shaders/*.*")
 
 function(add_shader TARGET SHADER)
-	# Find glslc shader compiler.
-	find_program(GLSLC glslc)
-
 	get_filename_component(SHADER_FILE ${SHADER} NAME)
 	set(OUTPUT_PATH ${CMAKE_CURRENT_BINARY_DIR}/shaders/${SHADER_FILE}.spv)
 
@@ -18,7 +15,7 @@ function(add_shader TARGET SHADER)
 	file(MAKE_DIRECTORY ${OUTPUT_DIR})
 	add_custom_command(
 		OUTPUT ${OUTPUT_PATH}
-		COMMAND ${GLSLC} -g -O -o ${OUTPUT_PATH}  ${SHADER} --target-env=vulkan1.2
+		COMMAND ${Vulkan_GLSLC_EXECUTABLE} -g -O -o ${OUTPUT_PATH}  ${SHADER} --target-env=vulkan1.2
 		DEPENDS ${ALL_SHADER_FILES}
 		IMPLICIT_DEPENDS CXX ${SHADER}
 		WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
@@ -44,7 +41,7 @@ endif()
 target_compile_definitions(restir
 	PRIVATE
 #		RENDERDOC_CAPTURE
-		VK_ENABLE_BETA_EXTENSIONS)
+		)
 
 target_sources(restir
 	PRIVATE

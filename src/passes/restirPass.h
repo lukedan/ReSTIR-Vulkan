@@ -239,7 +239,7 @@ public:
 
 	void createShaderBindingTable(vk::Device& dev, vma::Allocator& allocator, vk::PhysicalDevice& physicalDev)
 	{
-		vk::PhysicalDeviceRayTracingPropertiesKHR rtProperties;
+		vk::PhysicalDeviceRayTracingPipelinePropertiesKHR rtProperties;
 		vk::PhysicalDeviceProperties2 devProperties2;
 		devProperties2.pNext = &rtProperties;
 
@@ -251,7 +251,7 @@ public:
 		vk::BufferCreateInfo bufferInfo;
 		bufferInfo
 			.setSize(shaderBindingTableSize)
-			.setUsage(vk::BufferUsageFlagBits::eTransferSrc)
+			.setUsage(vk::BufferUsageFlagBits::eTransferSrc | vk::BufferUsageFlagBits::eShaderDeviceAddress)
 			.setSharingMode(vk::SharingMode::eExclusive);
 
 		VmaAllocationCreateInfo allocationInfo{};
@@ -280,27 +280,24 @@ public:
 		_shaderBindingTable.unmap();
 
 		// Set buffer region handle
+		vk::DeviceAddress sbtAddr = dev.getBufferAddress(_shaderBindingTable.get());
 		rayGenSBT
-			.setBuffer(_shaderBindingTable.get())
-			.setOffset(0)
-			.setStride(rtProperties.shaderGroupHandleSize)
-			.setSize(shaderBindingTableSize);
+			.setDeviceAddress(sbtAddr)
+			.setStride(rtProperties.shaderGroupBaseAlignment)
+			.setSize(rtProperties.shaderGroupBaseAlignment);
 
 		rayMissSBT
-			.setBuffer(_shaderBindingTable.get())
-			.setOffset(2 * rtProperties.shaderGroupBaseAlignment)
+			.setDeviceAddress(sbtAddr + 2 * rtProperties.shaderGroupBaseAlignment)
 			.setStride(rtProperties.shaderGroupBaseAlignment)
-			.setSize(shaderBindingTableSize);
+			.setSize(rtProperties.shaderGroupBaseAlignment);
 
 		rayHitSBT
-			.setBuffer(_shaderBindingTable.get())
-			.setOffset(rtProperties.shaderGroupBaseAlignment)
+			.setDeviceAddress(sbtAddr + 1 * rtProperties.shaderGroupBaseAlignment)
 			.setStride(rtProperties.shaderGroupBaseAlignment)
-			.setSize(shaderBindingTableSize);
+			.setSize(rtProperties.shaderGroupBaseAlignment);
 
 		rayCallSBT
-			.setBuffer({})
-			.setOffset(0)
+			.setDeviceAddress(sbtAddr)
 			.setStride(0)
 			.setSize(0);
 	}
@@ -308,10 +305,10 @@ public:
 
 	//vk::DescriptorSet descriptorSet;
 	vma::UniqueBuffer _shaderBindingTable;
-	vk::StridedBufferRegionKHR rayGenSBT;
-	vk::StridedBufferRegionKHR rayMissSBT;
-	vk::StridedBufferRegionKHR rayHitSBT;
-	vk::StridedBufferRegionKHR rayCallSBT;
+	vk::StridedDeviceAddressRegionKHR rayGenSBT;
+	vk::StridedDeviceAddressRegionKHR rayMissSBT;
+	vk::StridedDeviceAddressRegionKHR rayHitSBT;
+	vk::StridedDeviceAddressRegionKHR rayCallSBT;
 
 	vk::DescriptorSet staticDescriptorSet;
 	vk::DescriptorSet frameDescriptorSet;
@@ -461,10 +458,9 @@ protected:
 			rtPipelineInfo
 				.setStages(shaderStages)
 				.setGroups(shaderGroups)
-				.setMaxRecursionDepth(1)
-				.setLibraries({})
+				.setMaxPipelineRayRecursionDepth(1)
 				.setLayout(_hwPipelineLayout.get());
-			auto [res, pipeline] = dev.createRayTracingPipelineKHRUnique(nullptr, rtPipelineInfo, nullptr, *dynamicLoader);
+			auto [res, pipeline] = dev.createRayTracingPipelineKHRUnique(nullptr, nullptr, rtPipelineInfo, nullptr, *dynamicLoader);
 			vkCheck(res);
 			_hwRayTracePipeline = std::move(pipeline);
 		}
@@ -517,17 +513,5 @@ private:
 			}
 		};
 		throw std::runtime_error("failed to find suitable memory type!");
-	}
-
-	void BindAccelerationMemory(vk::Device dev, vk::AccelerationStructureKHR acceleration, vk::DeviceMemory memory)
-	{
-		vk::BindAccelerationStructureMemoryInfoKHR accelerationMemoryBindInfo;
-		accelerationMemoryBindInfo
-			.setAccelerationStructure(acceleration)
-			.setMemory(memory)
-			.setMemoryOffset(0)
-			.setDeviceIndexCount(0)
-			.setPDeviceIndices(nullptr);
-		dev.bindAccelerationStructureMemoryKHR(accelerationMemoryBindInfo, *dynamicLoader);
 	}
 };
